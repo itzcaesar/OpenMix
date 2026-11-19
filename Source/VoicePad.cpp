@@ -23,6 +23,14 @@ void VoicePadProcessor::prepare (double sampleRate, int)
     delaySamplesR = (int) (sampleRate * 0.165);
 }
 
+void VoicePadProcessor::reset() noexcept
+{
+    lowShelf.reset(); highShelf.reset(); presence.reset();
+    std::fill (delayL.begin(), delayL.end(), 0.0f);
+    std::fill (delayR.begin(), delayR.end(), 0.0f);
+    writePos = 0;
+}
+
 void VoicePadProcessor::updateFilters (float x, float y01) noexcept
 {
     if (std::abs (x - lastX) < 1.0e-3f && std::abs (y01 - lastY) < 1.0e-3f)

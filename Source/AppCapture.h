@@ -38,6 +38,9 @@ public:
     bool start (uint32_t pid, ClockBridge& target, std::string& error);
     void stop();
 
+    // True once the capture stream has died (e.g. Windows invalidated it after a device change).
+    bool hasFailed() const noexcept;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

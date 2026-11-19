@@ -81,7 +81,7 @@ void Session::save (MixerEngine& engine)
         lastWritten = text;
 }
 
-void Session::apply (const juce::XmlElement& root, MixerEngine& engine)
+void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loadPlugins)
 {
     for (auto* xs : root.getChildWithTagNameIterator ("Strip"))
     {
@@ -111,6 +111,9 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine)
 
         for (auto* xp : xs->getChildWithTagNameIterator ("Slot"))
         {
+            if (! loadPlugins)
+                break;
+
             const int slot = xp->getIntAttribute ("index", -1);
             auto* xd = xp->getChildByName ("PLUGIN");
             if (! juce::isPositiveAndBelow (slot, kNumSlots) || xd == nullptr)

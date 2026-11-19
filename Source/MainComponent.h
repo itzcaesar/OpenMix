@@ -64,7 +64,7 @@ private:
 class PluginSlotRow : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    void setState (const juce::String& pluginName, bool loaded, bool bypassed, int slotNumber);
+    void setState (const juce::String& pluginName, bool loaded, bool bypassed, int slotNumber, bool faulted = false);
     void paint (juce::Graphics&) override;
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
@@ -77,7 +77,7 @@ private:
     Zone zoneAt (juce::Point<int>) const;
 
     juce::String name;
-    bool loaded = false, bypassed = false;
+    bool loaded = false, bypassed = false, faulted = false;
     int number = 1;
     Zone hover = Zone::None;
 };
@@ -105,7 +105,7 @@ public:
     void paint (juce::Graphics&) override;
     void refreshDevice();
     void refreshFromStrip();
-    void tick() { faderSection.tick(); }
+    void tick();
 
 private:
     void showSourceMenu();
@@ -135,6 +135,7 @@ private:
 
     juce::Rectangle<int> insertsCaptionArea, padCaptionArea, routeCaptionArea;
     juce::String sourceKind;
+    int lastFaultCount = 0;
 
     std::array<std::unique_ptr<PluginWindow>, kNumSlots> editorWindows;
 };
@@ -148,10 +149,12 @@ public:
     void paint (juce::Graphics&) override;
     void refreshDevice();
     void refreshFromBus();
-    void tick() { faderSection.tick(); }
+    void tick();
 
 private:
     void showTargetMenu();
+    bool limiting = false;
+    int limitHoldFrames = 0;
     bool isVirtual() const { return juce::String (kBusNames[index]).startsWith ("B"); }
 
     MixerEngine& engine;

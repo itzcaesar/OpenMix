@@ -10,7 +10,24 @@ class ExternalSource
 {
 public:
     virtual ~ExternalSource() = default;
+
+    // False once the device/capture has died (unplugged, stopped, stalled, stream invalidated).
+    // The engine then drops it and reconnects when possible.
+    virtual bool isHealthy() const = 0;
+
     ClockBridge bridge;
+};
+
+// Watchdog for a device callback: healthy while callbacks keep arriving.
+struct CallbackWatchdog
+{
+    void beat() noexcept { lastBeatMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed); }
+    bool alive (juce::uint32 timeoutMs = 1500) const noexcept
+    {
+        const auto last = lastBeatMs.load (std::memory_order_relaxed);
+        return juce::Time::getMillisecondCounter() - last < timeoutMs;
+    }
+    std::atomic<juce::uint32> lastBeatMs { juce::Time::getMillisecondCounter() };
 };
 
 // A Windows (WASAPI shared) input device used by one strip. Captures its first two channels.
@@ -21,15 +38,20 @@ public:
                                                     double preferredRate, juce::String& error);
     ~DeviceInputSource() override;
 
+    bool isHealthy() const override;
+
 private:
     DeviceInputSource() = default;
     void audioDeviceIOCallbackWithContext (const float* const*, int, float* const*, int, int,
                                            const juce::AudioIODeviceCallbackContext&) override;
     void audioDeviceAboutToStart (juce::AudioIODevice*) override;
     void audioDeviceStopped() override {}
+    void audioDeviceError (const juce::String&) override { errored = true; }
 
     std::unique_ptr<juce::AudioIODevice> device;
     double rate = 48000.0;
+    CallbackWatchdog watchdog;
+    std::atomic<bool> errored { false };
 };
 
 // One app's audio, via process loopback.
@@ -40,6 +62,7 @@ public:
     ~AppLoopbackSource() override { capture.stop(); }
 
     uint32_t getPid() const noexcept { return pid; }
+    bool isHealthy() const override { return ! capture.hasFailed(); }
 
 private:
     AppLoopbackSource() = default;
@@ -55,6 +78,7 @@ public:
                                                    double preferredRate, juce::String& error);
     ~DeviceOutputSink() override;
 
+    bool isHealthy() const;
     ClockBridge bridge;
 
 private:
@@ -63,8 +87,11 @@ private:
                                            const juce::AudioIODeviceCallbackContext&) override;
     void audioDeviceAboutToStart (juce::AudioIODevice*) override;
     void audioDeviceStopped() override {}
+    void audioDeviceError (const juce::String&) override { errored = true; }
 
     std::unique_ptr<juce::AudioIODevice> device;
+    CallbackWatchdog watchdog;
+    std::atomic<bool> errored { false };
     juce::AudioBuffer<float> temp;
     double rate = 48000.0;
 };

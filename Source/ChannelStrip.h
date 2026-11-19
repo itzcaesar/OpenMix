@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "VoicePad.h"
 #include "ExternalIO.h"
+#include "AudioSafety.h"
 
 constexpr int kNumStrips = 3;
 constexpr int kNumSlots  = 3;
@@ -40,6 +41,8 @@ public:
     ExternalSource* getExternalSource() const noexcept { return external.get(); }
 
     std::array<std::atomic<bool>, kNumSlots> slotBypass {};
+    std::array<std::atomic<bool>, kNumSlots> slotFault {};   // plugin output NaN/Inf -> auto-bypassed
+    std::atomic<int> faultCount { 0 };                       // NaN/Inf events caught on this strip
     juce::String name;               // user-editable label (message thread only)
 
     // Source description (message thread only)
@@ -73,7 +76,10 @@ private:
     juce::CriticalSection sourceLock;
 
     VoicePadProcessor padProcessor { pad };
+    AudioSafety::DcBlocker dcBlocker;
     juce::AudioBuffer<float> scratch;   // wide buffer for plugins with >2 channels
+    juce::AudioBuffer<float> dryBuffer; // dry copy for bypass crossfades
+    std::array<bool, kNumSlots> wasActive {};   // audio-thread view of each slot, for crossfades
     juce::MidiBuffer midi;
     juce::SmoothedValue<float> inGain, outGain;
 

@@ -79,14 +79,24 @@ public:
             readPos = (double) w - target;
             avgFill = target;
             fill = target;
+            fadeInPos = 0;   // resume with a short fade instead of a click
         }
 
         if (fill < numFrames * step * 1.01 + 4.0)
         {
             underruns.fetch_add (1, std::memory_order_relaxed);
             margin = std::min (margin + 256.0, 8192.0);
+            framesSinceUnderrun = 0;
             primed = false;
             return silence (outL, outR, numFrames);
+        }
+
+        // After 10 s without trouble, give back some of the extra margin (= latency).
+        framesSinceUnderrun += numFrames;
+        if (framesSinceUnderrun > (int64_t) (rate * 10.0) && margin > 256.0)
+        {
+            margin = std::max (256.0, margin - 64.0);
+            framesSinceUnderrun = 0;
         }
 
         if (fill > target * 4.0 + 4096.0 || fill > (double) capacity * 0.75)
@@ -109,6 +119,13 @@ public:
             outL[i] = interp (buf[0], idx, t);
             outR[i] = interp (buf[1], idx, t);
             readPos += s;
+
+            if (fadeInPos < fadeInLength)
+            {
+                const float g = (float) fadeInPos++ / (float) fadeInLength;
+                outL[i] *= g;
+                outR[i] *= g;
+            }
         }
 
         readFloor.store ((uint64_t) std::max<int64_t> (0, (int64_t) std::floor (readPos) - 4),
@@ -152,4 +169,7 @@ private:
     double margin = 256.0;
     int readerBlock = 0;
     bool primed = false;
+    int64_t framesSinceUnderrun = 0;
+    static constexpr int fadeInLength = 96;   // 2 ms at 48 kHz
+    int fadeInPos = fadeInLength;
 };

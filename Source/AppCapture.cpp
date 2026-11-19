@@ -201,6 +201,7 @@ struct AppCapture::Impl
 {
     std::thread thread;
     std::atomic<bool> stopRequested { false };
+    std::atomic<bool> failed { false };
 
     void run (uint32_t pid, ClockBridge* target, std::promise<std::string> ready)
     {
@@ -224,7 +225,10 @@ struct AppCapture::Impl
         if (FAILED (hr))
             return ready.set_value (hrToString ("ActivateAudioInterfaceAsync", hr));
 
-        WaitForSingleObject (handler->done, INFINITE);
+        // Don't let a stuck activation hang the app (the handler is ref-counted, so it's safe
+        // for Windows to complete it later).
+        if (WaitForSingleObject (handler->done, 3000) != WAIT_OBJECT_0)
+            return ready.set_value ("Windows didn't respond to the app-capture request in time");
         if (FAILED (handler->result))
             return ready.set_value (hrToString ("Process loopback activation", handler->result));
 
@@ -274,19 +278,30 @@ struct AppCapture::Impl
         HANDLE mmcss = AvSetMmThreadCharacteristicsW (L"Pro Audio", &taskIndex);
 
         std::vector<float> left (4096), right (4096);
-        while (! stopRequested.load())
+        while (! stopRequested.load() && ! failed.load())
         {
             if (WaitForSingleObject (event, 100) != WAIT_OBJECT_0)
                 continue;
 
             UINT32 packet = 0;
-            while (SUCCEEDED (capture->GetNextPacketSize (&packet)) && packet > 0)
+            for (;;)
             {
+                if (FAILED (capture->GetNextPacketSize (&packet)))
+                {
+                    failed = true;   // stream invalidated; the engine will reconnect
+                    break;
+                }
+                if (packet == 0)
+                    break;
+
                 BYTE* data = nullptr;
                 UINT32 frames = 0;
                 DWORD bufferFlags = 0;
                 if (FAILED (capture->GetBuffer (&data, &frames, &bufferFlags, nullptr, nullptr)))
+                {
+                    failed = true;
                     break;
+                }
 
                 if (frames > left.size())
                 {
@@ -330,10 +345,16 @@ AppCapture::~AppCapture()
     stop();
 }
 
+bool AppCapture::hasFailed() const noexcept
+{
+    return impl->failed.load();
+}
+
 bool AppCapture::start (uint32_t pid, ClockBridge& target, std::string& error)
 {
     stop();
     impl->stopRequested = false;
+    impl->failed = false;
 
     std::promise<std::string> ready;
     auto result = ready.get_future();

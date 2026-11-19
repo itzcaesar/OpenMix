@@ -44,6 +44,11 @@ std::unique_ptr<DeviceInputSource> DeviceInputSource::open (juce::AudioIODeviceT
     return source;
 }
 
+bool DeviceInputSource::isHealthy() const
+{
+    return device != nullptr && device->isPlaying() && ! errored.load() && watchdog.alive();
+}
+
 DeviceInputSource::~DeviceInputSource()
 {
     if (device != nullptr)
@@ -62,6 +67,9 @@ void DeviceInputSource::audioDeviceIOCallbackWithContext (const float* const* in
                                                           float* const* outputs, int numOutputs, int numSamples,
                                                           const juce::AudioIODeviceCallbackContext&)
 {
+    juce::ScopedNoDenormals noDenormals;
+    watchdog.beat();
+
     for (int i = 0; i < numOutputs; ++i)
         if (outputs[i] != nullptr)
             juce::FloatVectorOperations::clear (outputs[i], numSamples);
@@ -98,6 +106,11 @@ std::unique_ptr<DeviceOutputSink> DeviceOutputSink::open (juce::AudioIODeviceTyp
     return sink;
 }
 
+bool DeviceOutputSink::isHealthy() const
+{
+    return device != nullptr && device->isPlaying() && ! errored.load() && watchdog.alive();
+}
+
 DeviceOutputSink::~DeviceOutputSink()
 {
     if (device != nullptr)
@@ -117,6 +130,9 @@ void DeviceOutputSink::audioDeviceIOCallbackWithContext (const float* const*, in
                                                          float* const* outputs, int numOutputs, int numSamples,
                                                          const juce::AudioIODeviceCallbackContext&)
 {
+    juce::ScopedNoDenormals noDenormals;
+    watchdog.beat();
+
     for (int i = 0; i < numOutputs; ++i)
         if (outputs[i] != nullptr)
             juce::FloatVectorOperations::clear (outputs[i], numSamples);

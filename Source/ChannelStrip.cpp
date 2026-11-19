@@ -23,7 +23,10 @@ void ChannelStrip::prepare (double newSampleRate, int maxBlockSize)
     blockSize = maxBlockSize;
 
     scratch.setSize (kMaxPluginChannels, maxBlockSize);
+    dryBuffer.setSize (2, maxBlockSize);
     midi.ensureSize (256);
+    dcBlocker.prepare (sampleRate);
+    wasActive.fill (false);
     inGain.reset (sampleRate, 0.02);
     outGain.reset (sampleRate, 0.02);
     inGain.setCurrentAndTargetValue (dbToGain (gainDb.load()));
@@ -68,7 +71,9 @@ bool ChannelStrip::loadPlugin (int slot, const juce::PluginDescription& desc,
         preparePlugin (*instance);
         old = std::move (slots[(size_t) slot]);
         slots[(size_t) slot] = std::move (instance);
+        wasActive[(size_t) slot] = false;   // fade the new plugin in
     }
+    slotFault[(size_t) slot].store (false);
 
     if (old != nullptr)
         old->releaseResources();
@@ -79,10 +84,12 @@ bool ChannelStrip::loadPlugin (int slot, const juce::PluginDescription& desc,
 void ChannelStrip::removePlugin (int slot)
 {
     slotBypass[(size_t) slot].store (false);
+    slotFault[(size_t) slot].store (false);
     std::unique_ptr<juce::AudioPluginInstance> old;
     {
         const juce::ScopedLock sl (slotLock);
         old = std::move (slots[(size_t) slot]);
+        wasActive[(size_t) slot] = false;
     }
 
     if (old != nullptr)
@@ -127,6 +134,9 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
             L[i] = l;
             R[i] = r;
         }
+
+        dcBlocker.process (L, numSamples, 0);
+        dcBlocker.process (R, numSamples, 1);
     }
     else
     {
@@ -142,12 +152,26 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
             for (size_t s = 0; s < slots.size(); ++s)
             {
                 auto& p = slots[s];
-                if (p == nullptr || p->isSuspended() || slotBypass[s].load())
+                if (p == nullptr)
+                {
+                    wasActive[s] = false;
+                    continue;
+                }
+
+                const bool active = ! slotBypass[s].load() && ! p->isSuspended();
+                if (! active && ! wasActive[s])
                     continue;
 
                 const int numCh = juce::jmax (2, p->getTotalNumInputChannels(), p->getTotalNumOutputChannels());
                 if (numCh > kMaxPluginChannels)
                     continue;
+
+                const bool crossfade = active != wasActive[s];
+                if (crossfade)
+                {
+                    dryBuffer.copyFrom (0, 0, L, numSamples);
+                    dryBuffer.copyFrom (1, 0, R, numSamples);
+                }
 
                 juce::AudioBuffer<float> view (scratch.getArrayOfWritePointers(), numCh, numSamples);
                 view.clear();
@@ -158,14 +182,51 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
                 p->processBlock (view, midi);
 
                 const int outs = p->getTotalNumOutputChannels();
+                const int rightSrc = outs == 1 ? 0 : 1;
+
+                // A plugin that outputs NaN/Inf would poison everything after it (filters,
+                // echo, buses) permanently. Drop its output, reset it and bypass it.
+                if (AudioSafety::containsNonFinite (view.getReadPointer (0), numSamples)
+                    || AudioSafety::containsNonFinite (view.getReadPointer (rightSrc), numSamples))
+                {
+                    slotFault[s].store (true);
+                    slotBypass[s].store (true);
+                    faultCount.fetch_add (1);
+                    p->reset();
+                    wasActive[s] = false;
+                    continue;   // keep the dry signal
+                }
+
                 out.copyFrom (0, 0, view, 0, 0, numSamples);
-                out.copyFrom (1, 0, view, outs == 1 ? 0 : 1, 0, numSamples);
+                out.copyFrom (1, 0, view, rightSrc, 0, numSamples);
+
+                // Bypass / enable / newly loaded: crossfade over this block instead of clicking.
+                if (crossfade)
+                {
+                    const float wetStart = active ? 0.0f : 1.0f;
+                    const float wetEnd   = active ? 1.0f : 0.0f;
+                    out.applyGainRamp (0, 0, numSamples, wetStart, wetEnd);
+                    out.applyGainRamp (1, 0, numSamples, wetStart, wetEnd);
+                    out.addFromWithRamp (0, 0, dryBuffer.getReadPointer (0), numSamples, 1.0f - wetStart, 1.0f - wetEnd);
+                    out.addFromWithRamp (1, 0, dryBuffer.getReadPointer (1), numSamples, 1.0f - wetStart, 1.0f - wetEnd);
+                }
+
+                wasActive[s] = active;
             }
         }
     }
 
     // 3. VoicePad
     padProcessor.process (out, numSamples);
+
+    // Last line of defence before the buses.
+    if (AudioSafety::containsNonFinite (L, numSamples) || AudioSafety::containsNonFinite (R, numSamples))
+    {
+        out.clear (0, numSamples);
+        padProcessor.reset();
+        dcBlocker.reset();
+        faultCount.fetch_add (1);
+    }
 
     // 4. Fader / mute
     outGain.setTargetValue (mute.load() ? 0.0f : dbToGain (faderDb.load()));

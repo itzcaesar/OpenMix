@@ -50,10 +50,17 @@ target_compile_definitions(OpenMix PRIVATE
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_VERSION>")
 
-if(MSVC)
-    # Faster DSP in Release builds.
-    target_compile_options(OpenMix PRIVATE $<$<CONFIG:Release>:/arch:AVX2 /fp:fast>)
+# Core unit tests (plain C++, no JUCE). Run with: ctest --test-dir build -C Release
+option(OPENMIX_BUILD_TESTS "Build the core unit tests" ON)
+if(OPENMIX_BUILD_TESTS)
+    enable_testing()
+    add_executable(OpenMixCoreTests tests/CoreTests.cpp)
+    target_include_directories(OpenMixCoreTests PRIVATE Source)
+    add_test(NAME OpenMixCoreTests COMMAND OpenMixCoreTests)
 endif()
+
+# Deliberately no /fp:fast (it lets the compiler assume NaN/Inf never happen, which breaks the
+# safety checks) and no /arch:AVX2 (the released .exe must run on any x64 CPU).
 
 target_link_libraries(OpenMix
     PRIVATE

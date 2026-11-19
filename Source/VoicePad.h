@@ -21,6 +21,7 @@ public:
     explicit VoicePadProcessor (VoicePadParams& p) : params (p) {}
 
     void prepare (double sampleRate, int maxBlockSize);
+    void reset() noexcept;   // clears filter + echo state (audio thread safe, no allocation)
     void process (juce::AudioBuffer<float>& stereo, int numSamples) noexcept;
 
 private:

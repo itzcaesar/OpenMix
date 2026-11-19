@@ -1,4 +1,5 @@
 #include "MixerEngine.h"
+#include <optional>
 
 static float dbToGain (float db) noexcept
 {
@@ -153,7 +154,7 @@ bool MixerEngine::setStripSourceApp (int s, const juce::String& exeName, juce::S
     const auto pid = findAudioAppByExe (exeName.toWideCharPointer());
     if (pid == 0)
     {
-        // Not running yet: maintainAppSources() connects it when it starts playing.
+        // Not running yet: maintainSources() connects it when it starts playing.
         strip.setExternalSource (nullptr);
         return true;
     }
@@ -163,25 +164,89 @@ bool MixerEngine::setStripSourceApp (int s, const juce::String& exeName, juce::S
     return strip.getExternalSource() != nullptr;
 }
 
-void MixerEngine::maintainAppSources()
+void MixerEngine::maintainSources()
 {
-    for (auto& s : strips)
+    // Device lists are only scanned if something actually needs reconnecting.
+    std::optional<juce::StringArray> inputNames, outputNames;
+
+    for (int i = 0; i < kNumStrips; ++i)
     {
-        if (s->sourceType.load() != (int) SourceType::App || s->sourceAppExe.isEmpty())
+        auto& s = *strips[(size_t) i];
+        auto* current = s.getExternalSource();
+
+        switch ((SourceType) s.sourceType.load())
+        {
+            case SourceType::Device:
+            {
+                if (current != nullptr && current->isHealthy())
+                    break;
+
+                if (current != nullptr)
+                    s.setExternalSource (nullptr);   // unplugged / stalled
+
+                if (! inputNames)
+                    inputNames = getWindowsInputNames();
+
+                if (inputNames->contains (s.sourceDeviceName))
+                {
+                    juce::String error;
+                    setStripSourceDevice (i, s.sourceDeviceName, error);
+                }
+                break;
+            }
+
+            case SourceType::App:
+            {
+                if (s.sourceAppExe.isEmpty())
+                    break;
+
+                auto* app = dynamic_cast<AppLoopbackSource*> (current);
+                if (app != nullptr && app->isHealthy() && isProcessAlive (app->getPid()))
+                    break;
+
+                if (current != nullptr)
+                    s.setExternalSource (nullptr);   // app exited or stream died
+
+                if (const auto pid = findAudioAppByExe (s.sourceAppExe.toWideCharPointer()); pid != 0)
+                {
+                    juce::String error;
+                    s.setExternalSource (AppLoopbackSource::open (pid, error));
+                }
+                break;
+            }
+
+            case SourceType::None:
+            case SourceType::Main:
+                break;
+        }
+    }
+
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        auto& bus = buses[(size_t) b];
+        if ((BusTarget) bus.target.load() != BusTarget::Device || bus.deviceName.isEmpty())
             continue;
 
-        if (auto* current = dynamic_cast<AppLoopbackSource*> (s->getExternalSource()))
-        {
-            if (isProcessAlive (current->getPid()))
-                continue;
+        if (bus.sink != nullptr && bus.sink->isHealthy())
+            continue;
 
-            s->setExternalSource (nullptr);   // app exited
+        if (bus.sink != nullptr)
+        {
+            std::unique_ptr<DeviceOutputSink> dead;
+            {
+                const juce::ScopedLock sl (bus.sinkLock);
+                std::swap (dead, bus.sink);
+            }
         }
 
-        if (const auto pid = findAudioAppByExe (s->sourceAppExe.toWideCharPointer()); pid != 0)
+        if (! outputNames)
+            outputNames = getWindowsOutputNames();
+
+        if (outputNames->contains (bus.deviceName))
         {
             juce::String error;
-            s->setExternalSource (AppLoopbackSource::open (pid, error));
+            const auto name = bus.deviceName;
+            setBusDevice (b, name, error);
         }
     }
 }
@@ -275,6 +340,7 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     {
         busGain[(size_t) b].reset (sr, 0.02);
         busGain[(size_t) b].setCurrentAndTargetValue (dbToGain (buses[(size_t) b].faderDb.load()));
+        busLimiter[(size_t) b].prepare (sr);
     }
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -378,6 +444,12 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         const float end = g.getCurrentValue();
         busBuffer.applyGainRamp (b * 2,     0, n, start, end);
         busBuffer.applyGainRamp (b * 2 + 1, 0, n, start, end);
+
+        // Safety limiter: nothing leaves a bus above -0.3 dBFS.
+        const float lim = busLimiter[(size_t) b].process (busBuffer.getWritePointer (b * 2),
+                                                          busBuffer.getWritePointer (b * 2 + 1), n);
+        if (lim < bus.limiterGain.load())
+            bus.limiterGain.store (lim);
 
         const float pl = busBuffer.getMagnitude (b * 2, 0, n);
         const float pr = busBuffer.getMagnitude (b * 2 + 1, 0, n);

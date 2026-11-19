@@ -14,5 +14,6 @@ namespace Session
     void save (MixerEngine&);
 
     // Applies everything except the audio device (which MixerEngine::start handles).
-    void apply (const juce::XmlElement&, MixerEngine&);
+    // loadPlugins = false skips plugin slots (safe mode after a crash while loading them).
+    void apply (const juce::XmlElement&, MixerEngine&, bool loadPlugins = true);
 }

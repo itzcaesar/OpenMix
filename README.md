@@ -69,6 +69,22 @@ Everything (device, strips, plugins and their settings, buses) is saved to
 | `Source/Session.*` | Save/restore to XML |
 | `Source/MainComponent.*` | Mixer UI: strips, buses, meters, plugin windows |
 
+## Reliability
+
+- **Audio thread:** no allocation, no blocking locks, no I/O; all UI changes are atomics,
+  smoothed per sample. Denormals are flushed.
+- **Safety limiter** on every bus (-0.3 dBFS ceiling, instant attack) protects ears,
+  speakers and apps fed by virtual buses. A red **LIMIT** badge shows when it's working.
+- **NaN/Inf guard:** a plugin that outputs invalid audio is bypassed automatically
+  (red power icon) instead of breaking the whole mix.
+- **DC blocker** (5 Hz) on every input; **click-free** plugin bypass/enable (crossfade).
+- **Extra devices and app captures reconnect by themselves** after unplugging, stalls or
+  Windows audio changes (checked every 2 s).
+- **Crash-safe startup:** if a plugin crashes OpenMix while loading, the next start skips
+  plugins and backs up the session to `session-before-crash.xml`.
+- **Core tests** (`ctest`): clock drift/jitter, resampling pitch, limiter, NaN detection,
+  DC blocker and filter stability. They run in CI on every push.
+
 ## License
 
 OpenMix is licensed under the GNU AGPLv3 (see `LICENSE`). It's built on JUCE, which is

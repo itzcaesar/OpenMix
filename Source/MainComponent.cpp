@@ -246,13 +246,16 @@ void ChipButton::paintButton (juce::Graphics& g, bool isHighlighted, bool isDown
 //==============================================================================
 // PluginSlotRow
 
-void PluginSlotRow::setState (const juce::String& pluginName, bool isLoaded, bool isBypassed, int slotNumber)
+void PluginSlotRow::setState (const juce::String& pluginName, bool isLoaded, bool isBypassed, int slotNumber, bool isFaulted)
 {
     name = pluginName;
     loaded = isLoaded;
     bypassed = isBypassed;
+    faulted = isFaulted && isBypassed;
     number = slotNumber;
-    setTooltip (loaded ? "Click to open " + name + ". Power button: bypass. Dots: more options."
+    setTooltip (faulted ? name + " produced invalid audio (NaN/Inf) and was bypassed automatically. "
+                                 "Click the power button to try it again."
+              : loaded ? "Click to open " + name + ". Power button: bypass. Dots: more options."
                        : "Click to add a VST3 plugin to insert slot " + juce::String (number) + ".");
     repaint();
 }
@@ -323,7 +326,7 @@ void PluginSlotRow::paint (juce::Graphics& g)
 
     // Power (bypass) icon
     const auto power = juce::Rectangle<float> (14.0f, 14.0f).withCentre ({ 13.0f, r.getCentreY() });
-    const auto powerColour = bypassed ? Theme::textFaint : Theme::success;
+    const auto powerColour = faulted ? Theme::mute : bypassed ? Theme::textFaint : Theme::success;
     juce::Path ring;
     ring.addCentredArc (power.getCentreX(), power.getCentreY(), 5.5f, 5.5f, 0.0f, 0.75f, juce::MathConstants<float>::twoPi - 0.75f, true);
     g.setColour (hover == Zone::Power ? powerColour.brighter (0.3f) : powerColour);
@@ -420,6 +423,7 @@ StripComponent::StripComponent (MixerEngine& e, int i)
         row.onMenu   = [this, s] { showSlotMenu (s); };
         row.onBypass = [this, s]
         {
+            strip.slotFault[(size_t) s].store (false);
             strip.slotBypass[(size_t) s].store (! strip.slotBypass[(size_t) s].load());
             updateSlotRows();
         };
@@ -581,7 +585,20 @@ void StripComponent::updateSlotRows()
     {
         auto* p = strip.getPlugin (s);
         slotRows[(size_t) s].setState (p != nullptr ? p->getName() : juce::String(), p != nullptr,
-                                       strip.slotBypass[(size_t) s].load(), s + 1);
+                                       strip.slotBypass[(size_t) s].load(), s + 1,
+                                       strip.slotFault[(size_t) s].load());
+    }
+}
+
+void StripComponent::tick()
+{
+    faderSection.tick();
+
+    // The audio thread auto-bypasses plugins that output NaN/Inf; reflect that here.
+    if (const int faults = strip.faultCount.load(); faults != lastFaultCount)
+    {
+        lastFaultCount = faults;
+        updateSlotRows();
     }
 }
 
@@ -774,6 +791,25 @@ BusComponent::BusComponent (MixerEngine& e, int i)
     refreshFromBus();
 }
 
+void BusComponent::tick()
+{
+    faderSection.tick();
+
+    // "LIMIT" badge while the safety limiter is reducing gain by more than 0.5 dB (held 1 s).
+    const float g = bus.limiterGain.exchange (1.0f);
+    if (g < 0.944f)
+        limitHoldFrames = 30;
+    else if (limitHoldFrames > 0)
+        --limitHoldFrames;
+
+    const bool nowLimiting = limitHoldFrames > 0;
+    if (nowLimiting != limiting)
+    {
+        limiting = nowLimiting;
+        repaint (getLocalBounds().removeFromTop (44));
+    }
+}
+
 void BusComponent::refreshFromBus()
 {
     faderSection.fader.setValue (bus.faderDb.load(), juce::dontSendNotification);
@@ -863,9 +899,20 @@ void BusComponent::paint (juce::Graphics& g)
     g.setColour (Theme::text);
     g.setFont (Theme::ui (16.0f, true));
     g.drawText (kBusNames[index], title, juce::Justification::centredLeft);
-    g.setColour (accent);
     g.setFont (Theme::ui (11.0f, true).withExtraKerningFactor (0.1f));
-    g.drawText (isVirtual() ? "VIRTUAL" : "HARDWARE", title, juce::Justification::centredRight);
+    if (limiting)
+    {
+        auto badge = title.removeFromRight (48).withSizeKeepingCentre (48, 18).toFloat();
+        g.setColour (Theme::mute.withAlpha (0.2f));
+        g.fillRoundedRectangle (badge, 3.0f);
+        g.setColour (Theme::mute);
+        g.drawText ("LIMIT", badge, juce::Justification::centred);
+    }
+    else
+    {
+        g.setColour (accent);
+        g.drawText (isVirtual() ? "VIRTUAL" : "HARDWARE", title, juce::Justification::centredRight);
+    }
 }
 
 void BusComponent::resized()
@@ -889,8 +936,32 @@ MainComponent::MainComponent()
 
     engine.start (session != nullptr ? session->getChildByName ("DEVICESETUP") : nullptr);
 
+    // Crash guard: this marker exists only while plugins are being restored. If it's still
+    // there at startup, a plugin crashed OpenMix last time, so start without plugins.
+    const auto sessionFile = Session::getFile();
+    const auto restoreMarker = sessionFile.getSiblingFile ("restoring-plugins.lock");
+    bool safeMode = false;
+
     if (session != nullptr)
-        Session::apply (*session, engine);
+    {
+        safeMode = restoreMarker.existsAsFile();
+        if (safeMode)
+            sessionFile.copyFileTo (sessionFile.getSiblingFile ("session-before-crash.xml"));
+
+        sessionFile.getParentDirectory().createDirectory();
+        restoreMarker.create();
+        Session::apply (*session, engine, ! safeMode);
+        restoreMarker.deleteFile();
+    }
+
+    if (safeMode)
+        juce::MessageManager::callAsync ([backup = sessionFile.getSiblingFile ("session-before-crash.xml")]
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Safe mode",
+                "OpenMix closed unexpectedly while loading your plugins last time, so it started "
+                "without them.\n\nYour previous setup (with plugins) was backed up to:\n"
+                + backup.getFullPathName() + "\n\nAdd plugins back one at a time to find the one causing the crash.");
+        });
 
     if (firstRun)
     {
@@ -1013,7 +1084,7 @@ void MainComponent::timerCallback()
     // Every 2 s: reconnect app strips (apps start, quit and restart with new process IDs).
     if (ticks % 60 == 0)
     {
-        engine.maintainAppSources();
+        engine.maintainSources();
         for (auto& s : strips) s->refreshDevice();
         for (auto& b : buses)  b->refreshDevice();
     }

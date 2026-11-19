@@ -19,6 +19,7 @@ struct Bus
     std::atomic<int>   target { (int) BusTarget::MainPair };
     std::atomic<int>   outputPair { 0 };        // for BusTarget::MainPair (0 = outs 1/2)
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
+    std::atomic<float> limiterGain { 1.0f };   // lowest safety-limiter gain since the UI last read it
 
     juce::String deviceName;                    // for BusTarget::Device (message thread only)
     std::unique_ptr<DeviceOutputSink> sink;
@@ -58,9 +59,10 @@ public:
     void setBusMainPair (int bus, int pair);
     bool setBusDevice (int bus, const juce::String& deviceName, juce::String& error);
 
-    // Message thread, call every couple of seconds: reconnects app strips whose app
-    // was closed and reopened (process IDs change), and drops ones whose app exited.
-    void maintainAppSources();
+    // Message thread, call every couple of seconds. Drops sources/outputs that died
+    // (device unplugged or stalled, app closed, capture stream invalidated) and reconnects
+    // them as soon as the device or app is back.
+    void maintainSources();
 
     double getSampleRate() const noexcept { return currentSampleRate.load(); }
 
@@ -92,6 +94,7 @@ private:
 
     juce::AudioBuffer<float> stripBuffer, busBuffer, sourceBuffer;
     std::array<juce::SmoothedValue<float>, kNumBuses> busGain;
+    std::array<AudioSafety::SafetyLimiter, kNumBuses> busLimiter;
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;
     int maxBlock = 512;
     std::atomic<double> currentSampleRate { 48000.0 };
