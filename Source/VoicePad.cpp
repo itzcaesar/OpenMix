@@ -1,10 +1,10 @@
-#include "IntelliPad.h"
+#include "VoicePad.h"
 #include "Theme.h"
 
 //==============================================================================
 // DSP
 
-void IntelliPadProcessor::prepare (double sampleRate, int)
+void VoicePadProcessor::prepare (double sampleRate, int)
 {
     fs = sampleRate;
     smX.reset (sampleRate, 0.05);
@@ -23,7 +23,7 @@ void IntelliPadProcessor::prepare (double sampleRate, int)
     delaySamplesR = (int) (sampleRate * 0.165);
 }
 
-void IntelliPadProcessor::updateFilters (float x, float y01) noexcept
+void VoicePadProcessor::updateFilters (float x, float y01) noexcept
 {
     if (std::abs (x - lastX) < 1.0e-3f && std::abs (y01 - lastY) < 1.0e-3f)
         return;
@@ -34,7 +34,7 @@ void IntelliPadProcessor::updateFilters (float x, float y01) noexcept
     presence.setPeak       (fs, 5000.0, 0.9, y01 * 6.0);
 }
 
-void IntelliPadProcessor::process (juce::AudioBuffer<float>& stereo, int numSamples) noexcept
+void VoicePadProcessor::process (juce::AudioBuffer<float>& stereo, int numSamples) noexcept
 {
     auto* L = stereo.getWritePointer (0);
     auto* R = stereo.getWritePointer (1);
@@ -42,7 +42,7 @@ void IntelliPadProcessor::process (juce::AudioBuffer<float>& stereo, int numSamp
     smX.setTargetValue (params.x.load());
     smY.setTargetValue ((params.y.load() + 1.0f) * 0.5f);
 
-    if (params.mode.load() == IntelliPadParams::Voice)
+    if (params.mode.load() == VoicePadParams::Voice)
     {
         const auto delaySize = (int) delayL.size();
         if (delaySize == 0)
@@ -97,7 +97,7 @@ void IntelliPadProcessor::process (juce::AudioBuffer<float>& stereo, int numSamp
 //==============================================================================
 // UI
 
-IntelliPadComponent::IntelliPadComponent (IntelliPadParams& p) : params (p)
+VoicePadComponent::VoicePadComponent (VoicePadParams& p) : params (p)
 {
     // Two-part segmented switch
     voiceButton.setConnectedEdges (juce::Button::ConnectedOnRight);
@@ -115,44 +115,44 @@ IntelliPadComponent::IntelliPadComponent (IntelliPadParams& p) : params (p)
 
     voiceButton.setTooltip ("Voice: left/right = darker/brighter tone, up = presence + echo");
     panButton.setTooltip ("Pan: left/right = stereo position, up = wider stereo");
-    voiceButton.onClick = [this] { setMode (IntelliPadParams::Voice); };
-    panButton.onClick   = [this] { setMode (IntelliPadParams::Pan); };
+    voiceButton.onClick = [this] { setMode (VoicePadParams::Voice); };
+    panButton.onClick   = [this] { setMode (VoicePadParams::Pan); };
     setTooltip ("Drag the dot. Double-click to reset.");
     refreshFromParams();
 }
 
-void IntelliPadComponent::refreshFromParams()
+void VoicePadComponent::refreshFromParams()
 {
     const int m = params.mode.load();
-    voiceButton.setToggleState (m == IntelliPadParams::Voice, juce::dontSendNotification);
-    panButton.setToggleState   (m == IntelliPadParams::Pan,   juce::dontSendNotification);
+    voiceButton.setToggleState (m == VoicePadParams::Voice, juce::dontSendNotification);
+    panButton.setToggleState   (m == VoicePadParams::Pan,   juce::dontSendNotification);
     repaint();
 }
 
-void IntelliPadComponent::setMode (int m)
+void VoicePadComponent::setMode (int m)
 {
     params.mode.store (m);
     refreshFromParams();
 }
 
-void IntelliPadComponent::resized()
+void VoicePadComponent::resized()
 {
     auto top = getLocalBounds().removeFromTop (headerHeight - 6);
     voiceButton.setBounds (top.removeFromLeft (top.getWidth() / 2));
     panButton.setBounds (top);
 }
 
-juce::Rectangle<float> IntelliPadComponent::padArea() const
+juce::Rectangle<float> VoicePadComponent::padArea() const
 {
     return getLocalBounds().withTrimmedTop (headerHeight).toFloat().reduced (0.5f);
 }
 
-juce::String IntelliPadComponent::readout() const
+juce::String VoicePadComponent::readout() const
 {
     const float x = params.x.load();
     const float y01 = (params.y.load() + 1.0f) * 0.5f;
 
-    if (params.mode.load() == IntelliPadParams::Voice)
+    if (params.mode.load() == VoicePadParams::Voice)
     {
         const float tilt = x * 6.0f;
         return "Tone " + juce::String (tilt > 0.05f ? "+" : "") + juce::String (tilt, 1) + " dB   "
@@ -164,10 +164,10 @@ juce::String IntelliPadComponent::readout() const
     return "Pan " + panText + "   Width " + juce::String (juce::roundToInt (100.0f + y01 * 100.0f)) + "%";
 }
 
-void IntelliPadComponent::paint (juce::Graphics& g)
+void VoicePadComponent::paint (juce::Graphics& g)
 {
     const auto area = padArea();
-    const bool voice = params.mode.load() == IntelliPadParams::Voice;
+    const bool voice = params.mode.load() == VoicePadParams::Voice;
     const auto accent = Theme::accent;
 
     // Well
@@ -229,7 +229,7 @@ void IntelliPadComponent::paint (juce::Graphics& g)
     g.fillEllipse (px - 3.0f, py - 3.0f, 6.0f, 6.0f);
 }
 
-void IntelliPadComponent::setFromMouse (juce::Point<float> pos)
+void VoicePadComponent::setFromMouse (juce::Point<float> pos)
 {
     const auto inner = padArea().reduced (10.0f);
     params.x.store (juce::jlimit (-1.0f, 1.0f, juce::jmap (pos.x, inner.getX(), inner.getRight(), -1.0f, 1.0f)));
@@ -237,7 +237,7 @@ void IntelliPadComponent::setFromMouse (juce::Point<float> pos)
     repaint();
 }
 
-void IntelliPadComponent::mouseDown (const juce::MouseEvent& e)
+void VoicePadComponent::mouseDown (const juce::MouseEvent& e)
 {
     if (padArea().contains (e.position))
     {
@@ -246,19 +246,19 @@ void IntelliPadComponent::mouseDown (const juce::MouseEvent& e)
     }
 }
 
-void IntelliPadComponent::mouseDrag (const juce::MouseEvent& e)
+void VoicePadComponent::mouseDrag (const juce::MouseEvent& e)
 {
     if (dragging)
         setFromMouse (e.position);
 }
 
-void IntelliPadComponent::mouseUp (const juce::MouseEvent&)
+void VoicePadComponent::mouseUp (const juce::MouseEvent&)
 {
     dragging = false;
     repaint();
 }
 
-void IntelliPadComponent::mouseDoubleClick (const juce::MouseEvent&)
+void VoicePadComponent::mouseDoubleClick (const juce::MouseEvent&)
 {
     params.x.store (0.0f);
     params.y.store (-1.0f);

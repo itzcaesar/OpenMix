@@ -30,7 +30,7 @@ target_sources(OpenMix PRIVATE
     Source/MainComponent.cpp
     Source/MixerEngine.cpp
     Source/ChannelStrip.cpp
-    Source/IntelliPad.cpp
+    Source/VoicePad.cpp
     Source/Session.cpp
     Source/ExternalIO.cpp
     Source/AppCapture.cpp

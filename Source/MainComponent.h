@@ -2,7 +2,7 @@
 
 #include <JuceHeader.h>
 #include "MixerEngine.h"
-#include "IntelliPad.h"
+#include "VoicePad.h"
 
 //==============================================================================
 // Stereo peak meter: segmented gradient, 1.5 s peak hold, latching clip LED (click to reset).
@@ -128,7 +128,7 @@ private:
     ChipButton sourceButton;
     juce::Slider gainKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
     std::array<PluginSlotRow, kNumSlots> slotRows;
-    IntelliPadComponent pad;
+    VoicePadComponent pad;
     FaderSection faderSection;
     juce::TextButton muteButton { "MUTE" };
     std::array<juce::TextButton, kNumBuses> busButtons;

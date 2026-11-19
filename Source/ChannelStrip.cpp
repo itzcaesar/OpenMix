@@ -164,7 +164,7 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
         }
     }
 
-    // 3. IntelliPad
+    // 3. VoicePad
     padProcessor.process (out, numSamples);
 
     // 4. Fader / mute

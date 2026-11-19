@@ -4,7 +4,7 @@
 #include "Biquad.h"
 
 // Shared state between the pad UI (message thread) and the DSP (audio thread).
-struct IntelliPadParams
+struct VoicePadParams
 {
     enum Mode { Voice = 0, Pan = 1 };
 
@@ -15,10 +15,10 @@ struct IntelliPadParams
 
 // Voice mode: X = tone tilt (Lo <-> Hi), Y = presence + echo.
 // Pan mode:   X = constant-power pan,     Y = stereo width (100% .. 200%).
-class IntelliPadProcessor
+class VoicePadProcessor
 {
 public:
-    explicit IntelliPadProcessor (IntelliPadParams& p) : params (p) {}
+    explicit VoicePadProcessor (VoicePadParams& p) : params (p) {}
 
     void prepare (double sampleRate, int maxBlockSize);
     void process (juce::AudioBuffer<float>& stereo, int numSamples) noexcept;
@@ -26,7 +26,7 @@ public:
 private:
     void updateFilters (float x, float y01) noexcept;
 
-    IntelliPadParams& params;
+    VoicePadParams& params;
     double fs = 48000.0;
 
     juce::SmoothedValue<float> smX, smY;
@@ -37,12 +37,12 @@ private:
     int writePos = 0, delaySamplesL = 0, delaySamplesR = 0;
 };
 
-class IntelliPadComponent : public juce::Component, public juce::SettableTooltipClient
+class VoicePadComponent : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     static constexpr int headerHeight = 32;   // mode switch above the pad
 
-    explicit IntelliPadComponent (IntelliPadParams& p);
+    explicit VoicePadComponent (VoicePadParams& p);
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -62,7 +62,7 @@ private:
 
     juce::String readout() const;
 
-    IntelliPadParams& params;
+    VoicePadParams& params;
     juce::TextButton voiceButton { "Voice" }, panButton { "Pan" };
     bool dragging = false;
 };

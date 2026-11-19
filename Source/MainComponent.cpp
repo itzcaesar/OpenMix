@@ -733,9 +733,9 @@ void StripComponent::resized()
     // Bottom controls first, so the pad and the fader share what's left.
     auto bottom = r.removeFromBottom (30 + 6 + 18 + 30 + 8);
     padCaptionArea = r.removeFromTop (18);
-    const int remaining = r.getHeight() - IntelliPadComponent::headerHeight - 10;
+    const int remaining = r.getHeight() - VoicePadComponent::headerHeight - 10;
     const int padSize = juce::jlimit (110, juce::jmin (r.getWidth(), 220), remaining - 230);   // fader keeps >= 230 px
-    pad.setBounds (r.removeFromTop (padSize + IntelliPadComponent::headerHeight));
+    pad.setBounds (r.removeFromTop (padSize + VoicePadComponent::headerHeight));
     r.removeFromTop (10);
     r = r.getUnion (bottom);
 

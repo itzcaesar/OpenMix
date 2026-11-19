@@ -1,7 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "IntelliPad.h"
+#include "VoicePad.h"
 #include "ExternalIO.h"
 
 constexpr int kNumStrips = 3;
@@ -18,7 +18,7 @@ enum class SourceType : int
     App    = 3    // one application's audio (process loopback)
 };
 
-// One input strip: source -> gain -> VST3 slots -> IntelliPad -> fader -> bus sends.
+// One input strip: source -> gain -> VST3 slots -> VoicePad -> fader -> bus sends.
 class ChannelStrip
 {
 public:
@@ -58,7 +58,7 @@ public:
     std::atomic<float> faderDb  { 0.0f };
     std::atomic<bool>  mute     { false };
     std::atomic<bool>  busOn[kNumBuses] { { true }, { false }, { false } };
-    IntelliPadParams   pad;
+    VoicePadParams   pad;
 
     // Metering (written by audio thread)
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
@@ -72,7 +72,7 @@ private:
     std::unique_ptr<ExternalSource> external;
     juce::CriticalSection sourceLock;
 
-    IntelliPadProcessor padProcessor { pad };
+    VoicePadProcessor padProcessor { pad };
     juce::AudioBuffer<float> scratch;   // wide buffer for plugins with >2 channels
     juce::MidiBuffer midi;
     juce::SmoothedValue<float> inGain, outGain;
