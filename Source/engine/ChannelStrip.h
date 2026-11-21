@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "engine/VoicePad.h"
 #include "engine/ExternalIO.h"
+#include "engine/PluginChain.h"
 #include "dsp/AudioSafety.h"
 #include "dsp/DelayLine.h"
 #include "dsp/Dynamics.h"
@@ -11,7 +12,6 @@
 // Capacity. Strips and buses are allocated up front (real-time safe) and switched on/off by the
 // user; only active ones are processed and shown.
 constexpr int kNumStrips = 8;
-constexpr int kNumSlots  = 6;                     // insert slots per strip
 constexpr int kNumBuses  = 6;                     // A1-A3 hardware, B1-B3 virtual
 inline const char* const kBusNames[kNumBuses] { "A1", "A2", "A3", "B1", "B2", "B3" };
 constexpr int kDefaultStrips = 3;
@@ -23,7 +23,8 @@ enum class SourceType : int
     None   = 0,
     Main   = 1,   // a channel (or stereo pair) of the main (ASIO/WASAPI) device
     Device = 2,   // a second Windows input device
-    App    = 3    // one application's audio (process loopback)
+    App    = 3,   // one application's audio (process loopback)
+    Loopback = 4  // everything a Windows output device plays (device loopback)
 };
 
 // Settings of the built-in processors. Written by the UI, read by the audio thread.
@@ -85,32 +86,21 @@ public:
     void setExternalSource (std::unique_ptr<ExternalSource>);
     ExternalSource* getExternalSource() const noexcept { return external.get(); }
 
-    // Message thread: plugin slot management. Loaded plugins are always packed into slots
-    // 0..n-1 (no gaps), so the UI can show them as a simple ordered list.
-    bool loadPlugin (int slot, const juce::PluginDescription&, juce::AudioPluginFormatManager&, juce::String& error);
-    void installPlugin (int slot, std::unique_ptr<juce::AudioPluginInstance>);   // takes ownership, prepares it
-    void removePlugin (int slot);                                                 // later slots move up
-    void removeAllPlugins();
-    void movePlugin (int from, int to);                                           // reorder the chain
-    juce::AudioPluginInstance* getPlugin (int slot) const noexcept { return slots[(size_t) slot].get(); }
-    int getNumPlugins() const noexcept;
-
     // Back to a fresh strip (used when the user removes it).
     void resetToDefaults();
 
     //==========================================================================
     std::atomic<bool> active { false };      // shown and processed
 
-    std::array<std::atomic<bool>, kNumSlots> slotBypass {};
-    std::array<std::atomic<bool>, kNumSlots> slotFault {};   // plugin output NaN/Inf -> auto-bypassed
-    std::array<std::atomic<float>, kNumSlots> slotMix {};    // wet/dry per insert, 0..1 (1 = fully wet)
-    std::atomic<int> faultCount { 0 };                       // NaN/Inf events caught on this strip
+    PluginChain inserts;                     // VST3 inserts (slots, bypass, wet/dry)
+    std::atomic<int> faultCount { 0 };       // NaN/Inf events caught after the inserts
 
     // Message thread only
     juce::String name;                  // user-editable label
     int colour = 0;                     // tape colour index (Theme::tapeColours)
     juce::String sourceDeviceName;      // for SourceType::Device
     juce::String sourceAppExe;          // for SourceType::App, e.g. "Spotify.exe"
+    juce::String loopbackId, loopbackName;   // for SourceType::Loopback (endpoint ID, friendly name)
     juce::String appOutputDeviceId;     // where the captured app's own output goes ("" = leave it)
     juce::String appOutputDeviceName;
     uint32_t redirectedPid = 0;         // the app process OpenMix rerouted (to undo it later)
@@ -147,16 +137,11 @@ public:
     std::atomic<float> sidechainLevel { 0.0f };   // pre-fader peak of the last block, for ducking
 
 private:
-    void preparePlugin (juce::AudioPluginInstance&);
-    void runInserts (float* L, float* R, juce::AudioBuffer<float>& out, int numSamples, int& chainLatency) noexcept;
     static void storeMin (std::atomic<float>& meter, float value) noexcept
     {
         if (value < meter.load (std::memory_order_relaxed))
             meter.store (value, std::memory_order_relaxed);
     }
-
-    std::array<std::unique_ptr<juce::AudioPluginInstance>, kNumSlots> slots;
-    juce::CriticalSection slotLock;
 
     std::unique_ptr<ExternalSource> external;
     juce::CriticalSection sourceLock;
@@ -170,18 +155,8 @@ private:
     omx::DeEsser deesser;
     bool denoiseWasOn = false;
 
-    juce::AudioBuffer<float> scratch;   // wide buffer for plugins with >2 channels
-    juce::AudioBuffer<float> dryBuffer; // dry copy for bypass crossfades
-    std::array<bool, kNumSlots> wasActive {};   // audio-thread view of each slot, for crossfades
-    std::array<DelayLine, kNumSlots> bypassDelay;   // keeps latency for bypassed plugins without a bypass parameter
-    std::array<DelayLine, kNumSlots> mixDelay;      // dry path delayed by the plugin's latency for wet/dry
-    juce::AudioBuffer<float> mixDryBuffer;
     DelayLine alignLine;                            // strip-level latency alignment
-    juce::MidiBuffer midi;
     juce::SmoothedValue<float> inGain, muteGain, faderGain, duckGain;
 
     double sampleRate = 48000.0;
-    int blockSize = 512;
-
-    static constexpr int kMaxPluginChannels = 16;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
-// Per-app audio capture using Windows' process loopback API (Windows 10 2004 / build 19041+).
+// Loopback capture: one app's audio (process loopback, Windows 10 2004 / build 19041+), or
+// everything an output device plays (device loopback).
 // Plain C++ on purpose: the Win32/COM details stay inside AppCapture.cpp.
 
 #include <cstdint>
@@ -51,12 +52,17 @@ public:
     // Starts capturing everything `pid` (and its child processes) plays, pushing stereo
     // 48 kHz float audio into `target`. Returns false and fills `error` on failure.
     bool start (uint32_t pid, ClockBridge& target, std::string& error);
+
+    // Starts capturing everything the output device `endpointId` plays (WASAPI loopback).
+    bool startDevice (const std::wstring& endpointId, ClockBridge& target, std::string& error);
+
     void stop();
 
     // True once the capture stream has died (e.g. Windows invalidated it after a device change).
     bool hasFailed() const noexcept;
 
 private:
+    bool launch (uint32_t pid, const std::wstring& endpointId, ClockBridge& target, std::string& error);
     struct Impl;
     std::unique_ptr<Impl> impl;
 };

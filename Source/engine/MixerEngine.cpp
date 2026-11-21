@@ -189,6 +189,29 @@ bool MixerEngine::setStripSourceApp (int s, const juce::String& exeName, juce::S
     return strip.getExternalSource() != nullptr;
 }
 
+bool MixerEngine::setStripSourceLoopback (int s, const juce::String& endpointId, const juce::String& name, juce::String& error)
+{
+    auto& strip = getStrip (s);
+    undoAppRedirect (s);
+    strip.loopbackId = endpointId;
+    strip.loopbackName = name;
+    strip.sourceType.store ((int) SourceType::Loopback);
+
+    strip.setExternalSource (DeviceLoopbackSource::open (endpointId, error));
+    return strip.getExternalSource() != nullptr;
+}
+
+juce::StringArray MixerEngine::getOwnOutputDeviceNames() const
+{
+    juce::StringArray names;
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        names.add (device->getName());
+    for (auto& b : buses)
+        if (b.active.load() && (BusTarget) b.target.load() == BusTarget::Device && b.deviceName.isNotEmpty())
+            names.addIfNotAlreadyThere (b.deviceName);
+    return names;
+}
+
 bool MixerEngine::setStripAppOutput (int s, const juce::String& deviceId, const juce::String& deviceName, juce::String& error)
 {
     auto& strip = getStrip (s);
@@ -283,6 +306,9 @@ void MixerEngine::removeBus (int b)
     bus.monitor.store (false);
     bus.faderDb.store (0.0f);
     bus.mute.store (false);
+    bus.inserts.removeAllPlugins();
+    bus.fx.eqOn.store (false);   bus.fx.eqLowDb.store (0.0f); bus.fx.eqMidDb.store (0.0f); bus.fx.eqMidHz.store (1000.0f); bus.fx.eqHighDb.store (0.0f);
+    bus.fx.compOn.store (false); bus.fx.compThresholdDb.store (-18.0f); bus.fx.compRatio.store (3.0f);
     for (auto& s : strips)
         s->busOn[b].store (false);
 }
@@ -361,6 +387,27 @@ void MixerEngine::maintainSources()
                     s.setExternalSource (AppLoopbackSource::open (pid, error));
                     if (s.getExternalSource() != nullptr && s.appOutputDeviceId.isNotEmpty())
                         setStripAppOutput (i, s.appOutputDeviceId, s.appOutputDeviceName, error);
+                }
+                break;
+            }
+
+            case SourceType::Loopback:
+            {
+                if (current != nullptr && current->isHealthy())
+                    break;
+                if (current != nullptr)
+                    s.setExternalSource (nullptr);   // device removed or stream invalidated
+
+                // Reconnect by endpoint ID, or by name if Windows gave the device a new ID.
+                for (const auto& d : listRenderDevices())
+                {
+                    const juce::String id (d.id.c_str()), name (d.name.c_str());
+                    if (id == s.loopbackId || name == s.loopbackName)
+                    {
+                        juce::String error;
+                        setStripSourceLoopback (i, id, name, error);
+                        break;
+                    }
                 }
                 break;
             }
@@ -501,6 +548,9 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         busGain[(size_t) b].reset (sr, 0.02);
         busGain[(size_t) b].setCurrentAndTargetValue (dbToGain (buses[(size_t) b].faderDb.load()));
         busLimiter[(size_t) b].prepare (sr);
+        busEq[(size_t) b].prepare (sr);
+        busComp[(size_t) b].prepare (sr);
+        buses[(size_t) b].inserts.prepare (sr, maxBlock);
     }
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -519,6 +569,8 @@ void MixerEngine::audioDeviceStopped()
 {
     for (auto& s : strips)
         s->release();
+    for (auto& b : buses)
+        b.inserts.release();
 }
 
 void MixerEngine::audioDeviceIOCallbackWithContext (const float* const* inputs, int numInputs,
@@ -595,6 +647,7 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
 
             case SourceType::Device:
             case SourceType::App:
+            case SourceType::Loopback:
             {
                 auto* l = sourceBuffer.getWritePointer (0);
                 auto* r = sourceBuffer.getWritePointer (1);
@@ -658,6 +711,31 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         auto& bus = buses[(size_t) b];
         if (! bus.active.load())
             continue;
+
+        auto* L = busBuffer.getWritePointer (b * 2);
+        auto* R = busBuffer.getWritePointer (b * 2 + 1);
+
+        // Bus processing (before the fader, so the fader stays a plain level control).
+        if (bus.fx.eqOn.load())
+        {
+            auto& eq = busEq[(size_t) b];
+            eq.lowDb = bus.fx.eqLowDb.load();
+            eq.midDb = bus.fx.eqMidDb.load();
+            eq.midHz = bus.fx.eqMidHz.load();
+            eq.highDb = bus.fx.eqHighDb.load();
+            eq.process (L, R, n);
+        }
+        if (bus.fx.compOn.load())
+        {
+            auto& comp = busComp[(size_t) b];
+            comp.thresholdDb = bus.fx.compThresholdDb.load();
+            comp.ratio = bus.fx.compRatio.load();
+            const float gr = comp.process (L, R, n);
+            if (gr < bus.fx.compGain.load (std::memory_order_relaxed))
+                bus.fx.compGain.store (gr, std::memory_order_relaxed);
+        }
+        int busLatency = 0;
+        bus.inserts.process (L, R, n, busLatency);
 
         auto& g = busGain[(size_t) b];
         g.setTargetValue (bus.mute.load() ? 0.0f : dbToGain (bus.faderDb.load()));

@@ -2,7 +2,8 @@
 
 A virtual mixer for Windows: ASIO / WASAPI / DirectSound I/O, up to 8 input strips and
 6 buses, built-in voice processing (AI noise removal, gate, EQ, compressor, de-esser,
-ducking), VST3 plugin hosting with wet/dry and A/B compare, a VoicePad (XY pad with voice,
+ducking), VST3 plugin hosting on strips and buses with wet/dry and A/B compare, bus EQ and
+compression, device loopback capture, a VoicePad (XY pad with voice,
 pan, colour and space modes), send levels and a monitor bus, per-app audio capture, and
 creator tools (multitrack recorder, replay buffer, soundboard, spectrum analyser and LUFS
 meters, OSC remote control), in a studio-hardware style UI with dark and light themes.
@@ -46,6 +47,9 @@ cmake --build --preset release
      own output too; in Windows' Volume Mixer, point that app at a device you don't
      listen to if you only want to hear it through OpenMix. If the app quits, the strip
      shows "(not running)" and reconnects when it starts again.
+   - **Windows output (loopback)**: everything one output device plays (for example your
+     speakers while a game uses them), without a virtual cable. Devices OpenMix itself plays
+     into are greyed out, because capturing them would feed the sound back into itself.
 
    A strip can also take a **stereo pair** of the main device (e.g. Input 1 + Input 2).
    For an app source, **App's own output** sends that app's direct sound to a device you
@@ -94,7 +98,10 @@ cmake --build --preset release
    their own clocks; OpenMix resamples them and corrects drift, which adds about 10-25 ms of
    latency on those devices only. The **LIMITER** lamp lights while the bus safety limiter
    is working. "+" after the last bus adds one (A1-A3 hardware, B1-B3 virtual); the
-   three-dot menu sets the monitor bus, opens the **analyser** (spectrum, momentary,
+   Each bus has its own **EQ** and **Comp** keys (click for settings, Space switches them on)
+   and up to 6 **VST3 inserts**, with the same plugin handling as a strip. Bus signal path:
+   sum -> EQ -> compressor -> inserts -> fader -> safety limiter.
+   The three-dot menu sets the monitor bus, opens the **analyser** (spectrum, momentary,
    short-term and integrated LUFS) or removes the bus. The LOUDNESS readout under the fader
    shows short-term LUFS.
 8. **Settings** (header): start with Windows, start minimized, keep running in the tray
@@ -155,12 +162,13 @@ Everything (device, theme, strips, plugins and their settings, buses, soundboard
 | Folder | What's in it |
 |---|---|
 | `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, status, console layout), `AppSettings`, `Session` (save/restore to XML), `OscControl`, `UpdateChecker` |
-| `Source/engine/` | `MixerEngine` (device, real-time callback, strip -> bus -> output), `ChannelStrip` (per-strip DSP, VST3 slots, wet/dry), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices and app sources), `AppCapture` (per-app loopback), `AppRouting` (per-app output device), `PluginScanner` (crash-safe scanning in child processes) |
+| `Source/engine/` | `MixerEngine` (device, real-time callback, strip -> bus -> output), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses: bypass, wet/dry, NaN guard), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices and app sources), `AppCapture` (per-app and per-device loopback), `AppRouting` (per-app output device), `PluginScanner` (crash-safe scanning in child processes) |
 | `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
 | `Source/dsp/` | Header-only real-time building blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS); plus `Denoiser` (RNNoise at any sample rate) |
-| `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `Panels` (processor, send and wet/dry pop-overs), `AnalyserPanel`, `SoundboardPanel`, `SettingsPanel`, `TrayIcon` |
+| `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `Panels` (processor, send and wet/dry pop-overs), `InsertRack` (insert list, plugin windows, presets, A/B), `AnalyserPanel`, `SoundboardPanel`, `SettingsPanel`, `TrayIcon` |
 | `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |
 | `tests/CoreTests.cpp` | Core unit tests (no JUCE) |
+| `resources/` | App icon (`make_icon.py` draws `icon.png` and `icon.ico`) |
 | `installer/OpenMix.iss` | Inno Setup installer (built by CI for version tags) |
 
 ## Reliability

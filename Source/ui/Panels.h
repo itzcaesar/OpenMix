@@ -64,15 +64,17 @@ private:
 class ProcessorPanel : public PanelBase
 {
 public:
-    ProcessorPanel (MixerEngine&, int stripIndex, Processor);
+    // stripIndex: the strip these settings belong to, or -1 for a bus.
+    ProcessorPanel (MixerEngine&, ProcessingParams&, Processor, int stripIndex = -1);
 
 private:
     void layoutExtra (juce::Rectangle<int>&) override;
     void tick() override;
 
     MixerEngine& engine;
-    ChannelStrip& strip;
+    ProcessingParams& fx;
     Processor kind;
+    int stripIndex;
     juce::ComboBox duckSource;
     juce::Label duckLabel;
 };

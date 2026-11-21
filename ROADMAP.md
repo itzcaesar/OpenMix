@@ -78,7 +78,7 @@ VB-Cable at the same time, for hours, with no drift clicks.
       output to a virtual cable, and OpenMix captures that cable's other end
 - [x] Stereo hardware strips (L/R input pair), selectable per strip
 - [x] Configurable strip count (add or remove strips at runtime)
-- [ ] WASAPI loopback capture as an option (records what a device plays without a cable)
+- [x] WASAPI loopback capture as a strip source (what a device plays, without a cable)
 - [x] **Per-app routing**: list running audio apps and assign each to a strip. Either use
       Windows' per-app output device setting (the same mechanism EarTrumpet uses) to send
       the app to an OpenMix virtual device, or use process loopback capture
@@ -92,7 +92,7 @@ fader, and the mic + effects go to B1 as Discord's input.
 Built-in so the basics work without third-party plugins:
 
 - [x] Gate, compressor, 3-band EQ and de-esser per strip; safety limiter per bus
-- [ ] Bus EQ (graphic / parametric) and a bus limiter to prevent clipping
+- [x] Bus EQ and compressor, VST3 inserts on every bus; safety limiter per bus
 - [x] Solo, mono, polarity invert, per-send levels (send matrix instead of on/off)
 - [x] Ducking: lower music when the mic talks (sidechain from one strip to another)
 - [x] Recorder: every bus and/or strip to WAV (`juce::AudioFormatWriter::ThreadedWriter`)

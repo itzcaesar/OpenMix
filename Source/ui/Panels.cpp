@@ -202,11 +202,11 @@ void PanelBase::resized()
 //==============================================================================
 // ProcessorPanel
 
-ProcessorPanel::ProcessorPanel (MixerEngine& e, int stripIndex, Processor p)
-    : PanelBase (processorName (p), &processorOn (e.getStrip (stripIndex).fx, p)),
-      engine (e), strip (e.getStrip (stripIndex)), kind (p)
+ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Processor p, int strip)
+    : PanelBase (processorName (p), &processorOn (params, p)),
+      engine (e), fx (params), kind (p), stripIndex (strip)
 {
-    auto& fx = strip.fx;
+    const bool onBus = stripIndex < 0;
     int height = 230;
 
     switch (p)
@@ -232,7 +232,9 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, int stripIndex, Processor p)
             addKnob ({ "Mid", -12, 12, 0.1, " dB", fx.eqMidDb });
             addKnob ({ "Mid freq", 100, 10000, 1, " Hz", fx.eqMidHz, 1000.0 });
             addKnob ({ "High", -12, 12, 0.1, " dB", fx.eqHighDb });
-            setHelp ("Low shelf at 120 Hz, a sweepable middle band, high shelf at 8 kHz.");
+            setHelp (onBus ? "Shapes this bus only (for example a brighter stream mix). Low shelf at 120 Hz, "
+                             "a sweepable middle band, high shelf at 8 kHz."
+                           : "Low shelf at 120 Hz, a sweepable middle band, high shelf at 8 kHz.");
             height = 200;
             break;
 
@@ -240,7 +242,9 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, int stripIndex, Processor p)
             addKnob ({ "Threshold", -60, 0, 0.5, " dB", fx.compThresholdDb });
             addKnob ({ "Ratio", 1, 20, 0.1, ":1", fx.compRatio, 4.0 });
             setMeter (&fx.compGain, "Reduction");
-            setHelp ("Evens out loud and quiet parts. Make-up gain is added automatically.");
+            setHelp (onBus ? "Evens out the whole bus mix (glue for a stream or recording). Make-up gain is added "
+                             "automatically; the safety limiter still catches peaks after it."
+                           : "Evens out loud and quiet parts. Make-up gain is added automatically.");
             break;
 
         case Processor::DeEss:
@@ -264,7 +268,7 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, int stripIndex, Processor p)
             for (int s = 0; s < kNumStrips; ++s)
             {
                 auto& other = engine.getStrip (s);
-                if (other.active.load() && &other != &strip)
+                if (other.active.load() && s != stripIndex)
                     duckSource.addItem (other.name.isNotEmpty() ? other.name : "Input " + juce::String (s + 1), s + 2);
             }
             duckSource.setSelectedId (fx.duckSource.load() + 2, juce::dontSendNotification);
@@ -273,7 +277,7 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, int stripIndex, Processor p)
             duckSource.setTitle ("Duck under which strip");
             duckSource.onChange = [this]
             {
-                strip.fx.duckSource.store (duckSource.getSelectedId() - 2);
+                fx.duckSource.store (duckSource.getSelectedId() - 2);
                 if (onChange) onChange();
             };
             makeClickable (duckSource);
@@ -298,11 +302,11 @@ void ProcessorPanel::layoutExtra (juce::Rectangle<int>& r)
 
 void ProcessorPanel::tick()
 {
-    if (kind == Processor::Denoise && strip.fx.denoiseOn.load() && ! strip.fx.denoiseUnavailable.load())
+    if (kind == Processor::Denoise && fx.denoiseOn.load() && ! fx.denoiseUnavailable.load())
     {
-        const auto voice = juce::roundToInt (strip.fx.voiceProbability.load() * 100.0f);
+        const auto voice = juce::roundToInt (fx.voiceProbability.load() * 100.0f);
         setHelp ("Removes steady background noise (fans, hum, keyboard) from voice. Adds "
-                 + juce::String (strip.fx.denoiseLatencyMs.load()) + " ms of latency, which the other strips are matched to. "
+                 + juce::String (fx.denoiseLatencyMs.load()) + " ms of latency, which the other strips are matched to. "
                  "Voice detected: " + juce::String (voice) + "%.");
     }
 }

@@ -8,18 +8,34 @@ TrayIcon::TrayIcon()
     setIconTooltip ("OpenMix");
 }
 
-// Placeholder mark: the product initials on a strip of tape (the UI's identity motif).
-// Replace with a designed icon when one exists.
+// The app icon (resources/make_icon.py), drawn in code: a faceplate with three faders, the
+// middle cap lit amber. Keep the geometry in step with the script (1024 units -> 32 px).
 juce::Image TrayIcon::makeIcon()
 {
-    juce::Image img (juce::Image::ARGB, 32, 32, true);
+    constexpr int size = 32;
+    juce::Image img (juce::Image::ARGB, size, size, true);
     juce::Graphics g (img);
     const auto& t = Theme::darkPalette();
-    g.setColour (t.tape);
-    g.fillRoundedRectangle (1.0f, 6.0f, 30.0f, 20.0f, 3.0f);
-    g.setColour (t.tapeText);
-    g.setFont (Theme::ui (15.0f, true));
-    g.drawText ("OM", 1, 6, 30, 20, juce::Justification::centred);
+    const float k = size / 1024.0f;
+    auto rect = [k] (float x0, float y0, float x1, float y1) { return juce::Rectangle<float> (x0 * k, y0 * k, (x1 - x0) * k, (y1 - y0) * k); };
+
+    g.setColour (juce::Colour (0xff3a3a3a));
+    g.fillRoundedRectangle (rect (56, 56, 968, 968), 196 * k);
+    g.setColour (t.panel);
+    g.fillRoundedRectangle (rect (76, 76, 948, 948), 178 * k);
+
+    const struct { float cx, cy; juce::Colour cap; } faders[] {
+        { 300, 612, t.tape }, { 512, 392, t.accent }, { 724, 520, t.tape }
+    };
+    for (const auto& f : faders)
+    {
+        g.setColour (t.meterWell);
+        g.fillRoundedRectangle (rect (f.cx - 30, 216, f.cx + 30, 808), 30 * k);
+        g.setColour (f.cap);
+        g.fillRoundedRectangle (rect (f.cx - 104, f.cy - 54, f.cx + 104, f.cy + 54), 22 * k);
+        g.setColour (t.onAccent);
+        g.fillRect (rect (f.cx - 104, f.cy - 7, f.cx + 104, f.cy + 7));
+    }
     return img;
 }
 

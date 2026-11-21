@@ -5,18 +5,7 @@
 #include "engine/VoicePad.h"
 #include "ui/Widgets.h"
 #include "ui/Panels.h"
-
-// A plugin's own editor in its own window.
-class PluginWindow : public juce::DocumentWindow
-{
-public:
-    PluginWindow (juce::AudioPluginInstance&, std::function<void()> onCloseFn);
-    ~PluginWindow() override;
-    void closeButtonPressed() override;
-
-private:
-    std::function<void()> onClose;
-};
+#include "ui/InsertRack.h"
 
 // One input channel strip, top to bottom in signal-flow order:
 // name tape, source + gain, inserts, processing, voice pad, sends, mute/solo, fader + meter.
@@ -38,8 +27,6 @@ public:
     static constexpr int minWidth = 214, maxWidth = 300;
 
 private:
-    class InsertList;
-
     // Source + strip menu
     void showSourceMenu();
     void updateSourceButton();
@@ -52,21 +39,6 @@ private:
     void updateKeys();
     juce::Component* popupParent();
 
-    // Inserts
-    void updateSlotRows();
-    void slotMain (int slot);
-    void showSlotMenu (int slot);
-    void showPluginMenu (int slot);
-    void toggleBypass (int slot);
-    void removeSlot (int slot);
-    void moveSlot (int from, int to);
-    void loadPluginAsync (int slot, const juce::PluginDescription&, std::function<void (juce::AudioPluginInstance&)> then = {});
-    void savePreset (int slot);
-    void loadPreset (int slot);
-    void openEditor (juce::AudioPluginInstance*);
-    void closeEditor (juce::AudioPluginInstance*);
-    int visibleRowCount() const;
-
     juce::String displayName() const;
 
     MixerEngine& engine;
@@ -77,8 +49,7 @@ private:
     MenuDotsButton menuButton;
     ChipButton sourceButton;
     DbSlider gainKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxRight };
-    juce::Viewport insertsView;
-    std::unique_ptr<InsertList> insertList;
+    InsertRack inserts;
     std::array<StripKey, 6> processKeys;
     VoicePadComponent pad;
     std::array<StripKey, kNumBuses> sendButtons;
@@ -86,20 +57,8 @@ private:
     FaderSection faderSection;
 
     juce::Rectangle<int> gainLegend, insertsLegend, processLegend, padLegend, sendsLegend;
-    int loadingSlot = -1;
-    juce::String loadingName;
-    int lastFaultCount = 0, lastLatency = -1, tickCount = 0;
-    int dragFrom = -1, dropIndex = -1;
+    int lastLatency = -1, tickCount = 0;
     bool inLayout = false;
-
-    std::map<juce::AudioPluginInstance*, std::unique_ptr<PluginWindow>> editorWindows;
-
-    // A/B compare: two snapshots of a plugin's settings (kept while OpenMix runs).
-    struct AbState { juce::MemoryBlock a, b; bool onB = false; };
-    std::map<juce::AudioPluginInstance*, AbState> abStates;
-    void abSwitch (juce::AudioPluginInstance*, bool toB);
-    void openMixPanel (int slot);
-    std::unique_ptr<juce::FileChooser> chooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StripView)
 };

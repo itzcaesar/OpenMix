@@ -26,6 +26,11 @@ struct Bus
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
     std::atomic<float> limiterGain { 1.0f };   // lowest safety-limiter gain since the UI last read it
 
+    // Bus processing, in order: EQ -> compressor -> VST3 inserts -> fader -> safety limiter.
+    // Only the EQ and compressor fields of `fx` are used on a bus.
+    ProcessingParams fx;
+    PluginChain inserts;
+
     // Analysis feed for the UI (loudness, spectrum): the audio thread writes, the UI reads.
     juce::AbstractFifo analysisFifo { 32768 };
     juce::AudioBuffer<float> analysisBuffer { 2, 32768 };
@@ -70,6 +75,11 @@ public:
     void setStripSourceMain (int strip, int channel, int rightChannel = -1);   // rightChannel >= 0: stereo pair
     bool setStripSourceDevice (int strip, const juce::String& deviceName, juce::String& error);
     bool setStripSourceApp (int strip, const juce::String& exeName, juce::String& error);
+    bool setStripSourceLoopback (int strip, const juce::String& endpointId, const juce::String& name, juce::String& error);
+
+    // Output devices OpenMix itself plays into (main device and bus devices). Capturing one of
+    // them on a strip that feeds a bus would loop the sound back on itself.
+    juce::StringArray getOwnOutputDeviceNames() const;
 
     // Where a captured app's own output goes, so it isn't heard twice ("" = leave it alone).
     bool setStripAppOutput (int strip, const juce::String& deviceId, const juce::String& deviceName, juce::String& error);
@@ -131,6 +141,8 @@ private:
     juce::AudioBuffer<float> stripBuffer, preBuffer, busBuffer, sourceBuffer, soundBuffer;
     std::array<juce::SmoothedValue<float>, kNumBuses> busGain;
     std::array<AudioSafety::SafetyLimiter, kNumBuses> busLimiter;
+    std::array<omx::Eq3, kNumBuses> busEq;
+    std::array<omx::Compressor, kNumBuses> busComp;
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;
     int maxBlock = 512;
     std::atomic<double> currentSampleRate { 48000.0 };

@@ -73,6 +73,57 @@ static void loadProcessing (const juce::XmlElement* e, ProcessingParams& fx)
     fx.duckThresholdDb.store (f ("duckThreshold", -40.0));
 }
 
+static void saveChain (juce::XmlElement& x, PluginChain& chain)
+{
+    for (int slot = 0; slot < kNumSlots; ++slot)
+    {
+        auto* plugin = chain.getPlugin (slot);
+        if (plugin == nullptr)
+            continue;
+
+        auto* xp = x.createNewChildElement ("Slot");
+        xp->setAttribute ("index", slot);
+        xp->setAttribute ("bypass", chain.slotBypass[(size_t) slot].load());
+        xp->setAttribute ("mix", chain.slotMix[(size_t) slot].load());
+        xp->addChildElement (plugin->getPluginDescription().createXml().release());
+
+        juce::MemoryBlock state;
+        plugin->getStateInformation (state);
+        xp->setAttribute ("state", state.toBase64Encoding());
+    }
+}
+
+static void loadChain (const juce::XmlElement& x, PluginChain& chain, MixerEngine& engine)
+{
+    for (auto* xp : x.getChildWithTagNameIterator ("Slot"))
+    {
+        const int slot = xp->getIntAttribute ("index", -1);
+        auto* xd = xp->getChildByName ("PLUGIN");
+        if (! juce::isPositiveAndBelow (slot, kNumSlots) || xd == nullptr)
+            continue;
+
+        juce::PluginDescription desc;
+        if (! desc.loadFromXml (*xd))
+            continue;
+
+        juce::String pluginError;
+        if (! chain.loadPlugin (slot, desc, engine.getFormatManager(), pluginError))
+        {
+            juce::Logger::writeToLog ("Could not restore " + desc.name + ": " + pluginError);
+            continue;
+        }
+
+        // Slots are packed, so the plugin may sit lower than its saved index.
+        const int installed = chain.getNumPlugins() - 1;
+        chain.slotBypass[(size_t) installed].store (xp->getBoolAttribute ("bypass", false));
+        chain.slotMix[(size_t) installed].store ((float) xp->getDoubleAttribute ("mix", 1.0));
+
+        juce::MemoryBlock state;
+        if (state.fromBase64Encoding (xp->getStringAttribute ("state")) && state.getSize() > 0)
+            chain.getPlugin (installed)->setStateInformation (state.getData(), (int) state.getSize());
+    }
+}
+
 void Session::save (MixerEngine& engine)
 {
     juce::XmlElement root ("OpenMixSession");
@@ -98,6 +149,8 @@ void Session::save (MixerEngine& engine)
         xs->setAttribute ("sourceType", strip.sourceType.load());
         xs->setAttribute ("sourceDevice", strip.sourceDeviceName);
         xs->setAttribute ("sourceApp", strip.sourceAppExe);
+        xs->setAttribute ("loopbackId", strip.loopbackId);
+        xs->setAttribute ("loopbackName", strip.loopbackName);
         xs->setAttribute ("appOutputId", strip.appOutputDeviceId);
         xs->setAttribute ("appOutputName", strip.appOutputDeviceName);
         xs->setAttribute ("gain", strip.gainDb.load());
@@ -118,23 +171,7 @@ void Session::save (MixerEngine& engine)
         }
 
         saveProcessing (*xs, strip.fx);
-
-        for (int slot = 0; slot < kNumSlots; ++slot)
-        {
-            auto* plugin = strip.getPlugin (slot);
-            if (plugin == nullptr)
-                continue;
-
-            auto* xp = xs->createNewChildElement ("Slot");
-            xp->setAttribute ("index", slot);
-            xp->setAttribute ("bypass", strip.slotBypass[(size_t) slot].load());
-            xp->setAttribute ("mix", strip.slotMix[(size_t) slot].load());
-            xp->addChildElement (plugin->getPluginDescription().createXml().release());
-
-            juce::MemoryBlock state;
-            plugin->getStateInformation (state);
-            xp->setAttribute ("state", state.toBase64Encoding());
-        }
+        saveChain (*xs, strip.inserts);
     }
 
     for (int b = 0; b < kNumBuses; ++b)
@@ -149,6 +186,8 @@ void Session::save (MixerEngine& engine)
         xb->setAttribute ("output", bus.outputPair.load());
         xb->setAttribute ("target", bus.target.load());
         xb->setAttribute ("device", bus.deviceName);
+        saveProcessing (*xb, bus.fx);
+        saveChain (*xb, bus.inserts);
     }
 
     {
@@ -227,6 +266,10 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
             case SourceType::Main:   engine.setStripSourceMain (s, xs->getIntAttribute ("input", -1), xs->getIntAttribute ("inputRight", -1)); break;
             case SourceType::Device: engine.setStripSourceDevice (s, xs->getStringAttribute ("sourceDevice"), error); break;
             case SourceType::App:    engine.setStripSourceApp (s, xs->getStringAttribute ("sourceApp"), error); break;
+            case SourceType::Loopback:
+                if (! engine.setStripSourceLoopback (s, xs->getStringAttribute ("loopbackId"), xs->getStringAttribute ("loopbackName"), error))
+                    juce::Logger::writeToLog ("Loopback " + strip.loopbackName + ": " + error);   // maintainSources() retries
+                break;
         }
 
         strip.name = xs->getStringAttribute ("name");
@@ -249,37 +292,8 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
         }
 
         loadProcessing (xs->getChildByName ("Processing"), strip.fx);
-
-        for (auto* xp : xs->getChildWithTagNameIterator ("Slot"))
-        {
-            if (! loadPlugins)
-                break;
-
-            const int slot = xp->getIntAttribute ("index", -1);
-            auto* xd = xp->getChildByName ("PLUGIN");
-            if (! juce::isPositiveAndBelow (slot, kNumSlots) || xd == nullptr)
-                continue;
-
-            juce::PluginDescription desc;
-            if (! desc.loadFromXml (*xd))
-                continue;
-
-            juce::String pluginError;
-            if (! strip.loadPlugin (slot, desc, engine.getFormatManager(), pluginError))
-            {
-                juce::Logger::writeToLog ("Could not restore " + desc.name + ": " + pluginError);
-                continue;
-            }
-
-            // Slots are packed, so the plugin may sit lower than its saved index.
-            const int installed = strip.getNumPlugins() - 1;
-            strip.slotBypass[(size_t) installed].store (xp->getBoolAttribute ("bypass", false));
-            strip.slotMix[(size_t) installed].store ((float) xp->getDoubleAttribute ("mix", 1.0));
-
-            juce::MemoryBlock state;
-            if (state.fromBase64Encoding (xp->getStringAttribute ("state")) && state.getSize() > 0)
-                strip.getPlugin (installed)->setStateInformation (state.getData(), (int) state.getSize());
-        }
+        if (loadPlugins)
+            loadChain (*xs, strip.inserts, engine);
     }
 
     bool anyMonitor = false;
@@ -295,6 +309,9 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
         anyMonitor = anyMonitor || bus.monitor.load();
         bus.faderDb.store ((float) xb->getDoubleAttribute ("fader", 0.0));
         bus.mute.store (xb->getBoolAttribute ("mute", false));
+        loadProcessing (xb->getChildByName ("Processing"), bus.fx);
+        if (loadPlugins)
+            loadChain (*xb, bus.inserts, engine);
 
         juce::String error;
         switch ((BusTarget) xb->getIntAttribute ("target", (int) BusTarget::MainPair))

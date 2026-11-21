@@ -93,6 +93,18 @@ std::unique_ptr<AppLoopbackSource> AppLoopbackSource::open (uint32_t pid, juce::
     return source;
 }
 
+std::unique_ptr<DeviceLoopbackSource> DeviceLoopbackSource::open (const juce::String& endpointId, juce::String& error)
+{
+    std::unique_ptr<DeviceLoopbackSource> source (new DeviceLoopbackSource());
+    std::string err;
+    if (! source->capture.startDevice (endpointId.toWideCharPointer(), source->bridge, err))
+    {
+        error = juce::String (err);
+        return nullptr;
+    }
+    return source;
+}
+
 //==============================================================================
 std::unique_ptr<DeviceOutputSink> DeviceOutputSink::open (juce::AudioIODeviceType& type, const juce::String& name,
                                                           double preferredRate, juce::String& error)

@@ -4,6 +4,7 @@
 
 BusView::BusView (MixerEngine& e, int i)
     : engine (e), bus (e.getBus (i)), index (i),
+      inserts (e, e.getBus (i).inserts),
       faderSection (bus.peakL, bus.peakR, "Bus " + juce::String (kBusNames[i]))
 {
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
@@ -13,7 +14,7 @@ BusView::BusView (MixerEngine& e, int i)
     addAndMakeVisible (tape);
 
     menuButton.setTitle ("Bus " + juce::String (kBusNames[i]) + " options");
-    menuButton.setTooltip ("Monitor bus, remove bus.");
+    menuButton.setTooltip ("Analyser and loudness, monitor bus, remove bus.");
     menuButton.onClick = [this] { showBusMenu(); };
     addAndMakeVisible (menuButton);
 
@@ -28,6 +29,23 @@ BusView::BusView (MixerEngine& e, int i)
 
     faderSection.fader.onValueChange = [this] { bus.faderDb.store ((float) faderSection.fader.getValue()); };
     addAndMakeVisible (faderSection);
+
+    // Processing keys: click opens the settings, Space switches on/off (same as on a strip).
+    for (auto [key, proc] : { std::pair { &eqKey, Processor::Eq }, std::pair { &compKey, Processor::Comp } })
+    {
+        makeLamp (*key, "key");
+        key->onClick = [this, p = proc] { openProcessorPanel (p); };
+        key->onSpace = [this, p = proc]
+        {
+            auto& flag = processorOn (bus.fx, p);
+            flag.store (! flag.load());
+            updateKeys();
+        };
+        addAndMakeVisible (*key);
+    }
+
+    inserts.onRowCountChanged = [this] { if (! inLayout && getHeight() > 0) resized(); };
+    addAndMakeVisible (inserts);
 
     refreshFromBus();
 }
@@ -58,6 +76,28 @@ void BusView::drainAnalysis()
     }
 }
 
+void BusView::updateKeys()
+{
+    const juce::String name (kBusNames[index]);
+    eqKey.setToggleState (bus.fx.eqOn.load(), juce::dontSendNotification);
+    compKey.setToggleState (bus.fx.compOn.load(), juce::dontSendNotification);
+    eqKey.setTitle ("Bus " + name + " EQ, " + (bus.fx.eqOn.load() ? "on" : "off"));
+    compKey.setTitle ("Bus " + name + " compressor, " + (bus.fx.compOn.load() ? "on" : "off"));
+    eqKey.setTooltip ("EQ on " + name + " only. Click for settings, Space switches it on or off.");
+    compKey.setTooltip ("Compressor on " + name + " only. Click for settings, Space switches it on or off.");
+}
+
+void BusView::openProcessorPanel (Processor p)
+{
+    auto panel = std::make_unique<ProcessorPanel> (engine, bus.fx, p);
+    juce::Component::SafePointer<BusView> safe (this);
+    panel->onChange = [safe] { if (safe != nullptr) safe->updateKeys(); };
+
+    auto& key = p == Processor::Eq ? eqKey : compKey;
+    auto* top = getTopLevelComponent();
+    juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&key, key.getLocalBounds()), top);
+}
+
 void BusView::openAnalyser()
 {
     auto panel = std::make_unique<AnalyserPanel> ("Bus " + juce::String (kBusNames[index]), analysis);
@@ -68,6 +108,7 @@ void BusView::openAnalyser()
 void BusView::tick()
 {
     faderSection.tick();
+    inserts.tick();
 
     drainAnalysis();
     if (++analysisTicks % 10 == 0)
@@ -109,6 +150,7 @@ void BusView::showBusMenu()
             {
                 if (safe == nullptr || result != 1)
                     return;
+                safe->inserts.closeAllEditors();
                 safe->engine.removeBus (safe->index);
                 if (safe->onLayoutChanged)
                     safe->onLayoutChanged();
@@ -121,6 +163,8 @@ void BusView::refreshFromBus()
 {
     faderSection.fader.setValue (bus.faderDb.load(), juce::dontSendNotification);
     muteButton.setToggleState (bus.mute.load(), juce::dontSendNotification);
+    updateKeys();
+    inserts.refresh();
     refreshDevice();
 }
 
@@ -291,11 +335,22 @@ void BusView::paint (juce::Graphics& g)
     g.setFont (Theme::mono (11.5f));
     g.setColour (std::isfinite (st) ? t.text : t.textFaint);
     g.drawText (std::isfinite (st) ? juce::String (st, 1) + " LUFS" : juce::String ("no signal"), la2, juce::Justification::centredRight);
+
+    Theme::drawLegend (g, "Processing", processLegend);
+    Theme::drawLegend (g, "Inserts", insertsLegend);
+    if (const int lat = bus.inserts.latencySamples.load(); lat > 0 && engine.getSampleRate() > 0)
+    {
+        g.setFont (Theme::mono (11.0f));
+        g.setColour (t.textFaint);
+        g.drawText (juce::String (1000.0 * lat / engine.getSampleRate(), 1) + " ms", insertsLegend, juce::Justification::centredRight);
+    }
 }
 
 void BusView::resized()
 {
+    const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);
     auto r = getLocalBounds().reduced (Theme::s3, Theme::s3);
+    const bool compact = getHeight() < 760;
 
     auto titleRow = r.removeFromTop (30);
     menuButton.setBounds (titleRow.removeFromRight (30));
@@ -311,6 +366,20 @@ void BusView::resized()
     limiterArea = r.removeFromTop (18);
     monitorArea = r.removeFromTop (18);
     loudnessArea = r.removeFromTop (18);
+    r.removeFromTop (Theme::s3);
+
+    processLegend = r.removeFromTop (18);
+    {
+        auto row = r.removeFromTop (26);
+        const int kw = (row.getWidth() - 3) / 2;
+        eqKey.setBounds (row.removeFromLeft (kw));
+        row.removeFromLeft (3);
+        compKey.setBounds (row);
+    }
+    r.removeFromTop (Theme::s3);
+
+    insertsLegend = r.removeFromTop (18);
+    inserts.setBounds (r.removeFromTop (InsertRack::heightForRows (juce::jmin (inserts.getVisibleRowCount(), compact ? 1 : 2))));
 
     muteButton.setBounds (r.removeFromBottom (30));
     r.removeFromBottom (Theme::s3);

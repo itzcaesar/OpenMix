@@ -70,6 +70,20 @@ private:
     uint32_t pid = 0;
 };
 
+// Everything one Windows output device plays (WASAPI device loopback), no virtual cable needed.
+class DeviceLoopbackSource : public ExternalSource
+{
+public:
+    static std::unique_ptr<DeviceLoopbackSource> open (const juce::String& endpointId, juce::String& error);
+    ~DeviceLoopbackSource() override { capture.stop(); }
+
+    bool isHealthy() const override { return ! capture.hasFailed(); }
+
+private:
+    DeviceLoopbackSource() = default;
+    AppCapture capture;
+};
+
 // A Windows (WASAPI shared) output device fed by one bus.
 class DeviceOutputSink : private juce::AudioIODeviceCallback
 {

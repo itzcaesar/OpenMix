@@ -2,87 +2,9 @@
 #include "ui/Theme.h"
 #include "engine/AppCapture.h"
 
-//==============================================================================
-// PluginWindow
-
-PluginWindow::PluginWindow (juce::AudioPluginInstance& plugin, std::function<void()> onCloseFn)
-    : DocumentWindow (plugin.getName(), Theme::p().window, DocumentWindow::closeButton),
-      onClose (std::move (onCloseFn))
-{
-    setUsingNativeTitleBar (true);
-
-    if (auto* editor = plugin.createEditorAndMakeActive())
-    {
-        setContentOwned (editor, true);
-        setResizable (editor->isResizable(), false);
-    }
-    else
-    {
-        auto* generic = new juce::GenericAudioProcessorEditor (plugin);
-        generic->setSize (420, 360);
-        setContentOwned (generic, true);
-        setResizable (true, false);
-    }
-
-    centreWithSize (getWidth(), getHeight());
-    setVisible (true);
-}
-
-PluginWindow::~PluginWindow()
-{
-    clearContentComponent();
-}
-
-void PluginWindow::closeButtonPressed()
-{
-    // Defer so the window isn't deleted from inside its own callback.
-    juce::MessageManager::callAsync ([fn = onClose] { if (fn) fn(); });
-}
-
-//==============================================================================
-// Insert list: the slot rows plus a drop indicator while dragging.
-
-class StripView::InsertList : public juce::Component
-{
-public:
-    std::array<PluginSlotRow, kNumSlots> rows;
-    int dropIndex = -1;
-
-    InsertList()
-    {
-        for (auto& r : rows)
-            addChildComponent (r);
-    }
-
-    void layoutRows (int visible, int rowH, int gap)
-    {
-        for (int i = 0; i < kNumSlots; ++i)
-        {
-            rows[(size_t) i].setVisible (i < visible);
-            rows[(size_t) i].setBounds (0, i * (rowH + gap), getWidth(), rowH);
-        }
-    }
-
-    void paintOverChildren (juce::Graphics& g) override
-    {
-        if (dropIndex < 0)
-            return;
-
-        const int y = dropIndex < kNumSlots && rows[(size_t) dropIndex].isVisible()
-                        ? rows[(size_t) dropIndex].getY() - 2
-                        : rows[0].getBottom();
-        g.setColour (Theme::p().focus);
-        g.fillRect (0, juce::jmax (0, y - 1), getWidth(), 2);
-    }
-};
-
-//==============================================================================
-
-static constexpr int rowHeight = 26, rowGap = 3;
-
 StripView::StripView (MixerEngine& e, int i)
     : engine (e), strip (e.getStrip (i)), index (i),
-      insertList (std::make_unique<InsertList>()),
+      inserts (e, strip.inserts),
       pad (strip.pad, "Input " + juce::String (i + 1)),
       faderSection (strip.peakL, strip.peakR, "Input " + juce::String (i + 1))
 {
@@ -113,35 +35,8 @@ StripView::StripView (MixerEngine& e, int i)
     gainKnob.onValueChange = [this] { strip.gainDb.store ((float) gainKnob.getValue()); };
     addAndMakeVisible (gainKnob);
 
-    for (int s = 0; s < kNumSlots; ++s)
-    {
-        auto& row = insertList->rows[(size_t) s];
-        row.onMain   = [this, s] { slotMain (s); };
-        row.onMenu   = [this, s] { showSlotMenu (s); };
-        row.onBypass = [this, s] { toggleBypass (s); };
-        row.onRemove = [this, s] { removeSlot (s); };
-        row.onMove   = [this, s] (int delta) { moveSlot (s, s + delta); };
-        row.onDragTo = [this, s] (int screenY)
-        {
-            dragFrom = s;
-            const int localY = screenY - insertList->getScreenY();
-            dropIndex = juce::jlimit (0, juce::jmax (0, strip.getNumPlugins() - 1), localY / (rowHeight + rowGap));
-            insertList->dropIndex = dropIndex == s ? -1 : dropIndex;
-            insertList->repaint();
-        };
-        row.onDragEnd = [this]
-        {
-            if (dragFrom >= 0 && dropIndex >= 0)
-                moveSlot (dragFrom, dropIndex);
-            dragFrom = dropIndex = -1;
-            insertList->dropIndex = -1;
-            insertList->repaint();
-        };
-    }
-    insertsView.setViewedComponent (insertList.get(), false);
-    insertsView.setScrollBarsShown (true, false);
-    insertsView.setScrollBarThickness (6);
-    addAndMakeVisible (insertsView);
+    inserts.onRowCountChanged = [this] { if (! inLayout && getHeight() > 0) resized(); };
+    addAndMakeVisible (inserts);
 
     // Processing keys: click opens the panel, Space switches the processor on/off directly.
     for (int k = 0; k < (int) processKeys.size(); ++k)
@@ -186,10 +81,7 @@ StripView::StripView (MixerEngine& e, int i)
     refreshFromStrip();
 }
 
-StripView::~StripView()
-{
-    editorWindows.clear();
-}
+StripView::~StripView() = default;
 
 juce::String StripView::displayName() const
 {
@@ -223,7 +115,7 @@ void StripView::refreshFromStrip()
 
     updateKeys();
     pad.refreshFromParams();
-    updateSlotRows();
+    inserts.refresh();
     updateSourceButton();
 }
 
@@ -236,14 +128,12 @@ void StripView::tick()
 {
     faderSection.tick();
 
-    // Plugins auto-stopped by the audio thread, and latency changes, show up here.
-    const int faults = strip.faultCount.load();
-    const int latency = strip.latencySamples.load();
-    if (faults != lastFaultCount || (++tickCount % 15 == 0 && latency != lastLatency))
+    inserts.tick();
+
+    // The strip's total latency (noise removal + plugins) is printed next to "Inserts".
+    if (const int latency = strip.latencySamples.load(); ++tickCount % 15 == 0 && latency != lastLatency)
     {
-        lastFaultCount = faults;
         lastLatency = latency;
-        updateSlotRows();
         repaint (insertsLegend);
     }
 }
@@ -296,7 +186,7 @@ juce::Component* StripView::popupParent()
 
 void StripView::openProcessorPanel (int k)
 {
-    auto panel = std::make_unique<ProcessorPanel> (engine, index, (Processor) k);
+    auto panel = std::make_unique<ProcessorPanel> (engine, strip.fx, (Processor) k, index);
     juce::Component::SafePointer<StripView> safe (this);
     panel->onChange = [safe] { if (safe != nullptr) safe->updateKeys(); };
 
@@ -359,7 +249,7 @@ void StripView::confirmRemove()
             if (safe == nullptr || result != 1)
                 return;
 
-            safe->editorWindows.clear();
+            safe->inserts.closeAllEditors();
             safe->engine.removeStrip (safe->index);
             if (safe->onLayoutChanged)
                 safe->onLayoutChanged();
@@ -404,6 +294,12 @@ void StripView::updateSourceButton()
             caption = "APP";
             problem = strip.getExternalSource() == nullptr;
             text = strip.sourceAppExe.upToLastOccurrenceOf (".", false, true) + (problem ? " (not running)" : "");
+            break;
+
+        case SourceType::Loopback:
+            caption = "LOOP";
+            problem = strip.getExternalSource() == nullptr;
+            text = strip.loopbackName + (problem ? " (unavailable)" : "");
             break;
     }
 
@@ -483,6 +379,26 @@ void StripView::showSourceMenu()
     }
     menu.addSubMenu ("Application audio", apps);
 
+    // Everything an output device plays. Devices OpenMix plays into are left out: capturing
+    // them on a strip that feeds the same bus would loop the sound back (howling feedback).
+    juce::PopupMenu loops;
+    const auto own = engine.getOwnOutputDeviceNames();
+    loops.addSectionHeader ("Capture everything a device plays");
+    for (const auto& d : listRenderDevices())
+    {
+        const juce::String id (d.id.c_str()), name (d.name.c_str());
+        const bool usedByOpenMix = own.contains (name);
+        loops.addItem (usedByOpenMix ? name + "  (OpenMix plays here: would feed back)" : name, ! usedByOpenMix,
+                       current == SourceType::Loopback && strip.loopbackId == id, [this, id, name]
+        {
+            juce::String error;
+            if (! engine.setStripSourceLoopback (index, id, name, error))
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't capture " + name, error);
+            updateSourceButton();
+        });
+    }
+    menu.addSubMenu ("Windows output (loopback)", loops);
+
     // Where the captured app's own sound goes, so it isn't heard twice.
     if (current == SourceType::App)
     {
@@ -510,410 +426,6 @@ void StripView::showSourceMenu()
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (sourceButton).withMinimumWidth (sourceButton.getWidth()));
-}
-
-//==============================================================================
-// Inserts
-
-int StripView::visibleRowCount() const
-{
-    const int n = strip.getNumPlugins();
-    const bool loadingNew = loadingSlot >= n;
-    return juce::jmin (kNumSlots, n + (loadingNew ? 1 : 0) + 1);
-}
-
-void StripView::updateSlotRows()
-{
-    const int n = strip.getNumPlugins();
-    const double sr = engine.getSampleRate();
-
-    for (int s = 0; s < kNumSlots; ++s)
-    {
-        auto& row = insertList->rows[(size_t) s];
-        if (s == loadingSlot)
-            row.setState (PluginSlotRow::State::Loading, loadingName, false, false, 0, sr);
-        else if (s < n)
-        {
-            auto* p = strip.getPlugin (s);
-            const auto ab = abStates.find (p);
-            row.setState (PluginSlotRow::State::Loaded, p->getName(), strip.slotBypass[(size_t) s].load(),
-                          strip.slotFault[(size_t) s].load(), p->getLatencySamples(), sr,
-                          juce::roundToInt (strip.slotMix[(size_t) s].load() * 100.0f),
-                          ab == abStates.end() ? juce::String() : juce::String (ab->second.onB ? "B" : "A"));
-        }
-        else
-            row.setState (PluginSlotRow::State::Empty, {}, false, false, 0, sr);
-    }
-
-    const int visible = visibleRowCount();
-
-    // The number of rows changed: re-run the strip layout so the list grows or shrinks.
-    const int maxRows = getHeight() < 760 ? 2 : 4;   // same rule as resized()
-    const int wantedHeight = juce::jmax (juce::jmin (visible, maxRows), 1) * (rowHeight + rowGap) - rowGap;
-    if (! inLayout && insertsView.getHeight() != wantedHeight && getHeight() > 0)
-    {
-        resized();
-        return;
-    }
-
-    insertList->setSize (insertsView.getMaximumVisibleWidth() > 0 ? insertsView.getMaximumVisibleWidth() : insertsView.getWidth(),
-                         visible * (rowHeight + rowGap) - rowGap);
-    insertList->layoutRows (visible, rowHeight, rowGap);
-}
-
-void StripView::slotMain (int slot)
-{
-    if (slot == loadingSlot)
-        return;
-
-    if (auto* p = strip.getPlugin (slot))
-        openEditor (p);
-    else
-        showPluginMenu (slot);
-}
-
-void StripView::toggleBypass (int slot)
-{
-    strip.slotFault[(size_t) slot].store (false);
-    strip.slotBypass[(size_t) slot].store (! strip.slotBypass[(size_t) slot].load());
-    updateSlotRows();
-}
-
-void StripView::removeSlot (int slot)
-{
-    if (auto* p = strip.getPlugin (slot))
-    {
-        closeEditor (p);
-        abStates.erase (p);
-    }
-    strip.removePlugin (slot);
-    updateSlotRows();
-
-    // Keep keyboard focus in the list.
-    const int n = strip.getNumPlugins();
-    insertList->rows[(size_t) juce::jmin (slot, n)].grabKeyboardFocus();
-}
-
-void StripView::moveSlot (int from, int to)
-{
-    const int n = strip.getNumPlugins();
-    if (! juce::isPositiveAndBelow (from, n) || ! juce::isPositiveAndBelow (to, n) || from == to)
-        return;
-
-    strip.movePlugin (from, to);
-    updateSlotRows();
-    insertList->rows[(size_t) to].grabKeyboardFocus();
-}
-
-void StripView::showSlotMenu (int slot)
-{
-    auto* p = strip.getPlugin (slot);
-    if (p == nullptr)
-        return;
-
-    const int n = strip.getNumPlugins();
-    const bool faulted = strip.slotFault[(size_t) slot].load();
-
-    juce::PopupMenu menu;
-    menu.addItem ("Open window", [this, p] { openEditor (p); });
-    menu.addItem (faulted ? "Try again" : strip.slotBypass[(size_t) slot].load() ? "Turn on" : "Bypass",
-                  [this, slot] { toggleBypass (slot); });
-    menu.addSeparator();
-    menu.addItem ("Move up", slot > 0, false, [this, slot] { moveSlot (slot, slot - 1); });
-    menu.addItem ("Move down", slot < n - 1, false, [this, slot] { moveSlot (slot, slot + 1); });
-    menu.addSeparator();
-    menu.addItem ("Wet/dry mix...", [this, slot] { openMixPanel (slot); });
-
-    juce::PopupMenu ab;
-    if (auto it = abStates.find (p); it == abStates.end())
-    {
-        ab.addItem ("Start comparing (A and B = current settings)", [this, p]
-        {
-            juce::MemoryBlock state;
-            p->getStateInformation (state);
-            abStates[p] = { state, state, false };
-            updateSlotRows();
-        });
-    }
-    else
-    {
-        const bool onB = it->second.onB;
-        ab.addItem ("Listen to A", true, ! onB, [this, p] { abSwitch (p, false); });
-        ab.addItem ("Listen to B", true, onB, [this, p] { abSwitch (p, true); });
-        ab.addSeparator();
-        ab.addItem (onB ? "Copy B to A" : "Copy A to B", [this, p]
-        {
-            auto& st = abStates[p];
-            juce::MemoryBlock current;
-            p->getStateInformation (current);
-            st.a = current;
-            st.b = current;
-        });
-        ab.addItem ("Stop comparing (keep what you hear)", [this, p]
-        {
-            abStates.erase (p);
-            updateSlotRows();
-        });
-    }
-    menu.addSubMenu ("A/B compare", ab);
-    menu.addSeparator();
-    menu.addItem ("Save preset...", [this, slot] { savePreset (slot); });
-    menu.addItem ("Load preset...", [this, slot] { loadPreset (slot); });
-    menu.addItem ("Replace with...", [this, slot] { showPluginMenu (slot); });
-    menu.addSeparator();
-    menu.addItem ("Remove", [this, slot] { removeSlot (slot); });
-
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (insertList->rows[(size_t) slot]));
-}
-
-void StripView::showPluginMenu (int slot)
-{
-    auto& scanner = engine.getScanner();
-    const auto plugins = scanner.getPlugins();
-
-    juce::PopupMenu menu;
-
-    if (scanner.isScanning())
-    {
-        const auto current = scanner.getCurrentPluginName();
-        menu.addItem ("Scanning plugins: " + juce::String (scanner.getNumDone()) + " of " + juce::String (scanner.getNumToScan())
-                        + (current.isNotEmpty() ? " (" + current + ")" : juce::String()), false, false, nullptr);
-        menu.addSeparator();
-    }
-
-    if (plugins.isEmpty() && ! scanner.isScanning())
-        menu.addItem ("No VST3 plugins found in C:\\Program Files\\Common Files\\VST3", false, false, nullptr);
-
-    auto addPlugin = [this, slot] (juce::PopupMenu& m, const juce::PluginDescription& d, const juce::String& label)
-    {
-        m.addItem (label, [this, slot, d] { loadPluginAsync (slot, d); });
-    };
-
-    if (plugins.size() > 14)
-    {
-        // Group by maker once the list gets long.
-        juce::String maker;
-        juce::PopupMenu sub;
-        for (const auto& d : plugins)
-        {
-            const auto m = d.manufacturerName.isNotEmpty() ? d.manufacturerName : juce::String ("Other");
-            if (m != maker && maker.isNotEmpty())
-            {
-                menu.addSubMenu (maker, sub);
-                sub = {};
-            }
-            maker = m;
-            addPlugin (sub, d, d.name);
-        }
-        if (maker.isNotEmpty())
-            menu.addSubMenu (maker, sub);
-    }
-    else
-    {
-        for (const auto& d : plugins)
-            addPlugin (menu, d, d.name + (d.manufacturerName.isNotEmpty() ? "  (" + d.manufacturerName + ")" : juce::String()));
-    }
-
-    menu.addSeparator();
-    menu.addItem ("Scan for new plugins", ! scanner.isScanning(), false, [this] { engine.getScanner().startScan (false); });
-
-    const auto skipped = scanner.getSkippedFiles();
-    if (! skipped.isEmpty())
-    {
-        juce::PopupMenu skippedMenu;
-        for (const auto& f : skipped)
-            skippedMenu.addItem (juce::File (f).getFileNameWithoutExtension(), false, false, nullptr);
-        menu.addSubMenu ("Skipped: crashed or hung while scanning (" + juce::String (skipped.size()) + ")", skippedMenu);
-        menu.addItem ("Retry skipped plugins", ! scanner.isScanning(), false, [this] { engine.getScanner().startScan (true); });
-    }
-
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (insertList->rows[(size_t) juce::jmin (slot, kNumSlots - 1)])
-                                                  .withMinimumWidth (insertList->getWidth()));
-}
-
-void StripView::loadPluginAsync (int slot, const juce::PluginDescription& desc,
-                                 std::function<void (juce::AudioPluginInstance&)> then)
-{
-    if (loadingSlot >= 0)
-        return;   // one load at a time per strip
-
-    loadingSlot = juce::jmin (slot, strip.getNumPlugins());
-    loadingName = desc.name;
-    updateSlotRows();
-
-    // Let the "Loading..." row paint before the plugin's own (message-thread) start-up runs.
-    juce::Component::SafePointer<StripView> safe (this);
-    juce::Timer::callAfterDelay (30, [safe, desc, then]
-    {
-        if (safe == nullptr)
-            return;
-
-        safe->engine.getFormatManager().createPluginInstanceAsync (desc, safe->engine.getSampleRate(), 512,
-            [safe, desc, then] (std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error)
-            {
-                if (safe == nullptr)
-                    return;
-
-                const int slot = safe->loadingSlot;
-                safe->loadingSlot = -1;
-
-                if (instance == nullptr)
-                {
-                    safe->updateSlotRows();
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                                            "Couldn't load " + desc.name,
-                                                            error.isNotEmpty() ? error : juce::String ("The plugin didn't start."));
-                    return;
-                }
-
-                if (auto* old = safe->strip.getPlugin (slot))
-                {
-                    safe->closeEditor (old);
-                    safe->abStates.erase (old);
-                }
-
-                auto* raw = instance.get();
-                safe->strip.installPlugin (slot, std::move (instance));
-                safe->updateSlotRows();
-
-                if (then)
-                    then (*raw);
-                else
-                    safe->openEditor (raw);
-            });
-    });
-}
-
-static juce::File presetFolder()
-{
-    auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("OpenMix Presets");
-    dir.createDirectory();
-    return dir;
-}
-
-void StripView::savePreset (int slot)
-{
-    auto* p = strip.getPlugin (slot);
-    if (p == nullptr)
-        return;
-
-    chooser = std::make_unique<juce::FileChooser> ("Save " + p->getName() + " preset",
-                                                   presetFolder().getChildFile (p->getName() + ".omxpreset"), "*.omxpreset");
-    juce::Component::SafePointer<StripView> safe (this);
-    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
-                            | juce::FileBrowserComponent::warnAboutOverwriting,
-        [safe, slot] (const juce::FileChooser& fc)
-        {
-            if (safe == nullptr || fc.getResult() == juce::File())
-                return;
-
-            auto* plugin = safe->strip.getPlugin (slot);
-            if (plugin == nullptr)
-                return;
-
-            juce::XmlElement root ("OpenMixPreset");
-            root.setAttribute ("version", 1);
-            root.addChildElement (plugin->getPluginDescription().createXml().release());
-            juce::MemoryBlock state;
-            plugin->getStateInformation (state);
-            root.setAttribute ("state", state.toBase64Encoding());
-
-            if (! root.writeTo (fc.getResult().withFileExtension ("omxpreset")))
-                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Preset not saved",
-                                                        "Couldn't write " + fc.getResult().getFullPathName());
-        });
-}
-
-void StripView::loadPreset (int slot)
-{
-    chooser = std::make_unique<juce::FileChooser> ("Load preset", presetFolder(), "*.omxpreset");
-    juce::Component::SafePointer<StripView> safe (this);
-    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [safe, slot] (const juce::FileChooser& fc)
-        {
-            if (safe == nullptr || fc.getResult() == juce::File())
-                return;
-
-            auto xml = juce::parseXML (fc.getResult());
-            juce::PluginDescription desc;
-            juce::MemoryBlock state;
-            if (xml == nullptr || ! xml->hasTagName ("OpenMixPreset") || xml->getChildByName ("PLUGIN") == nullptr
-                || ! desc.loadFromXml (*xml->getChildByName ("PLUGIN"))
-                || ! state.fromBase64Encoding (xml->getStringAttribute ("state")))
-            {
-                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Not an OpenMix preset",
-                                                        fc.getResult().getFileName() + " couldn't be read.");
-                return;
-            }
-
-            auto applyState = [state] (juce::AudioPluginInstance& p) { p.setStateInformation (state.getData(), (int) state.getSize()); };
-
-            if (auto* current = safe->strip.getPlugin (slot);
-                current != nullptr && current->getPluginDescription().createIdentifierString() == desc.createIdentifierString())
-            {
-                applyState (*current);   // same plugin: just load the settings
-                return;
-            }
-
-            safe->loadPluginAsync (slot, desc, applyState);
-        });
-}
-
-void StripView::openEditor (juce::AudioPluginInstance* plugin)
-{
-    if (plugin == nullptr)
-        return;
-
-    if (auto it = editorWindows.find (plugin); it != editorWindows.end())
-    {
-        it->second->toFront (true);
-        return;
-    }
-
-    juce::Component::SafePointer<StripView> safe (this);
-    editorWindows[plugin] = std::make_unique<PluginWindow> (*plugin, [safe, plugin]
-    {
-        if (safe != nullptr)
-            safe->closeEditor (plugin);
-    });
-}
-
-void StripView::closeEditor (juce::AudioPluginInstance* plugin)
-{
-    editorWindows.erase (plugin);
-}
-
-void StripView::abSwitch (juce::AudioPluginInstance* plugin, bool toB)
-{
-    auto it = abStates.find (plugin);
-    if (it == abStates.end() || it->second.onB == toB)
-        return;
-
-    // Remember what's playing now in its own slot, then load the other one.
-    auto& st = it->second;
-    juce::MemoryBlock current;
-    plugin->getStateInformation (current);
-    (st.onB ? st.b : st.a) = current;
-
-    const auto& next = toB ? st.b : st.a;
-    plugin->setStateInformation (next.getData(), (int) next.getSize());
-    st.onB = toB;
-    updateSlotRows();
-}
-
-void StripView::openMixPanel (int slot)
-{
-    auto* p = strip.getPlugin (slot);
-    if (p == nullptr)
-        return;
-
-    auto panel = std::make_unique<SlotMixPanel> (p->getName(), strip.slotMix[(size_t) slot]);
-    juce::Component::SafePointer<StripView> safe (this);
-    panel->onChange = [safe] { if (safe != nullptr) safe->updateSlotRows(); };
-
-    auto& row = insertList->rows[(size_t) slot];
-    auto* top = popupParent();
-    juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&row, row.getLocalBounds()), top);
 }
 
 //==============================================================================
@@ -1005,9 +517,7 @@ void StripView::resized()
     // Inserts: as many rows as fit, the list scrolls beyond that.
     insertsLegend = r.removeFromTop (18);
     const int maxRows = compact ? 2 : 4;
-    const int rowsShown = juce::jmin (visibleRowCount(), maxRows);
-    insertsView.setBounds (r.removeFromTop (juce::jmax (rowsShown, 1) * (rowHeight + rowGap) - rowGap));
-    updateSlotRows();
+    inserts.setBounds (r.removeFromTop (InsertRack::heightForRows (juce::jmin (inserts.getVisibleRowCount(), maxRows))));
     r.removeFromTop (Theme::s3);
 
     // Processing keys: one row of six, in signal-flow order.

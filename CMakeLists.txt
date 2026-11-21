@@ -37,6 +37,7 @@ endif()
 juce_add_gui_app(OpenMix
     PRODUCT_NAME "OpenMix"
     COMPANY_NAME "OpenMix"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon.png"   # drawn by resources/make_icon.py
     NEEDS_WEB_BROWSER FALSE
     NEEDS_CURL FALSE)
 
@@ -53,6 +54,7 @@ target_sources(OpenMix PRIVATE
     # audio engine and device I/O
     Source/engine/MixerEngine.cpp
     Source/engine/ChannelStrip.cpp
+    Source/engine/PluginChain.cpp
     Source/engine/VoicePad.cpp
     Source/engine/ExternalIO.cpp
     Source/engine/AppCapture.cpp
@@ -72,6 +74,7 @@ target_sources(OpenMix PRIVATE
     Source/ui/StripView.cpp
     Source/ui/BusView.cpp
     Source/ui/Panels.cpp
+    Source/ui/InsertRack.cpp
     Source/ui/SettingsPanel.cpp
     Source/ui/TrayIcon.cpp
     Source/ui/AnalyserPanel.cpp

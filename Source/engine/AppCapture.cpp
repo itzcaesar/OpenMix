@@ -203,10 +203,35 @@ struct AppCapture::Impl
     std::atomic<bool> stopRequested { false };
     std::atomic<bool> failed { false };
 
-    void run (uint32_t pid, ClockBridge* target, std::promise<std::string> ready)
+    // Device loopback: an ordinary audio client on the render endpoint, opened in loopback mode.
+    static HRESULT activateDevice (const std::wstring& endpointId, ComPtr<IAudioClient>& client)
+    {
+        ComPtr<IMMDeviceEnumerator> enumerator;
+        HRESULT hr = CoCreateInstance (__uuidof (MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS (&enumerator));
+        if (FAILED (hr))
+            return hr;
+
+        ComPtr<IMMDevice> device;
+        if (FAILED (hr = enumerator->GetDevice (endpointId.c_str(), &device)))
+            return hr;
+
+        return device->Activate (__uuidof (IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**> (client.GetAddressOf()));
+    }
+
+    void run (uint32_t pid, std::wstring endpointId, ClockBridge* target, std::promise<std::string> ready)
     {
         ComScope com;
+        const bool deviceMode = ! endpointId.empty();
+        ComPtr<IAudioClient> client;
+        HRESULT hr = S_OK;
 
+        if (deviceMode)
+        {
+            if (FAILED (hr = activateDevice (endpointId, client)))
+                return ready.set_value (hrToString ("Opening the output device", hr));
+        }
+        else
+        {
         // 1. Activate a process-loopback audio client for the target process tree.
         AUDIOCLIENT_ACTIVATION_PARAMS params {};
         params.ActivationType = AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK;
@@ -220,7 +245,7 @@ struct AppCapture::Impl
 
         auto handler = Microsoft::WRL::Make<ActivationHandler>();
         ComPtr<IActivateAudioInterfaceAsyncOperation> op;
-        HRESULT hr = ActivateAudioInterfaceAsync (VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, __uuidof (IAudioClient),
+        hr = ActivateAudioInterfaceAsync (VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, __uuidof (IAudioClient),
                                                   &pv, handler.Get(), &op);
         if (FAILED (hr))
             return ready.set_value (hrToString ("ActivateAudioInterfaceAsync", hr));
@@ -232,9 +257,11 @@ struct AppCapture::Impl
         if (FAILED (handler->result))
             return ready.set_value (hrToString ("Process loopback activation", handler->result));
 
-        auto client = handler->client;
+        client = handler->client;
+        }
 
-        // 2. Process loopback has no mix format; we pick one (float, fall back to 16-bit).
+        // 2. Ask for 48 kHz stereo float (Windows converts); fall back to 16-bit, and for a
+        //    device, to its own mix format (any rate and channel count, float).
         WAVEFORMATEX fmt {};
         fmt.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
         fmt.nChannels = 2;
@@ -244,7 +271,9 @@ struct AppCapture::Impl
         fmt.nAvgBytesPerSec = fmt.nSamplesPerSec * fmt.nBlockAlign;
 
         const DWORD flags = AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
-                          | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM;
+                          | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+        double captureRate = AppCapture::sampleRate;
+        int channels = 2;
         const REFERENCE_TIME bufferDuration = 200000;   // 20 ms
 
         bool isFloat = true;
@@ -257,6 +286,29 @@ struct AppCapture::Impl
             fmt.nBlockAlign = (WORD) (fmt.nChannels * fmt.wBitsPerSample / 8);
             fmt.nAvgBytesPerSec = fmt.nSamplesPerSec * fmt.nBlockAlign;
             hr = client->Initialize (AUDCLNT_SHAREMODE_SHARED, flags, bufferDuration, 0, &fmt, nullptr);
+        }
+        if (FAILED (hr) && deviceMode)
+        {
+            // Some drivers refuse conversion in loopback: take the device's own (float) format.
+            WAVEFORMATEX* mix = nullptr;
+            if (SUCCEEDED (client->GetMixFormat (&mix)) && mix != nullptr)
+            {
+                const bool mixFloat = mix->wFormatTag == WAVE_FORMAT_IEEE_FLOAT
+                    || (mix->wFormatTag == WAVE_FORMAT_EXTENSIBLE
+                        && reinterpret_cast<WAVEFORMATEXTENSIBLE*> (mix)->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
+                if (mixFloat && mix->wBitsPerSample == 32)
+                {
+                    hr = client->Initialize (AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                                             bufferDuration, 0, mix, nullptr);
+                    if (SUCCEEDED (hr))
+                    {
+                        isFloat = true;
+                        captureRate = (double) mix->nSamplesPerSec;
+                        channels = std::max (1, (int) mix->nChannels);
+                    }
+                }
+                CoTaskMemFree (mix);
+            }
         }
         if (FAILED (hr))
             return ready.set_value (hrToString ("IAudioClient::Initialize", hr));
@@ -278,10 +330,25 @@ struct AppCapture::Impl
         HANDLE mmcss = AvSetMmThreadCharacteristicsW (L"Pro Audio", &taskIndex);
 
         std::vector<float> left (4096), right (4096);
+        int idleWaits = 0;
         while (! stopRequested.load() && ! failed.load())
         {
-            if (WaitForSingleObject (event, 100) != WAIT_OBJECT_0)
+            // Windows sends nothing while the device (or app) is silent. Keep the bridge fed
+            // with silence then, so a quiet source doesn't count as dropouts.
+            if (WaitForSingleObject (event, 10) != WAIT_OBJECT_0)
+            {
+                if (++idleWaits >= 3)
+                {
+                    const int frames = (int) (captureRate * 0.01);
+                    if ((size_t) frames > left.size()) { left.resize ((size_t) frames); right.resize ((size_t) frames); }
+                    std::fill (left.begin(), left.begin() + frames, 0.0f);
+                    std::fill (right.begin(), right.begin() + frames, 0.0f);
+                    const float* silent[2] { left.data(), right.data() };
+                    target->write (silent, 2, frames, captureRate);
+                }
                 continue;
+            }
+            idleWaits = 0;
 
             UINT32 packet = 0;
             for (;;)
@@ -316,8 +383,10 @@ struct AppCapture::Impl
                 }
                 else if (isFloat)
                 {
+                    // Interleaved; the first two channels (a mono device feeds both sides).
                     const auto* f = reinterpret_cast<const float*> (data);
-                    for (UINT32 i = 0; i < frames; ++i) { left[i] = f[2 * i]; right[i] = f[2 * i + 1]; }
+                    const int rightCh = channels > 1 ? 1 : 0;
+                    for (UINT32 i = 0; i < frames; ++i) { left[i] = f[channels * i]; right[i] = f[channels * i + rightCh]; }
                 }
                 else
                 {
@@ -325,8 +394,8 @@ struct AppCapture::Impl
                     for (UINT32 i = 0; i < frames; ++i) { left[i] = s[2 * i] / 32768.0f; right[i] = s[2 * i + 1] / 32768.0f; }
                 }
 
-                const float* channels[2] { left.data(), right.data() };
-                target->write (channels, 2, (int) frames, AppCapture::sampleRate);
+                const float* chans[2] { left.data(), right.data() };
+                target->write (chans, 2, (int) frames, captureRate);
                 capture->ReleaseBuffer (frames);
             }
         }
@@ -352,15 +421,25 @@ bool AppCapture::hasFailed() const noexcept
 
 bool AppCapture::start (uint32_t pid, ClockBridge& target, std::string& error)
 {
+    return launch (pid, {}, target, error);
+}
+
+bool AppCapture::startDevice (const std::wstring& endpointId, ClockBridge& target, std::string& error)
+{
+    return launch (0, endpointId, target, error);
+}
+
+bool AppCapture::launch (uint32_t pid, const std::wstring& endpointId, ClockBridge& target, std::string& error)
+{
     stop();
     impl->stopRequested = false;
     impl->failed = false;
 
     std::promise<std::string> ready;
     auto result = ready.get_future();
-    impl->thread = std::thread ([this, pid, &target, p = std::move (ready)]() mutable
+    impl->thread = std::thread ([this, pid, endpointId, &target, p = std::move (ready)]() mutable
     {
-        impl->run (pid, &target, std::move (p));
+        impl->run (pid, endpointId, &target, std::move (p));
     });
 
     error = result.get();
