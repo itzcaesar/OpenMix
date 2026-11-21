@@ -116,6 +116,28 @@ void BusView::refreshDevice()
 
     targetButton.setContent (caption, text, problem);
     targetButton.setTitle (juce::String (kBusNames[index]) + " output: " + text);
+
+    // B buses: say what to pick in Discord/OBS, or what B buses are for.
+    if (isVirtual())
+    {
+        const bool onCable = (BusTarget) bus.target.load() == BusTarget::Device && isVirtualCable (bus.deviceName);
+        juce::String hint;
+        if (onCable)
+        {
+            // Virtual cables pair an "Input" (what OpenMix plays into) with an "Output" (the mic side).
+            const auto otherEnd = bus.deviceName.containsIgnoreCase ("Input")
+                                    ? bus.deviceName.replaceFirstOccurrenceOf ("Input", "Output", true)
+                                    : juce::String ("this cable's other end");
+            hint = "In Discord or OBS, choose " + otherEnd + " as the microphone to hear this bus there.";
+        }
+        else
+        {
+            hint = "B buses are meant for a virtual cable: pick one here, then choose its other end "
+                   "(for example CABLE Output) as the microphone in Discord or OBS.";
+        }
+        targetButton.setTooltip (juce::String (kBusNames[index]) + " output: " + text + ". " + hint);
+        targetButton.setDescription (hint);
+    }
 }
 
 void BusView::showTargetMenu()
@@ -140,20 +162,63 @@ void BusView::showTargetMenu()
             refreshDevice();
         });
 
-    menu.addSectionHeader ("Windows output device");
-    const auto devices = engine.getWindowsOutputNames();
-    if (devices.isEmpty())
-        menu.addItem ("No Windows output devices found", false, false, nullptr);
-    for (const auto& name : devices)
-        menu.addItem (name, true, current == BusTarget::Device && bus.deviceName == name, [this, name]
+    // Split Windows outputs into virtual cables and real devices. B buses are meant for virtual
+    // cables (their other end is what Discord/OBS use as a microphone), A buses for real devices.
+    juce::StringArray cables, physical;
+    for (const auto& name : engine.getWindowsOutputNames())
+        (isVirtualCable (name) ? cables : physical).add (name);
+
+    auto addDevice = [this, current] (juce::PopupMenu& m, const juce::String& name)
+    {
+        m.addItem (name, true, current == BusTarget::Device && bus.deviceName == name, [this, name]
         {
             juce::String error;
             if (! engine.setBusDevice (index, name, error))
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't open " + name, error);
             refreshDevice();
         });
+    };
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (targetButton).withMinimumWidth (240));
+    if (isVirtual())
+    {
+        menu.addSectionHeader ("Virtual cable (recommended): then pick its other end as the mic in Discord or OBS");
+        if (cables.isEmpty())
+            menu.addItem ("No virtual cable found. Install one (for example VB-Audio Virtual Cable), then open this menu again.",
+                          false, false, nullptr);
+        for (const auto& name : cables)
+            addDevice (menu, name);
+
+        menu.addSectionHeader ("Other Windows outputs");
+        if (physical.isEmpty())
+            menu.addItem ("No other output devices found", false, false, nullptr);
+        for (const auto& name : physical)
+            addDevice (menu, name);
+    }
+    else
+    {
+        menu.addSectionHeader ("Windows output device");
+        if (physical.isEmpty())
+            menu.addItem ("No output devices found", false, false, nullptr);
+        for (const auto& name : physical)
+            addDevice (menu, name);
+
+        if (! cables.isEmpty())
+        {
+            menu.addSectionHeader ("Virtual cables (usually for B buses)");
+            for (const auto& name : cables)
+                addDevice (menu, name);
+        }
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (targetButton).withMinimumWidth (260));
+}
+
+bool BusView::isVirtualCable (const juce::String& deviceName)
+{
+    // Names used by the common virtual-cable drivers: VB-Audio Virtual Cable ("CABLE Input"),
+    // VoiceMeeter ("Voicemeeter Input"), VAC ("Line 1 (Virtual Audio Cable)") and similar.
+    const auto n = deviceName.toLowerCase();
+    return n.contains ("cable") || n.contains ("vb-audio") || n.contains ("voicemeeter") || n.contains ("virtual");
 }
 
 void BusView::paint (juce::Graphics& g)

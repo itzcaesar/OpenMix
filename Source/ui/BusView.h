@@ -24,6 +24,7 @@ public:
 private:
     void showTargetMenu();
     void showBusMenu();
+    static bool isVirtualCable (const juce::String& deviceName);
     bool isVirtual() const { return juce::String (kBusNames[index]).startsWith ("B"); }
 
     MixerEngine& engine;
