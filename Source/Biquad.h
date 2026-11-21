@@ -56,6 +56,14 @@ struct Biquad
              (A + 1) - (A - 1) * cw - k);
     }
 
+    // Band-pass with 0 dB peak gain (RBJ "constant 0 dB peak gain"), used as a detector.
+    void setBandPass (double fs, double freq, double q) noexcept
+    {
+        const double w = 2.0 * std::numbers::pi * freq / fs;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        set (alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cw, 1.0 - alpha);
+    }
+
 private:
     void set (double nb0, double nb1, double nb2, double na0, double na1, double na2) noexcept
     {

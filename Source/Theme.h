@@ -2,49 +2,113 @@
 
 #include <JuceHeader.h>
 
-// Design tokens. Components use these names, never raw colours.
+// Design tokens for both themes. Components read Theme::p() at paint time, so switching theme
+// is just setDark() + repaint. Direction and reasons: docs/DESIGN.md.
+//
+// Contrast (WCAG, checked with the antislop contrast script):
+//   dark:  text/panel 13.9, textDim/panel 7.5, textFaint/panel 5.0, textFaint/window 5.7,
+//          onAccent/accent 8.2, tapeText/tape 12.5, white/mute 4.5, controlEdge/panel 3.8 (3:1 bar)
+//   light: text/panel 14.3, textDim/panel 8.1, textFaint/panel 5.7, textFaint/window 4.7,
+//          onAccent/accent 8.2, tapeText/tape 15.4, white/mute 4.5, controlEdge/panel 3.6 (3:1 bar)
 namespace Theme
 {
-    // Surfaces (darkest -> lightest)
-    inline const juce::Colour background { 0xff0b1120 };   // window
-    inline const juce::Colour panel      { 0xff151d2e };   // strip / bus cards
-    inline const juce::Colour panelDark  { 0xff0f1626 };   // wells: pad, meters, slots
-    inline const juce::Colour raised     { 0xff1f2a40 };   // buttons, chips
-    inline const juce::Colour outline    { 0xff2b3750 };   // card + control borders
-    inline const juce::Colour grid       { 0xff222d44 };   // pad grid, scale ticks
+    struct Palette
+    {
+        bool dark;
 
-    // Text
-    inline const juce::Colour text       { 0xfff1f5f9 };
-    inline const juce::Colour textDim    { 0xff94a3b8 };
-    inline const juce::Colour textFaint  { 0xff64748b };
+        juce::Colour window;       // desk surround
+        juce::Colour panel;        // channel faceplate
+        juce::Colour well;         // recessed areas: pad, fader slot
+        juce::Colour meterWell;    // LED meter window (dark in both themes)
+        juce::Colour raised;       // button / cap body
+        juce::Colour line;         // decorative separators (not a control boundary)
+        juce::Colour controlEdge;  // control boundary, >= 3:1 against panel
 
-    // Accents
-    inline const juce::Colour accent     { 0xff38bdf8 };   // primary interactive (sky)
-    inline const juce::Colour busA       { 0xff38bdf8 };   // hardware buses
-    inline const juce::Colour busB       { 0xffa78bfa };   // virtual buses
-    inline const juce::Colour mute       { 0xffef4444 };
-    inline const juce::Colour warning    { 0xfff59e0b };
-    inline const juce::Colour success    { 0xff22c55e };
+        juce::Colour text, textDim, textFaint;
 
-    // Meters
-    inline const juce::Colour meterLow   { 0xff22c55e };
-    inline const juce::Colour meterHigh  { 0xfff59e0b };
-    inline const juce::Colour meterClip  { 0xffef4444 };
+        juce::Colour tape, tapeText, tapeEdge;   // scribble strip
 
-    // Per-strip identity colours (stripe at the top of each strip)
-    inline const juce::Colour stripColours[] { juce::Colour (0xff38bdf8), juce::Colour (0xff34d399),
-                                               juce::Colour (0xfff472b6), juce::Colour (0xfffbbf24),
-                                               juce::Colour (0xffa78bfa), juce::Colour (0xfffb923c) };
+        juce::Colour accent, onAccent, accentEdge;   // lamp amber
+        juce::Colour mute, onMute;
+        juce::Colour focus;
 
-    // Spacing / shape
-    constexpr int gap = 8;
-    constexpr float radius = 8.0f;
-    constexpr float smallRadius = 5.0f;
+        juce::Colour meterLow, meterMid, meterHigh;
+    };
+
+    inline const Palette& darkPalette()
+    {
+        static const Palette p {
+            true,
+            juce::Colour (0xff141414), juce::Colour (0xff202020), juce::Colour (0xff0f0f0f),
+            juce::Colour (0xff0b0b0b), juce::Colour (0xff2c2c2c), juce::Colour (0xff333333),
+            juce::Colour (0xff7a7a7a),
+            juce::Colour (0xffededed), juce::Colour (0xffb0b0b0), juce::Colour (0xff8f8f8f),
+            juce::Colour (0xffe6dfcc), juce::Colour (0xff1e1e1e), juce::Colour (0xffe6dfcc),
+            juce::Colour (0xfff0a23b), juce::Colour (0xff1a1a1a), juce::Colour (0xfff0a23b),
+            juce::Colour (0xffd93a40), juce::Colour (0xffffffff),
+            juce::Colour (0xffededed),
+            juce::Colour (0xff3ec46d), juce::Colour (0xfff0a23b), juce::Colour (0xffe5484d)
+        };
+        return p;
+    }
+
+    inline const Palette& lightPalette()
+    {
+        static const Palette p {
+            false,
+            juce::Colour (0xffd8d6d1), juce::Colour (0xffeceae5), juce::Colour (0xffd9d6cf),
+            juce::Colour (0xff1c1c1c), juce::Colour (0xfff8f7f4), juce::Colour (0xffc6c3bb),
+            juce::Colour (0xff7d7a73),
+            juce::Colour (0xff1b1b1b), juce::Colour (0xff45443f), juce::Colour (0xff5c5a55),
+            juce::Colour (0xfffbf6e6), juce::Colour (0xff1e1e1e), juce::Colour (0xff7d7a73),
+            // Amber is only 1.9:1 on the light panel, so "on" states also get a dark edge.
+            juce::Colour (0xfff0a23b), juce::Colour (0xff1a1a1a), juce::Colour (0xff1b1b1b),
+            juce::Colour (0xffd93a40), juce::Colour (0xffffffff),
+            juce::Colour (0xff1b1b1b),
+            juce::Colour (0xff3ec46d), juce::Colour (0xfff0a23b), juce::Colour (0xffe5484d)
+        };
+        return p;
+    }
+
+    inline const Palette*& currentPalette()
+    {
+        static const Palette* current = &darkPalette();
+        return current;
+    }
+
+    inline const Palette& p()                { return *currentPalette(); }
+    inline bool isDark()                     { return p().dark; }
+    inline void setDark (bool shouldBeDark)  { currentPalette() = shouldBeDark ? &darkPalette() : &lightPalette(); }
+
+    // Scribble-strip tape colours a user can pick per channel (identification, see DESIGN.md).
+    // All are light, so the dark marker text stays above 9:1 on every one of them.
+    struct TapeColour { const char* name; juce::uint32 argb; };   // argb 0 = theme's default tape
+    inline const TapeColour tapeColours[] {
+        { "Masking tape", 0 },
+        { "Yellow",       0xfff3d36b },
+        { "Green",        0xffa7d7a0 },
+        { "Blue",         0xffa6c6ea },
+        { "Pink",         0xffefb3c6 },
+        { "Grey",         0xffc8c8c8 },
+    };
+    constexpr int numTapeColours = (int) std::size (tapeColours);
+
+    inline juce::Colour tapeColour (int index)
+    {
+        if (index <= 0 || index >= numTapeColours)
+            return p().tape;
+        return juce::Colour (tapeColours[index].argb);
+    }
+
+    // Spacing scale and shapes
+    constexpr int s1 = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24;
+    constexpr float controlRadius = 3.0f;
+    constexpr float panelRadius = 6.0f;
 
     // Typography
-    inline juce::Font ui (float size, bool bold = false)
+    inline juce::Font ui (float size, bool semibold = false)
     {
-        return juce::Font (juce::FontOptions ("Segoe UI", size, bold ? juce::Font::bold : juce::Font::plain));
+        return juce::Font (juce::FontOptions ("Segoe UI", size, semibold ? juce::Font::bold : juce::Font::plain));
     }
 
     inline juce::Font mono (float size)
@@ -52,11 +116,28 @@ namespace Theme
         return juce::Font (juce::FontOptions ("Cascadia Mono", size, juce::Font::plain));
     }
 
-    // Small upper-case section label ("INPUTS", "OUTPUTS")
-    inline void drawSectionLabel (juce::Graphics& g, const juce::String& label, juce::Rectangle<int> area)
+    // Silk-screened panel legend ("INPUTS", "INSERTS")
+    inline void drawLegend (juce::Graphics& g, const juce::String& label, juce::Rectangle<int> area,
+                            juce::Justification just = juce::Justification::centredLeft)
     {
-        g.setColour (textFaint);
-        g.setFont (ui (12.0f, true).withExtraKerningFactor (0.12f));
-        g.drawText (label.toUpperCase(), area, juce::Justification::centredLeft);
+        g.setColour (p().textFaint);
+        g.setFont (ui (11.5f, true).withExtraKerningFactor (0.06f));
+        g.drawText (label.toUpperCase(), area, just);
+    }
+
+    // 2 px focus ring in the theme's focus colour (R-32)
+    inline void drawFocusRing (juce::Graphics& g, juce::Rectangle<float> area, float radius = controlRadius)
+    {
+        g.setColour (p().focus);
+        g.drawRoundedRectangle (area.reduced (1.0f), radius, 2.0f);
+    }
+
+    // Faceplate behind a strip or bus
+    inline void drawFaceplate (juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        g.setColour (p().panel);
+        g.fillRoundedRectangle (area, panelRadius);
+        g.setColour (p().line);
+        g.drawRoundedRectangle (area.reduced (0.5f), panelRadius, 1.0f);
     }
 }

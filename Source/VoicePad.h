@@ -41,9 +41,9 @@ private:
 class VoicePadComponent : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    static constexpr int headerHeight = 32;   // mode switch above the pad
+    static constexpr int headerHeight = 30;   // mode switch above the pad
 
-    explicit VoicePadComponent (VoicePadParams& p);
+    VoicePadComponent (VoicePadParams& p, const juce::String& ownerName);
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -53,14 +53,17 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseEnter (const juce::MouseEvent&) override { repaint(); }
     void mouseExit (const juce::MouseEvent&) override  { repaint(); }
+    bool keyPressed (const juce::KeyPress&) override;
+    void focusGained (FocusChangeType) override { repaint(); }
+    void focusLost (FocusChangeType) override   { repaint(); }
 
     void refreshFromParams();
 
 private:
     juce::Rectangle<float> padArea() const;
     void setFromMouse (juce::Point<float>);
+    void nudge (float dx, float dy);
     void setMode (int m);
-
     juce::String readout() const;
 
     VoicePadParams& params;

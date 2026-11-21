@@ -25,6 +25,21 @@ uint32_t findAudioAppByExe (const std::wstring& exeName);
 
 bool isProcessAlive (uint32_t pid);
 
+// Output devices, for choosing where an app's own sound goes.
+struct RenderDevice
+{
+    std::wstring id;     // MMDevice endpoint ID
+    std::wstring name;   // friendly name
+};
+std::vector<RenderDevice> listRenderDevices();
+
+// Points one app's own output at another device (empty id = back to the Windows default).
+// Used so a captured app isn't heard twice: OpenMix captures it, and its direct output goes to
+// a device nobody listens to. This is the per-app device setting from Windows' Sound settings;
+// the interface behind it is undocumented, so this returns false with an error rather than
+// guessing if the running Windows build doesn't offer it.
+bool setAppOutputDevice (uint32_t pid, const std::wstring& deviceId, std::string& error);
+
 class AppCapture
 {
 public:

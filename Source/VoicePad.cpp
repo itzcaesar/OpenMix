@@ -1,5 +1,6 @@
 #include "VoicePad.h"
 #include "Theme.h"
+#include "ui/Widgets.h"
 
 //==============================================================================
 // DSP
@@ -105,27 +106,28 @@ void VoicePadProcessor::process (juce::AudioBuffer<float>& stereo, int numSample
 //==============================================================================
 // UI
 
-VoicePadComponent::VoicePadComponent (VoicePadParams& p) : params (p)
+VoicePadComponent::VoicePadComponent (VoicePadParams& p, const juce::String& ownerName) : params (p)
 {
-    // Two-part segmented switch
+    // Two-key mode switch; the selected key lights up like a lit hardware key.
     voiceButton.setConnectedEdges (juce::Button::ConnectedOnRight);
     panButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
-
     for (auto* b : { &voiceButton, &panButton })
     {
-        b->setClickingTogglesState (false);
-        b->setColour (juce::TextButton::buttonColourId, Theme::panelDark);
-        b->setColour (juce::TextButton::buttonOnColourId, Theme::raised.brighter (0.15f));
-        b->setColour (juce::TextButton::textColourOffId, Theme::textFaint);
-        b->setColour (juce::TextButton::textColourOnId, Theme::text);
+        makeLamp (*b, "key");
         addAndMakeVisible (b);
     }
 
-    voiceButton.setTooltip ("Voice: left/right = darker/brighter tone, up = presence + echo");
-    panButton.setTooltip ("Pan: left/right = stereo position, up = wider stereo");
+    voiceButton.setTitle (ownerName + " pad mode: voice");
+    panButton.setTitle (ownerName + " pad mode: pan");
+    voiceButton.setTooltip ("Voice: left/right makes the voice darker/brighter, up adds presence and echo.");
+    panButton.setTooltip ("Pan: left/right places the sound, up makes it wider.");
     voiceButton.onClick = [this] { setMode (VoicePadParams::Voice); };
     panButton.onClick   = [this] { setMode (VoicePadParams::Pan); };
-    setTooltip ("Drag the dot. Double-click to reset.");
+
+    setTitle (ownerName + " voice pad");
+    setWantsKeyboardFocus (true);
+    makeClickable (*this);
+    setTooltip ("Drag the puck, or use the arrow keys (Shift for fine steps). Double-click or Home resets it.");
     refreshFromParams();
 }
 
@@ -134,6 +136,7 @@ void VoicePadComponent::refreshFromParams()
     const int m = params.mode.load();
     voiceButton.setToggleState (m == VoicePadParams::Voice, juce::dontSendNotification);
     panButton.setToggleState   (m == VoicePadParams::Pan,   juce::dontSendNotification);
+    setDescription (readout());
     repaint();
 }
 
@@ -145,7 +148,7 @@ void VoicePadComponent::setMode (int m)
 
 void VoicePadComponent::resized()
 {
-    auto top = getLocalBounds().removeFromTop (headerHeight - 6);
+    auto top = getLocalBounds().removeFromTop (headerHeight - 4);
     voiceButton.setBounds (top.removeFromLeft (top.getWidth() / 2));
     panButton.setBounds (top);
 }
@@ -163,78 +166,69 @@ juce::String VoicePadComponent::readout() const
     if (params.mode.load() == VoicePadParams::Voice)
     {
         const float tilt = x * 6.0f;
-        return "Tone " + juce::String (tilt > 0.05f ? "+" : "") + juce::String (tilt, 1) + " dB   "
+        return "Tone " + juce::String (tilt > 0.05f ? "+" : "") + juce::String (tilt, 1) + " dB  "
              + "Echo " + juce::String (juce::roundToInt (y01 * 100.0f)) + "%";
     }
 
     const int pan = juce::roundToInt (x * 100.0f);
     const juce::String panText = pan == 0 ? juce::String ("C") : (pan < 0 ? "L" : "R") + juce::String (std::abs (pan));
-    return "Pan " + panText + "   Width " + juce::String (juce::roundToInt (100.0f + y01 * 100.0f)) + "%";
+    return "Pan " + panText + "  Width " + juce::String (juce::roundToInt (100.0f + y01 * 100.0f)) + "%";
 }
 
 void VoicePadComponent::paint (juce::Graphics& g)
 {
+    const auto& t = Theme::p();
     const auto area = padArea();
     const bool voice = params.mode.load() == VoicePadParams::Voice;
-    const auto accent = Theme::accent;
 
-    // Well
-    g.setGradientFill (juce::ColourGradient (Theme::panelDark.brighter (0.06f), area.getCentreX(), area.getY(),
-                                             Theme::panelDark, area.getCentreX(), area.getBottom(), false));
-    g.fillRoundedRectangle (area, Theme::radius);
+    // Recessed rubber pad
+    g.setColour (t.well);
+    g.fillRoundedRectangle (area, Theme::controlRadius);
+    g.setColour (isMouseOverOrDragging() || hasKeyboardFocus (false) ? t.controlEdge : t.line);
+    g.drawRoundedRectangle (area, Theme::controlRadius, 1.0f);
 
-    // 4x4 grid + centre axes
     const auto inner = area.reduced (10.0f);
-    g.setColour (Theme::grid);
+
+    // Centre axes and edge ticks: position references, not a background grid.
+    g.setColour (t.line);
+    g.drawVerticalLine ((int) inner.getCentreX(), inner.getY(), inner.getBottom());
+    if (! voice)
+        g.drawHorizontalLine ((int) inner.getCentreY(), inner.getX(), inner.getRight());
+    g.setColour (t.textFaint);
     for (int i = 1; i < 4; ++i)
     {
         const float fx = inner.getX() + inner.getWidth() * (float) i / 4.0f;
         const float fy = inner.getY() + inner.getHeight() * (float) i / 4.0f;
-        g.drawVerticalLine ((int) fx, inner.getY(), inner.getBottom());
-        g.drawHorizontalLine ((int) fy, inner.getX(), inner.getRight());
+        g.drawVerticalLine ((int) fx, area.getBottom() - 5.0f, area.getBottom() - 1.0f);
+        g.drawHorizontalLine ((int) fy, area.getX() + 1.0f, area.getX() + 5.0f);
     }
-    g.setColour (Theme::outline);
-    g.drawVerticalLine ((int) inner.getCentreX(), inner.getY(), inner.getBottom());
-    if (! voice)
-        g.drawHorizontalLine ((int) inner.getCentreY(), inner.getX(), inner.getRight());
 
-    g.setColour (isMouseOverOrDragging() ? Theme::outline.brighter (0.2f) : Theme::outline);
-    g.drawRoundedRectangle (area.reduced (0.5f), Theme::radius, 1.0f);
+    // Legends
+    g.setFont (Theme::ui (11.5f, true));
+    g.setColour (t.textFaint);
+    const auto legends = area.reduced (8.0f, 5.0f).toNearestInt();
+    g.drawText (voice ? "PRESENCE + ECHO" : "WIDE", legends, juce::Justification::centredTop);
+    g.drawText (voice ? "DARK" : "L", legends.withTrimmedBottom (16), juce::Justification::bottomLeft);
+    g.drawText (voice ? "BRIGHT" : "R", legends.withTrimmedBottom (16), juce::Justification::bottomRight);
 
-    // Axis labels
-    g.setFont (Theme::ui (12.0f));
-    g.setColour (Theme::textFaint);
-    const auto labels = area.reduced (10.0f, 6.0f).toNearestInt();
-    g.drawText (voice ? "PRESENCE + ECHO" : "WIDE", labels, juce::Justification::centredTop);
-    g.drawText (voice ? "DARK" : "L", labels.withTrimmedBottom (18), juce::Justification::bottomLeft);
-    g.drawText (voice ? "BRIGHT" : "R", labels.withTrimmedBottom (18), juce::Justification::bottomRight);
+    // Readout: what the position does, in numbers
+    g.setFont (Theme::mono (11.5f));
+    g.setColour (dragging ? t.text : t.textDim);
+    g.drawText (readout(), legends, juce::Justification::centredBottom);
 
-    // Readout
-    g.setFont (Theme::mono (12.0f));
-    g.setColour (dragging ? Theme::text : Theme::textDim);
-    g.drawText (readout(), labels, juce::Justification::centredBottom);
-
-    // Handle position
+    // Puck (raised, so it gets the small shadow)
     const float px = juce::jmap (params.x.load(), -1.0f, 1.0f, inner.getX(), inner.getRight());
     const float py = juce::jmap (params.y.load(), -1.0f, 1.0f, inner.getBottom(), inner.getY());
-
-    // Guide lines to the edges
-    g.setColour (accent.withAlpha (dragging ? 0.45f : 0.22f));
-    g.drawVerticalLine ((int) px, inner.getY(), inner.getBottom());
-    g.drawHorizontalLine ((int) py, inner.getX(), inner.getRight());
-
-    // Glow + dot
-    const float r = dragging ? 9.0f : 8.0f;
-    for (int i = 3; i >= 1; --i)
-    {
-        g.setColour (accent.withAlpha (0.07f * (float) (4 - i)));
-        const float gr = r + (float) i * 4.0f;
-        g.fillEllipse (px - gr, py - gr, gr * 2.0f, gr * 2.0f);
-    }
-    g.setColour (accent);
+    const float r = 7.5f;
+    g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.45f : 0.2f));
+    g.fillEllipse (px - r, py - r + 1.5f, r * 2.0f, r * 2.0f);
+    g.setColour (t.accent);
     g.fillEllipse (px - r, py - r, r * 2.0f, r * 2.0f);
-    g.setColour (Theme::text);
-    g.fillEllipse (px - 3.0f, py - 3.0f, 6.0f, 6.0f);
+    g.setColour (t.dark ? t.accent.darker (0.5f) : t.accentEdge);
+    g.drawEllipse (px - r, py - r, r * 2.0f, r * 2.0f, 1.5f);
+
+    if (hasKeyboardFocus (false))
+        Theme::drawFocusRing (g, area.expanded (1.0f));
 }
 
 void VoicePadComponent::setFromMouse (juce::Point<float> pos)
@@ -242,7 +236,33 @@ void VoicePadComponent::setFromMouse (juce::Point<float> pos)
     const auto inner = padArea().reduced (10.0f);
     params.x.store (juce::jlimit (-1.0f, 1.0f, juce::jmap (pos.x, inner.getX(), inner.getRight(), -1.0f, 1.0f)));
     params.y.store (juce::jlimit (-1.0f, 1.0f, juce::jmap (pos.y, inner.getBottom(), inner.getY(), -1.0f, 1.0f)));
+    setDescription (readout());
     repaint();
+}
+
+void VoicePadComponent::nudge (float dx, float dy)
+{
+    params.x.store (juce::jlimit (-1.0f, 1.0f, params.x.load() + dx));
+    params.y.store (juce::jlimit (-1.0f, 1.0f, params.y.load() + dy));
+    setDescription (readout());
+    repaint();
+}
+
+bool VoicePadComponent::keyPressed (const juce::KeyPress& k)
+{
+    const float step = k.getModifiers().isShiftDown() ? 0.02f : 0.1f;
+    if (k.isKeyCode (juce::KeyPress::leftKey))  { nudge (-step, 0.0f); return true; }
+    if (k.isKeyCode (juce::KeyPress::rightKey)) { nudge (step, 0.0f);  return true; }
+    if (k.isKeyCode (juce::KeyPress::upKey))    { nudge (0.0f, step);  return true; }
+    if (k.isKeyCode (juce::KeyPress::downKey))  { nudge (0.0f, -step); return true; }
+    if (k.isKeyCode (juce::KeyPress::homeKey))
+    {
+        params.x.store (0.0f);
+        params.y.store (-1.0f);
+        refreshFromParams();
+        return true;
+    }
+    return false;
 }
 
 void VoicePadComponent::mouseDown (const juce::MouseEvent& e)
@@ -270,5 +290,5 @@ void VoicePadComponent::mouseDoubleClick (const juce::MouseEvent&)
 {
     params.x.store (0.0f);
     params.y.store (-1.0f);
-    repaint();
+    refreshFromParams();
 }

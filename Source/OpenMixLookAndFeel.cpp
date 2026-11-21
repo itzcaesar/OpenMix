@@ -3,130 +3,235 @@
 
 OpenMixLookAndFeel::OpenMixLookAndFeel()
 {
-    using namespace Theme;
+    applyPalette();
+}
 
-    setColourScheme ({ background, panel, panel, outline, text, accent, text, accent, text });
+void OpenMixLookAndFeel::applyPalette()
+{
+    const auto& t = Theme::p();
 
-    setColour (juce::ResizableWindow::backgroundColourId, background);
-    setColour (juce::DocumentWindow::textColourId, text);
+    setColourScheme ({ t.window, t.panel, t.panel, t.controlEdge, t.text, t.text, t.text, t.raised, t.text });
 
-    setColour (juce::TextButton::buttonColourId, raised);
-    setColour (juce::TextButton::buttonOnColourId, accent);
-    setColour (juce::TextButton::textColourOffId, text);
-    setColour (juce::TextButton::textColourOnId, background);
+    setColour (juce::ResizableWindow::backgroundColourId, t.window);
+    setColour (juce::DocumentWindow::textColourId, t.text);
 
-    setColour (juce::Slider::thumbColourId, text);
-    setColour (juce::Slider::trackColourId, accent);
-    setColour (juce::Slider::backgroundColourId, panelDark);
-    setColour (juce::Slider::rotarySliderFillColourId, accent);
-    setColour (juce::Slider::rotarySliderOutlineColourId, raised);
-    setColour (juce::Slider::textBoxTextColourId, text);
+    setColour (juce::TextButton::buttonColourId, t.raised);
+    setColour (juce::TextButton::buttonOnColourId, t.raised);
+    setColour (juce::TextButton::textColourOffId, t.text);
+    setColour (juce::TextButton::textColourOnId, t.text);
+
+    setColour (juce::Slider::thumbColourId, t.raised);
+    setColour (juce::Slider::trackColourId, t.textDim);
+    setColour (juce::Slider::backgroundColourId, t.well);
+    setColour (juce::Slider::rotarySliderFillColourId, t.text);
+    setColour (juce::Slider::rotarySliderOutlineColourId, t.controlEdge);
+    setColour (juce::Slider::textBoxTextColourId, t.textDim);
     setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
     setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    setColour (juce::Slider::textBoxHighlightColourId, accent.withAlpha (0.4f));
+    setColour (juce::Slider::textBoxHighlightColourId, t.text.withAlpha (0.25f));
 
-    setColour (juce::Label::textColourId, text);
-    setColour (juce::Label::textWhenEditingColourId, text);
-    setColour (juce::Label::backgroundWhenEditingColourId, panelDark);
-    setColour (juce::Label::outlineWhenEditingColourId, accent);
-    setColour (juce::TextEditor::backgroundColourId, panelDark);
-    setColour (juce::TextEditor::highlightColourId, accent.withAlpha (0.4f));
-    setColour (juce::TextEditor::focusedOutlineColourId, accent);
-    setColour (juce::CaretComponent::caretColourId, accent);
+    setColour (juce::Label::textColourId, t.text);
+    setColour (juce::Label::textWhenEditingColourId, t.text);
+    setColour (juce::Label::backgroundWhenEditingColourId, t.raised);
+    setColour (juce::Label::outlineWhenEditingColourId, t.focus);
+    setColour (juce::TextEditor::backgroundColourId, t.raised);
+    setColour (juce::TextEditor::textColourId, t.text);
+    setColour (juce::TextEditor::outlineColourId, t.controlEdge);
+    setColour (juce::TextEditor::focusedOutlineColourId, t.focus);
+    setColour (juce::TextEditor::highlightColourId, t.text.withAlpha (0.25f));
+    setColour (juce::TextEditor::highlightedTextColourId, t.text);
+    setColour (juce::CaretComponent::caretColourId, t.text);
 
-    setColour (juce::PopupMenu::backgroundColourId, panel);
-    setColour (juce::PopupMenu::textColourId, text);
-    setColour (juce::PopupMenu::headerTextColourId, textFaint);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, accent.withAlpha (0.22f));
-    setColour (juce::PopupMenu::highlightedTextColourId, text);
+    setColour (juce::PopupMenu::backgroundColourId, t.raised);
+    setColour (juce::PopupMenu::textColourId, t.text);
+    setColour (juce::PopupMenu::headerTextColourId, t.textFaint);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, t.text.withAlpha (t.dark ? 0.14f : 0.10f));
+    setColour (juce::PopupMenu::highlightedTextColourId, t.text);
 
-    setColour (juce::ComboBox::backgroundColourId, raised);
-    setColour (juce::ComboBox::outlineColourId, outline);
-    setColour (juce::ComboBox::arrowColourId, textDim);
-    setColour (juce::ListBox::backgroundColourId, panelDark);
-    setColour (juce::ScrollBar::thumbColourId, outline);
-    setColour (juce::TooltipWindow::backgroundColourId, raised);
-    setColour (juce::TooltipWindow::textColourId, text);
-    setColour (juce::TooltipWindow::outlineColourId, outline);
-    setColour (juce::ToggleButton::tickColourId, accent);
-    setColour (juce::ToggleButton::tickDisabledColourId, textFaint);
+    setColour (juce::ComboBox::backgroundColourId, t.raised);
+    setColour (juce::ComboBox::textColourId, t.text);
+    setColour (juce::ComboBox::outlineColourId, t.controlEdge);
+    setColour (juce::ComboBox::arrowColourId, t.textDim);
+    setColour (juce::ComboBox::focusedOutlineColourId, t.focus);
+    setColour (juce::ListBox::backgroundColourId, t.well);
+    setColour (juce::ListBox::textColourId, t.text);
+    setColour (juce::ListBox::outlineColourId, t.controlEdge);
+    setColour (juce::ScrollBar::thumbColourId, t.controlEdge);
+    setColour (juce::TooltipWindow::backgroundColourId, t.raised);
+    setColour (juce::TooltipWindow::textColourId, t.text);
+    setColour (juce::TooltipWindow::outlineColourId, t.controlEdge);
+    setColour (juce::ToggleButton::textColourId, t.text);
+    setColour (juce::ToggleButton::tickColourId, t.text);
+    setColour (juce::ToggleButton::tickDisabledColourId, t.textFaint);
+    setColour (juce::AlertWindow::backgroundColourId, t.panel);
+    setColour (juce::AlertWindow::textColourId, t.text);
+    setColour (juce::AlertWindow::outlineColourId, t.controlEdge);
+    setColour (juce::GroupComponent::outlineColourId, t.line);
+    setColour (juce::GroupComponent::textColourId, t.textDim);
 }
 
 //==============================================================================
-juce::Font OpenMixLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
+// Buttons
+
+void OpenMixLookAndFeel::drawLamp (juce::Graphics& g, juce::Rectangle<float> area, bool on, juce::Colour lampColour)
 {
-    return Theme::ui (juce::jlimit (12.0f, 14.0f, (float) buttonHeight * 0.52f), true);
+    const auto& t = Theme::p();
+    if (on)
+    {
+        g.setColour (lampColour);
+        g.fillRoundedRectangle (area, 1.5f);
+    }
+    else
+    {
+        g.setColour (t.dark ? t.well : t.panel);
+        g.fillRoundedRectangle (area, 1.5f);
+    }
+    // The outline is what makes the lamp's shape readable on the light panel (amber is 1.9:1 there).
+    g.setColour (on && t.dark ? lampColour.darker (0.4f) : t.controlEdge);
+    g.drawRoundedRectangle (area.reduced (0.5f), 1.5f, 1.0f);
 }
 
-void OpenMixLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
-                                               const juce::Colour& backgroundColour,
+juce::Font OpenMixLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
+{
+    return Theme::ui (juce::jlimit (12.0f, 13.5f, (float) buttonHeight * 0.5f), true);
+}
+
+void OpenMixLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&,
                                                bool isHighlighted, bool isDown)
 {
-    auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+    const auto& t = Theme::p();
+    const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+    const auto lamp = button.getProperties()["lamp"].toString();
     const bool on = button.getToggleState();
 
-    auto fill = backgroundColour;
-    if (isDown)             fill = fill.darker (0.25f);
-    else if (isHighlighted) fill = fill.brighter (on ? 0.12f : 0.18f);
+    juce::Colour fill = t.raised;
+    juce::Colour edge = t.controlEdge;
+
+    // Mode buttons (segmented switch) light the whole key in amber when selected.
+    if (lamp == "key" && on)
+    {
+        fill = t.accent;
+        edge = t.accentEdge;
+    }
+
+    if (isDown)               fill = fill.darker (0.12f);
+    else if (isHighlighted)   fill = t.dark ? fill.brighter (0.10f) : fill.darker (0.04f);
     if (! button.isEnabled()) fill = fill.withMultipliedAlpha (0.5f);
 
     g.setColour (fill);
-    g.fillRoundedRectangle (bounds, Theme::smallRadius);
+    g.fillRoundedRectangle (bounds, Theme::controlRadius);
+    g.setColour (edge);
+    g.drawRoundedRectangle (bounds, Theme::controlRadius, 1.0f);
 
-    g.setColour (on ? fill.brighter (0.25f) : Theme::outline);
-    g.drawRoundedRectangle (bounds, Theme::smallRadius, 1.0f);
-
-    if (button.hasKeyboardFocus (true))
+    if (lamp == "accent" || lamp == "mute")
     {
-        g.setColour (Theme::accent);
-        g.drawRoundedRectangle (bounds.reduced (1.0f), Theme::smallRadius, 1.5f);
+        const auto lampArea = juce::Rectangle<float> (8.0f, 8.0f)
+                                  .withCentre ({ bounds.getX() + 11.0f, bounds.getCentreY() });
+        drawLamp (g, lampArea, on, lamp == "mute" ? t.mute : t.accent);
+    }
+
+    if (button.hasKeyboardFocus (false))
+        Theme::drawFocusRing (g, bounds.expanded (0.5f));
+}
+
+void OpenMixLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool, bool)
+{
+    const auto& t = Theme::p();
+    const auto lamp = button.getProperties()["lamp"].toString();
+    const bool on = button.getToggleState();
+
+    auto area = button.getLocalBounds();
+    if (lamp == "accent" || lamp == "mute")
+        area.removeFromLeft (16);   // room for the lamp
+
+    g.setFont (getTextButtonFont (button, button.getHeight()));
+    g.setColour (lamp == "key" && on ? t.onAccent
+                 : (lamp.isNotEmpty() && ! on) ? t.textDim : t.text);
+    if (! button.isEnabled())
+        g.setColour (t.textFaint);
+
+    g.drawFittedText (button.getButtonText(), area.reduced (4, 0), juce::Justification::centred, 1);
+}
+
+void OpenMixLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool isHighlighted, bool isDown)
+{
+    const auto& t = Theme::p();
+    const auto box = juce::Rectangle<float> (16.0f, 16.0f).withCentre ({ 10.0f, (float) button.getHeight() * 0.5f });
+
+    g.setColour (isHighlighted ? t.raised.brighter (t.dark ? 0.1f : 0.0f) : t.raised);
+    g.fillRoundedRectangle (box, Theme::controlRadius);
+    g.setColour (t.controlEdge);
+    g.drawRoundedRectangle (box.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+    if (button.getToggleState())
+    {
+        juce::Path tick;
+        tick.startNewSubPath (box.getX() + 3.5f, box.getCentreY());
+        tick.lineTo (box.getX() + 6.8f, box.getBottom() - 4.0f);
+        tick.lineTo (box.getRight() - 3.5f, box.getY() + 4.0f);
+        g.setColour (t.text);
+        g.strokePath (tick, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    g.setColour (button.isEnabled() ? t.text : t.textFaint);
+    g.setFont (Theme::ui (13.5f));
+    g.drawFittedText (button.getButtonText(), button.getLocalBounds().withTrimmedLeft (26), juce::Justification::centredLeft, 2);
+
+    if (button.hasKeyboardFocus (false))
+        Theme::drawFocusRing (g, box.expanded (3.0f));
+
+    juce::ignoreUnused (isDown);
+}
+
+//==============================================================================
+// Knob: raised cap with printed tick scale, pointer line.
+
+void OpenMixLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                                           float pos, float startAngle, float endAngle, juce::Slider& slider)
+{
+    const auto& t = Theme::p();
+    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (2.0f);
+    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    const auto centre = bounds.getCentre();
+
+    // Printed scale: 11 ticks, the centre one longer (0 dB on a bipolar control)
+    const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0;
+    for (int i = 0; i <= 10; ++i)
+    {
+        const float a = startAngle + (endAngle - startAngle) * (float) i / 10.0f;
+        const bool major = i == 0 || i == 10 || (bipolar && i == 5);
+        const auto outer = centre.getPointOnCircumference (radius, a);
+        const auto inner = centre.getPointOnCircumference (radius - (major ? 5.0f : 3.0f), a);
+        g.setColour (major ? t.textDim : t.textFaint);
+        g.drawLine ({ inner, outer }, 1.0f);
+    }
+
+    // Cap (raised: soft shadow + top-lit body)
+    const float capR = radius - 7.0f;
+    const auto cap = juce::Rectangle<float> (capR * 2.0f, capR * 2.0f).withCentre (centre);
+    g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.45f : 0.18f));
+    g.fillEllipse (cap.translated (0.0f, 1.5f));
+    const auto top = t.dark ? juce::Colour (0xff4a4a4a) : juce::Colour (0xffffffff);
+    const auto bottom = t.dark ? juce::Colour (0xff2a2a2a) : juce::Colour (0xffdedbd4);
+    g.setGradientFill (juce::ColourGradient (top, cap.getCentreX(), cap.getY(), bottom, cap.getCentreX(), cap.getBottom(), false));
+    g.fillEllipse (cap);
+    g.setColour (t.controlEdge);
+    g.drawEllipse (cap.reduced (0.5f), 1.0f);
+
+    // Pointer
+    const float angle = startAngle + pos * (endAngle - startAngle);
+    g.setColour (t.text);
+    g.drawLine ({ centre.getPointOnCircumference (capR * 0.3f, angle), centre.getPointOnCircumference (capR * 0.85f, angle) }, 2.0f);
+
+    if (slider.hasKeyboardFocus (false))
+    {
+        g.setColour (t.focus);
+        g.drawEllipse (cap.expanded (3.0f), 2.0f);
     }
 }
 
 //==============================================================================
-void OpenMixLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
-                                           float pos, float startAngle, float endAngle, juce::Slider& slider)
-{
-    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (4.0f);
-    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-    const auto centre = bounds.getCentre();
-    const float trackWidth = juce::jmax (3.0f, radius * 0.14f);
-    const float arcRadius = radius - trackWidth * 0.5f;
-
-    // Track
-    juce::Path track;
-    track.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0.0f, startAngle, endAngle, true);
-    g.setColour (Theme::raised);
-    g.strokePath (track, { trackWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
-
-    // Value arc. Bipolar sliders (range crosses 0, e.g. gain) fill from the centre.
-    const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0;
-    const float zeroPos = bipolar ? (float) slider.valueToProportionOfLength (0.0) : 0.0f;
-    const float fromAngle = startAngle + zeroPos * (endAngle - startAngle);
-    const float toAngle   = startAngle + pos * (endAngle - startAngle);
-
-    if (std::abs (toAngle - fromAngle) > 0.001f)
-    {
-        juce::Path value;
-        value.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0.0f,
-                             juce::jmin (fromAngle, toAngle), juce::jmax (fromAngle, toAngle), true);
-        g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId)
-                         .withMultipliedAlpha (slider.isEnabled() ? 1.0f : 0.4f));
-        g.strokePath (value, { trackWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
-    }
-
-    // Knob body + pointer
-    const float bodyRadius = arcRadius - trackWidth * 1.4f;
-    g.setColour (Theme::panelDark);
-    g.fillEllipse (juce::Rectangle<float> (bodyRadius * 2.0f, bodyRadius * 2.0f).withCentre (centre));
-    g.setColour (Theme::outline);
-    g.drawEllipse (juce::Rectangle<float> (bodyRadius * 2.0f, bodyRadius * 2.0f).withCentre (centre), 1.0f);
-
-    const auto tip = centre.getPointOnCircumference (bodyRadius * 0.78f, toAngle);
-    const auto base = centre.getPointOnCircumference (bodyRadius * 0.25f, toAngle);
-    g.setColour (Theme::text);
-    g.drawLine ({ base, tip }, 2.0f);
-}
+// Fader: recessed slot, raised cap with a grip line.
 
 void OpenMixLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                                            float sliderPos, float minSliderPos, float maxSliderPos,
@@ -138,48 +243,55 @@ void OpenMixLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
         return;
     }
 
+    const auto& t = Theme::p();
     const auto area = juce::Rectangle<int> (x, y, width, height).toFloat();
     const float cx = area.getCentreX();
 
     // Slot
-    const auto slot = juce::Rectangle<float> (cx - 2.0f, area.getY(), 4.0f, area.getHeight());
-    g.setColour (Theme::panelDark);
-    g.fillRoundedRectangle (slot, 2.0f);
-
-    // Fill from the bottom up to the cap
-    g.setColour (slider.findColour (juce::Slider::trackColourId).withAlpha (0.55f));
-    g.fillRoundedRectangle (slot.withTop (sliderPos), 2.0f);
-
-    // 0 dB mark
-    if (slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0)
-    {
-        const float zeroY = (float) slider.getPositionOfValue (0.0);
-        g.setColour (Theme::textDim);
-        g.fillRect (cx - 9.0f, zeroY - 0.5f, 18.0f, 1.0f);
-    }
+    const auto slot = juce::Rectangle<float> (cx - 2.5f, area.getY(), 5.0f, area.getHeight());
+    g.setColour (t.dark ? t.well : t.meterWell.withAlpha (0.85f));
+    g.fillRoundedRectangle (slot, 2.5f);
 
     // Cap
-    const float capW = juce::jmin (36.0f, area.getWidth() - 2.0f), capH = 18.0f;
+    const float capW = juce::jmin (38.0f, area.getWidth() - 4.0f), capH = 22.0f;
     const auto cap = juce::Rectangle<float> (capW, capH).withCentre ({ cx, sliderPos });
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.fillRoundedRectangle (cap.translated (0.0f, 2.0f), 4.0f);
-    g.setGradientFill (juce::ColourGradient (Theme::raised.brighter (0.35f), cap.getX(), cap.getY(),
-                                             Theme::raised, cap.getX(), cap.getBottom(), false));
-    g.fillRoundedRectangle (cap, 4.0f);
-    g.setColour (Theme::outline.brighter (0.3f));
-    g.drawRoundedRectangle (cap, 4.0f, 1.0f);
-    g.setColour (slider.isMouseOverOrDragging() ? Theme::accent : Theme::text);
+    g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.5f : 0.2f));
+    g.fillRoundedRectangle (cap.translated (0.0f, 2.0f), Theme::controlRadius);
+
+    const auto top = t.dark ? juce::Colour (0xff505050) : juce::Colour (0xffffffff);
+    const auto bottom = t.dark ? juce::Colour (0xff2e2e2e) : juce::Colour (0xffd9d6cf);
+    g.setGradientFill (juce::ColourGradient (top, cap.getX(), cap.getY(), bottom, cap.getX(), cap.getBottom(), false));
+    g.fillRoundedRectangle (cap, Theme::controlRadius);
+    g.setColour (t.controlEdge);
+    g.drawRoundedRectangle (cap.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+    // Grip line (the cap's centre is the value)
+    g.setColour (t.text);
     g.fillRect (cap.getX() + 5.0f, cap.getCentreY() - 1.0f, cap.getWidth() - 10.0f, 2.0f);
+
+    if (slider.hasKeyboardFocus (false))
+        Theme::drawFocusRing (g, cap.expanded (3.0f), Theme::controlRadius + 2.0f);
 }
 
 juce::Label* OpenMixLookAndFeel::createSliderTextBox (juce::Slider& slider)
 {
     auto* label = LookAndFeel_V4::createSliderTextBox (slider);
     label->setFont (Theme::mono (12.0f));
-    label->setColour (juce::Label::textColourId, Theme::textDim);
+    label->setColour (juce::Label::textColourId, Theme::p().textDim);
     label->setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     label->setColour (juce::Label::outlineColourId, juce::Colours::transparentBlack);
     return label;
+}
+
+void OpenMixLookAndFeel::drawCallOutBoxBackground (juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image&)
+{
+    // Popover panels: a raised plate with a real edge (it sits above the desk, so it gets the shadow).
+    const auto& t = Theme::p();
+    juce::DropShadow (juce::Colours::black.withAlpha (t.dark ? 0.5f : 0.25f), 12, { 0, 3 }).drawForPath (g, path);
+    g.setColour (t.panel);
+    g.fillPath (path);
+    g.setColour (t.controlEdge);
+    g.strokePath (path, juce::PathStrokeType (1.0f));
 }
 
 juce::Font OpenMixLookAndFeel::getLabelFont (juce::Label& label)
@@ -194,12 +306,13 @@ juce::Font OpenMixLookAndFeel::getPopupMenuFont()
 
 void OpenMixLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
 {
+    const auto& t = Theme::p();
     const auto area = juce::Rectangle<int> (width, height).toFloat();
-    g.setColour (Theme::raised);
-    g.fillRoundedRectangle (area, 4.0f);
-    g.setColour (Theme::outline);
-    g.drawRoundedRectangle (area.reduced (0.5f), 4.0f, 1.0f);
-    g.setColour (Theme::text);
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (area, Theme::controlRadius);
+    g.setColour (t.controlEdge);
+    g.drawRoundedRectangle (area.reduced (0.5f), Theme::controlRadius, 1.0f);
+    g.setColour (t.text);
     g.setFont (Theme::ui (13.0f));
     g.drawFittedText (text, area.toNearestInt().reduced (8, 4), juce::Justification::centredLeft, 6);
 }
@@ -210,7 +323,7 @@ juce::Rectangle<int> OpenMixLookAndFeel::getTooltipBounds (const juce::String& t
     juce::AttributedString s;
     s.append (tipText, Theme::ui (13.0f));
     juce::TextLayout layout;
-    layout.createLayout (s, 380.0f);
+    layout.createLayout (s, 360.0f);
     const int w = (int) std::ceil (layout.getWidth()) + 18;
     const int h = (int) std::ceil (layout.getHeight()) + 10;
 

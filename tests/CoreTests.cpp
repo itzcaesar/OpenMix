@@ -3,6 +3,9 @@
 #include "AudioSafety.h"
 #include "Biquad.h"
 #include "ClockBridge.h"
+#include "DelayLine.h"
+#include "dsp/Dynamics.h"
+#include "dsp/Denoiser.h"
 
 #include <cmath>
 #include <cstdio>
@@ -282,6 +285,148 @@ int main()
                 }
                 CHECK (std::isfinite (peak) && peak < 8.0f, "fs %.0f gain %.0f peak %f", fs, gain, peak);
             }
+    });
+
+    run ("DelayLine: exact delay, zero delay is transparent, clamps to max", []
+    {
+        DelayLine d;
+        d.prepare (100);
+        std::vector<float> l (300), r (300);
+        for (size_t i = 0; i < l.size(); ++i) { l[i] = (float) i; r[i] = -(float) i; }
+
+        // Process in odd-sized blocks to cross the ring-buffer wrap.
+        for (int pos = 0; pos < 300; pos += 37)
+            d.process (l.data() + pos, r.data() + pos, std::min (37, 300 - pos), 48);
+
+        bool ok = true;
+        for (int i = 0; i < 300; ++i)
+        {
+            const float expected = i < 48 ? 0.0f : (float) (i - 48);
+            ok = ok && l[(size_t) i] == expected && r[(size_t) i] == -expected;
+        }
+        CHECK (ok, "48-sample delay not exact");
+
+        DelayLine z;
+        z.prepare (10);
+        float a[4] { 1, 2, 3, 4 }, b[4] { 5, 6, 7, 8 };
+        z.process (a, b, 4, 0);
+        CHECK (a[0] == 1 && a[3] == 4 && b[2] == 7, "zero delay changed the signal");
+
+        DelayLine c;
+        c.prepare (8);
+        std::vector<float> x (40), y (40);
+        for (size_t i = 0; i < x.size(); ++i) x[i] = y[i] = (float) i;
+        c.process (x.data(), y.data(), 40, 1000);   // asks for more than the maximum
+        CHECK (x[20] == 12.0f, "expected clamp to 8 samples, got %f", x[20]);
+    });
+
+    auto sine = [] (float amplitude, double hz, int n, double fs = 48000.0)
+    {
+        std::vector<float> v ((size_t) n);
+        for (int i = 0; i < n; ++i)
+            v[(size_t) i] = amplitude * (float) std::sin (2.0 * std::numbers::pi * hz * i / fs);
+        return v;
+    };
+    auto peakOf = [] (const std::vector<float>& v, size_t from)
+    {
+        float p = 0.0f;
+        for (size_t i = from; i < v.size(); ++i) p = std::max (p, std::abs (v[i]));
+        return p;
+    };
+
+    run ("Gate: open on signal, closes to the range on room noise", [&]
+    {
+        omx::Gate gate;
+        gate.prepare (48000.0);
+        gate.thresholdDb = -40.0f;
+        gate.rangeDb = -40.0f;
+
+        auto loud = sine (0.5f, 300.0, 48000), loudR = loud;
+        gate.process (loud.data(), loudR.data(), (int) loud.size());
+        CHECK (peakOf (loud, 24000) > 0.49f, "loud signal attenuated: %f", peakOf (loud, 24000));
+
+        // -60 dBFS room noise. The gate needs ~0.35 s to decide the loud part is over (detector
+        // release + 80 ms hold), then fades over ~120 ms, so measure after 1.5 s.
+        auto quiet = sine (0.001f, 300.0, 96000), quietR = quiet;
+        gate.process (quiet.data(), quietR.data(), (int) quiet.size());
+        const float expected = 0.001f * omx::toGain (-40.0f);
+        CHECK (peakOf (quiet, 72000) < expected * 1.2f, "room noise not reduced: %g (expected ~%g)", peakOf (quiet, 72000), expected);
+    });
+
+    run ("Compressor: static curve and make-up gain", []
+    {
+        using C = omx::Compressor;
+        CHECK (C::staticReductionDb (-40.0f, -18.0f, 4.0f) == 0.0f, "below the knee should not compress");
+        const float above = C::staticReductionDb (-6.0f, -18.0f, 4.0f);   // 12 dB over, 4:1 -> 9 dB
+        CHECK (std::abs (above - 9.0f) < 0.01f, "12 dB over at 4:1 reduced by %f dB", above);
+        const float knee = C::staticReductionDb (-18.0f, -18.0f, 4.0f);   // at threshold, inside the knee
+        CHECK (knee > 0.0f && knee < 1.0f, "soft knee at threshold: %f", knee);
+
+        C comp;
+        comp.thresholdDb = -20.0f;
+        comp.ratio = 2.0f;
+        CHECK (std::abs (comp.makeupDb() - 5.0f) < 0.01f, "auto make-up %f dB", comp.makeupDb());
+    });
+
+    run ("EQ: flat at 0 dB, low shelf boosts the lows", [&]
+    {
+        omx::Eq3 eq;
+        eq.prepare (48000.0);
+        auto l = sine (0.5f, 1000.0, 9600), r = l, ref = l;
+        eq.process (l.data(), r.data(), (int) l.size());
+        double maxErr = 0.0;
+        for (size_t i = 0; i < l.size(); ++i) maxErr = std::max (maxErr, (double) std::abs (l[i] - ref[i]));
+        CHECK (maxErr < 1e-4, "flat EQ changed the signal by %g", maxErr);
+
+        eq.lowDb = 6.0f;
+        eq.prepare (48000.0);
+        auto lo = sine (0.25f, 50.0, 48000), loR = lo;
+        eq.process (lo.data(), loR.data(), (int) lo.size());
+        const float gainDb = omx::toDb (peakOf (lo, 24000) / 0.25f);
+        CHECK (std::abs (gainDb - 6.0f) < 0.7f, "50 Hz with +6 dB low shelf: %+.2f dB", gainDb);
+    });
+
+    run ("De-esser: cuts 7 kHz sibilance, leaves 300 Hz alone", [&]
+    {
+        omx::DeEsser ds;
+        ds.prepare (48000.0);
+        ds.thresholdDb = -30.0f;
+        ds.maxReductionDb = 10.0f;
+
+        auto ess = sine (0.5f, 7000.0, 48000), essR = ess;
+        const float minGain = ds.process (ess.data(), essR.data(), (int) ess.size());
+        CHECK (minGain < omx::toGain (-3.0f), "loud 7 kHz should be reduced, min gain %f", minGain);
+
+        ds.reset();
+        auto voice = sine (0.5f, 300.0, 48000), voiceR = voice;
+        ds.process (voice.data(), voiceR.data(), (int) voice.size());
+        const float lowDb = omx::toDb (peakOf (voice, 24000) / 0.5f);
+        CHECK (std::abs (lowDb) < 0.5f, "300 Hz changed by %+.2f dB", lowDb);
+    });
+
+    run ("Denoiser: exactly 480 samples of latency, dry blend matches, passes through at 44.1 kHz", [&]
+    {
+        omx::Denoiser dn;
+        dn.prepare (48000.0);
+        CHECK (dn.isAvailable(), "should run at 48 kHz");
+
+        std::vector<float> l (2400, 0.0f), r (2400, 0.0f);
+        l[100] = r[100] = 0.5f;
+        dn.process (l.data(), r.data(), (int) l.size(), 0.0f, false);   // amount 0 = delayed dry only
+        CHECK (std::abs (l[100 + omx::Denoiser::latency] - 0.5f) < 1e-6f, "impulse not delayed by 480: %f", l[580]);
+        CHECK (std::abs (l[100]) < 1e-9f, "output before the latency should be silent");
+
+        std::vector<float> s (4800, 0.0f), s2 (4800, 0.0f);
+        dn.reset();
+        dn.process (s.data(), s2.data(), (int) s.size(), 1.0f, false);   // silence in, silence out
+        CHECK (peakOf (s, 0) < 1e-3f, "silence produced %g", peakOf (s, 0));
+
+        omx::Denoiser off;
+        off.prepare (44100.0);
+        CHECK (! off.isAvailable(), "should report unavailable at 44.1 kHz");
+        float a[4] { 0.1f, 0.2f, 0.3f, 0.4f }, b[4] { 0.1f, 0.2f, 0.3f, 0.4f };
+        off.process (a, b, 4, 1.0f, false);
+        CHECK (a[2] == 0.3f, "44.1 kHz should pass through untouched");
     });
 
     std::printf (failures == 0 ? "\nAll tests passed\n" : "\n%d check(s) failed\n", failures);

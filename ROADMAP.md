@@ -47,8 +47,8 @@ What OpenMix should do that VoiceMeeter doesn't, and the phase each item lands i
 - [ ] Test loading, removing and replacing plugins while audio runs. Try a denoiser
       (RNNoise-based or DeepFilterNet) and a pitch corrector (Graillon / MAutoPitch)
 - [ ] Changing sample rate or buffer size while running must not crash or glitch for long
-- [ ] Save the session every 30 s and after each change, not only on exit
-- [ ] Unit tests (Catch2 or JUCE UnitTest) for Biquad responses, the pan law and the dB mapping
+- [x] Autosave every 10 s (only when something changed) and on exit
+- [x] Core unit tests (plain C++, run in CI): filters, clock bridge, limiter, delay line
 
 **Done when:** a mic runs through denoiser -> autotune -> pad -> A1 headphones for an hour
 with no dropouts, and comes back exactly the same after a restart.
@@ -76,10 +76,10 @@ VB-Cable at the same time, for hours, with no drift clicks.
 
 - [ ] **Virtual input strips** (stereo) that read desktop or app audio. Set Windows' default
       output to a virtual cable, and OpenMix captures that cable's other end
-- [ ] Stereo hardware strips (L/R input pair), selectable per strip
-- [ ] Configurable strip count (add or remove strips at runtime)
+- [x] Stereo hardware strips (L/R input pair), selectable per strip
+- [x] Configurable strip count (add or remove strips at runtime)
 - [ ] WASAPI loopback capture as an option (records what a device plays without a cable)
-- [ ] **Per-app routing**: list running audio apps and assign each to a strip. Either use
+- [x] **Per-app routing**: list running audio apps and assign each to a strip. Either use
       Windows' per-app output device setting (the same mechanism EarTrumpet uses) to send
       the app to an OpenMix virtual device, or use process loopback capture
       (`AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`, Windows 10 2004+)
@@ -91,13 +91,13 @@ fader, and the mic + effects go to B1 as Discord's input.
 
 Built-in so the basics work without third-party plugins:
 
-- [ ] Gate / noise gate, compressor, limiter per strip; 3-band EQ per strip
+- [x] Gate, compressor, 3-band EQ and de-esser per strip; safety limiter per bus
 - [ ] Bus EQ (graphic / parametric) and a bus limiter to prevent clipping
-- [ ] Solo, mono, polarity invert, per-send levels (send matrix instead of on/off)
-- [ ] Ducking: lower music when the mic talks (sidechain from one strip to another)
+- [x] Solo, mono, polarity invert, per-send levels (send matrix instead of on/off)
+- [x] Ducking: lower music when the mic talks (sidechain from one strip to another)
 - [ ] Recorder: record any bus to WAV/FLAC (`juce::AudioFormatWriter::ThreadedWriter`)
 - [ ] Meter improvements: RMS + peak, peak hold, clip indicators, LUFS on buses
-- [ ] Built-in neural-network denoise: RNNoise (light, 48 kHz, 10 ms frames) with DeepFilterNet as a
+- [x] Built-in neural-network denoise: RNNoise (light, 48 kHz, 10 ms frames) with DeepFilterNet as a
       "high quality" option (more CPU, adds latency)
 - [ ] Built-in pitch correction (YIN/McLeod pitch detection + PSOLA shift, key/scale, speed)
       and voice changer presets (formant shift, robot, radio, megaphone)
@@ -107,13 +107,13 @@ Built-in so the basics work without third-party plugins:
 
 ## Phase 5 - Plugin hosting hardening  *(~2 weeks)*
 
-- [ ] **Out-of-process plugin scanning** (a child process scans each plugin; a crash only
+- [x] **Out-of-process plugin scanning** (a child process scans each plugin; a crash only
       marks that plugin as bad) plus a `KnownPluginList` cache and a blacklist
-- [ ] Load plugins asynchronously with a "loading..." state on the slot
-- [ ] Per-slot bypass, wet/dry mix, drag to reorder slots, more slots per strip
-- [ ] **Latency compensation**: read `getLatencySamples()` and delay the other strips so
+- [x] Load plugins asynchronously with a "loading..." state on the slot
+- [x] Per-slot bypass, drag to reorder slots, 6 slots per strip (wet/dry mix still open)
+- [x] **Latency compensation**: read `getLatencySamples()` and delay the other strips so
       sends that reach the same bus stay aligned
-- [ ] Plugin presets: save and load per slot; A/B compare
+- [x] Plugin presets: save and load per slot (A/B compare still open)
 - [ ] Optional VST2 hosting (only if you own the old SDK; not available to new developers)
 - [ ] Stretch: sandboxed plugin process so a crashing plugin can't take down the mixer
 
@@ -146,12 +146,12 @@ This removes the need for VB-Cable. Two parts:
 
 ## Phase 8 - Product polish  *(~2 weeks)*
 
-- [ ] System tray icon, start with Windows, start minimized
+- [x] System tray icon, start with Windows, start minimized
 - [ ] Global hotkeys (mute mic, push-to-talk), MIDI controller mapping, OSC / WebSocket API
       (Stream Deck plugins, a phone remote)
-- [ ] Settings window, themes, resizable/scalable UI, strip renaming and colors
+- [x] Dark/light themes, resizable UI (laptop to desktop), strip renaming (settings window still open)
 - [ ] Crash handler + log file; "safe mode" start that skips plugins
-- [ ] Installer (Inno Setup or WiX) that also installs the driver; code-sign the EXE
+- [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)
 - [ ] Auto-update check
 
 ## Phase 9 - Release

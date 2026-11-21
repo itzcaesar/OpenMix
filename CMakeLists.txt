@@ -17,6 +17,23 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# RNNoise v0.1.1 (BSD-3-Clause), the noise-removal network. The submodule is used as-is except
+# pitch.c and celt_lpc.c, which come from Source/third_party/rnnoise (VLAs replaced for MSVC).
+set(RNNOISE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/rnnoise)
+add_library(rnnoise STATIC
+    ${RNNOISE_DIR}/src/denoise.c
+    ${RNNOISE_DIR}/src/rnn.c
+    ${RNNOISE_DIR}/src/rnn_data.c
+    ${RNNOISE_DIR}/src/kiss_fft.c
+    Source/third_party/rnnoise/pitch.c
+    Source/third_party/rnnoise/celt_lpc.c)
+target_include_directories(rnnoise PUBLIC ${RNNOISE_DIR}/include PRIVATE ${RNNOISE_DIR}/src)
+target_compile_definitions(rnnoise PUBLIC RNNOISE_EXPORT= PRIVATE _USE_MATH_DEFINES _CRT_SECURE_NO_WARNINGS)
+set_target_properties(rnnoise PROPERTIES C_STANDARD 11)
+if(MSVC)
+    target_compile_options(rnnoise PRIVATE /W0)   # third-party code: don't flood the build log
+endif()
+
 juce_add_gui_app(OpenMix
     PRODUCT_NAME "OpenMix"
     COMPANY_NAME "OpenMix"
@@ -34,7 +51,17 @@ target_sources(OpenMix PRIVATE
     Source/Session.cpp
     Source/ExternalIO.cpp
     Source/AppCapture.cpp
-    Source/OpenMixLookAndFeel.cpp)
+    Source/AppRouting.cpp
+    Source/AppSettings.cpp
+    Source/PluginScanner.cpp
+    Source/OpenMixLookAndFeel.cpp
+    Source/dsp/Denoiser.cpp
+    Source/ui/Widgets.cpp
+    Source/ui/StripView.cpp
+    Source/ui/BusView.cpp
+    Source/ui/Panels.cpp
+    Source/ui/SettingsPanel.cpp
+    Source/ui/TrayIcon.cpp)
 
 target_compile_definitions(OpenMix PRIVATE
     JUCE_WEB_BROWSER=0
@@ -54,8 +81,9 @@ target_compile_definitions(OpenMix PRIVATE
 option(OPENMIX_BUILD_TESTS "Build the core unit tests" ON)
 if(OPENMIX_BUILD_TESTS)
     enable_testing()
-    add_executable(OpenMixCoreTests tests/CoreTests.cpp)
+    add_executable(OpenMixCoreTests tests/CoreTests.cpp Source/dsp/Denoiser.cpp)
     target_include_directories(OpenMixCoreTests PRIVATE Source)
+    target_link_libraries(OpenMixCoreTests PRIVATE rnnoise)
     add_test(NAME OpenMixCoreTests COMMAND OpenMixCoreTests)
 endif()
 
@@ -66,9 +94,12 @@ target_link_libraries(OpenMix
     PRIVATE
         juce::juce_audio_utils
         juce::juce_audio_processors
+        juce::juce_gui_extra        # tray icon
         juce::juce_dsp
+        rnnoise
         mmdevapi            # ActivateAudioInterfaceAsync (per-app capture)
         avrt                # MMCSS thread priority for capture threads
+        runtimeobject       # RoGetActivationFactory (per-app output device)
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

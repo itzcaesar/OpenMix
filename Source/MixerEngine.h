@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "ChannelStrip.h"
 #include "ExternalIO.h"
+#include "PluginScanner.h"
 
 // Where a bus goes.
 enum class BusTarget : int
@@ -14,6 +15,8 @@ enum class BusTarget : int
 
 struct Bus
 {
+    std::atomic<bool>  active { false };        // shown and processed
+    std::atomic<bool>  monitor { false };       // the bus you listen on: gets soloed strips
     std::atomic<float> faderDb { 0.0f };
     std::atomic<bool>  mute { false };
     std::atomic<int>   target { (int) BusTarget::MainPair };
@@ -37,6 +40,7 @@ public:
 
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formatManager; }
+    PluginScanner& getScanner() noexcept { return *scanner; }
 
     ChannelStrip& getStrip (int i) noexcept { return *strips[(size_t) i]; }
     Bus& getBus (int i) noexcept { return buses[(size_t) i]; }
@@ -51,9 +55,23 @@ public:
 
     // Message thread: routing changes. Return false + error text on failure.
     void setStripSourceNone (int strip);
-    void setStripSourceMain (int strip, int channel);
+    void setStripSourceMain (int strip, int channel, int rightChannel = -1);   // rightChannel >= 0: stereo pair
     bool setStripSourceDevice (int strip, const juce::String& deviceName, juce::String& error);
     bool setStripSourceApp (int strip, const juce::String& exeName, juce::String& error);
+
+    // Where a captured app's own output goes, so it isn't heard twice ("" = leave it alone).
+    bool setStripAppOutput (int strip, const juce::String& deviceId, const juce::String& deviceName, juce::String& error);
+    void undoAppRedirect (int strip);        // puts the app back on the Windows default output
+    void undoAllAppRedirects();              // on shutdown
+
+    // Strips and buses on demand (message thread). addStrip returns the index or -1 if full.
+    int  addStrip();
+    void removeStrip (int strip);            // clears it (plugins, source, settings) and hides it
+    void addBus (int bus);
+    void removeBus (int bus);
+    void setMonitorBus (int bus);            // -1 = none
+    int  getNumActiveStrips() const;
+    int  getNumActiveBuses() const;
 
     void setBusOff (int bus);
     void setBusMainPair (int bus, int pair);
@@ -87,12 +105,13 @@ private:
 
     juce::AudioDeviceManager deviceManager;
     juce::AudioPluginFormatManager formatManager;
+    std::unique_ptr<PluginScanner> scanner;   // after formatManager: stops before it goes away
     std::unique_ptr<juce::AudioIODeviceType> windowsType;   // our own WASAPI type for extra devices
 
     std::array<std::unique_ptr<ChannelStrip>, kNumStrips> strips;
     std::array<Bus, kNumBuses> buses;
 
-    juce::AudioBuffer<float> stripBuffer, busBuffer, sourceBuffer;
+    juce::AudioBuffer<float> stripBuffer, preBuffer, busBuffer, sourceBuffer;
     std::array<juce::SmoothedValue<float>, kNumBuses> busGain;
     std::array<AudioSafety::SafetyLimiter, kNumBuses> busLimiter;
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;
