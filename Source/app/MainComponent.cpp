@@ -14,8 +14,10 @@ static constexpr int consolePad = Theme::s4;
 
 static constexpr int addColumnWidth = 40;   // the slim "+" columns
 
-ConsoleContent::ConsoleContent (MixerEngine& e) : engine (e)
+ConsoleContent::ConsoleContent (MixerEngine& e) : soundboard (e), engine (e)
 {
+    addChildComponent (soundboard);
+
     for (int s = 0; s < kNumStrips; ++s)
     {
         strips[(size_t) s] = std::make_unique<StripView> (engine, s);
@@ -83,6 +85,7 @@ void ConsoleContent::relayout()
         buses[(size_t) b]->repaint();
     }
 
+    soundboard.refresh();   // its send keys follow the active buses
     addStripButton.setVisible (engine.getNumActiveStrips() < kNumStrips);
     addBusButton.setVisible (engine.getNumActiveBuses() < kNumBuses);
 
@@ -99,6 +102,7 @@ int ConsoleContent::minimumWidth() const
     return consolePad * 2
          + ns * StripView::minWidth + (ns - 1) * stripGap + (addStripButton.isVisible() ? stripGap + addColumnWidth : 0)
          + sectionGap
+         + (soundboard.isVisible() ? SoundboardPanel::columnWidth + sectionGap : 0)
          + nb * BusView::minWidth + (nb - 1) * stripGap + (addBusButton.isVisible() ? stripGap + addColumnWidth : 0);
 }
 
@@ -110,6 +114,11 @@ void ConsoleContent::paint (juce::Graphics& g)
     // Divider between the input channels and the master section, as on a desk.
     g.setColour (Theme::p().line);
     g.fillRect (dividerX, inputsLegend.getBottom() + Theme::s1, 1, getHeight() - inputsLegend.getBottom() - consolePad - Theme::s1);
+    if (soundboard.isVisible())
+    {
+        Theme::drawLegend (g, "Sounds", soundLegend);
+        g.fillRect (soundDividerX, inputsLegend.getBottom() + Theme::s1, 1, getHeight() - inputsLegend.getBottom() - consolePad - Theme::s1);
+    }
 }
 
 void ConsoleContent::resized()
@@ -120,22 +129,28 @@ void ConsoleContent::resized()
     const int nb = juce::jmax (1, engine.getNumActiveBuses());
     const int addS = addStripButton.isVisible() ? stripGap + addColumnWidth : 0;
     const int addB = addBusButton.isVisible() ? stripGap + addColumnWidth : 0;
+    const int soundW = soundboard.isVisible() ? SoundboardPanel::columnWidth + sectionGap : 0;
 
     // Strip width: share the room, within limits. Leftover space is split around the desk.
     const int busesMax = nb * BusView::maxWidth + (nb - 1) * stripGap + addB;
-    int stripW = (r.getWidth() - busesMax - sectionGap - addS - (ns - 1) * stripGap) / ns;
+    int stripW = (r.getWidth() - busesMax - sectionGap - soundW - addS - (ns - 1) * stripGap) / ns;
     stripW = juce::jlimit (StripView::minWidth, StripView::maxWidth, stripW);
     const int busW = juce::jlimit (BusView::minWidth, BusView::maxWidth,
-                                   (r.getWidth() - ns * stripW - (ns - 1) * stripGap - addS - sectionGap
+                                   (r.getWidth() - ns * stripW - (ns - 1) * stripGap - addS - sectionGap - soundW
                                     - (nb - 1) * stripGap - addB) / nb);
 
     const int inputsW = ns * stripW + (ns - 1) * stripGap + addS;
-    const int deskW = inputsW + sectionGap + nb * busW + (nb - 1) * stripGap + addB;
+    const int deskW = inputsW + sectionGap + soundW + nb * busW + (nb - 1) * stripGap + addB;
     r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), deskW), r.getHeight());
 
     auto legends = r.removeFromTop (28);
     inputsLegend = legends.removeFromLeft (inputsW);
     legends.removeFromLeft (sectionGap);
+    if (soundboard.isVisible())
+    {
+        soundLegend = legends.removeFromLeft (SoundboardPanel::columnWidth);
+        legends.removeFromLeft (sectionGap);
+    }
     outputsLegend = legends;
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -153,6 +168,13 @@ void ConsoleContent::resized()
 
     r.removeFromLeft (sectionGap - stripGap);
     dividerX = r.getX() - sectionGap / 2;
+
+    if (soundboard.isVisible())
+    {
+        soundboard.setBounds (r.removeFromLeft (SoundboardPanel::columnWidth));
+        r.removeFromLeft (sectionGap);
+        soundDividerX = r.getX() - sectionGap / 2;
+    }
 
     for (int b = 0; b < kNumBuses; ++b)
     {
@@ -269,10 +291,14 @@ MainComponent::MainComponent()
     makeClickable (replayButton);
     addAndMakeVisible (replayButton);
 
-    soundboardButton.setTooltip ("Eight sound pads you can play into any bus.");
-    soundboardButton.onClick = [this] { showSoundboard(); };
-    makeClickable (soundboardButton);
+    makeLamp (soundboardButton, "accent");
+    soundboardButton.setClickingTogglesState (false);
+    soundboardButton.setTitle ("Show the soundboard");
+    soundboardButton.setTooltip ("Show or hide the soundboard column: eight pads you can play into any bus.");
+    soundboardButton.onClick = [this] { setSoundboardShown (! console->soundboard.isVisible()); };
     addAndMakeVisible (soundboardButton);
+    console->soundboard.onChanged = [this] { Session::save (engine); };
+    setSoundboardShown (AppSettings::get().soundboardShown());
 
     updateButton.onClick = [this] { updatePage.launchInDefaultBrowser(); };
     makeClickable (updateButton);
@@ -303,7 +329,6 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent()
 {
     engine.getRecorder().stop();
-    soundboardWindow.reset();
     stopTimer();
     engine.getScanner().removeChangeListener (this);
     engine.getDeviceManager().removeChangeListener (this);
@@ -535,6 +560,14 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         return true;
     }
 
+    // 1-8 play the soundboard pads while it's shown (text fields keep their digits).
+    if (console->soundboard.isVisible() && ! mods.isAnyModifierKeyDown()
+        && key.getKeyCode() >= '1' && key.getKeyCode() <= '0' + Soundboard::numPads)
+    {
+        engine.getSoundboard().trigger (key.getKeyCode() - '1');
+        return true;
+    }
+
     // Tab arrives here from children too (unhandled keys bubble up). Only step in when the
     // window itself has focus, otherwise let JUCE's normal focus order work.
     if (key.isKeyCode (juce::KeyPress::tabKey) && hasKeyboardFocus (false))
@@ -704,17 +737,12 @@ void MainComponent::saveReplay()
     });
 }
 
-void MainComponent::showSoundboard()
+void MainComponent::setSoundboardShown (bool shown)
 {
-    if (soundboardWindow == nullptr)
-    {
-        soundboardWindow = std::make_unique<SoundboardWindow> (engine);
-        soundboardWindow->getPanel().onChanged = [this] { Session::save (engine); };
-    }
-
-    soundboardWindow->getPanel().refresh();
-    soundboardWindow->setVisible (true);
-    soundboardWindow->toFront (true);
+    AppSettings::get().setSoundboardShown (shown);
+    soundboardButton.setToggleState (shown, juce::dontSendNotification);
+    console->soundboard.setVisible (shown);
+    console->relayout();
 }
 
 void MainComponent::applyOsc()

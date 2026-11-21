@@ -26,14 +26,15 @@ public:
 
     std::array<std::unique_ptr<StripView>, kNumStrips> strips;
     std::array<std::unique_ptr<BusView>, kNumBuses> buses;
+    SoundboardPanel soundboard;
 
 private:
     void showAddBusMenu();
 
     MixerEngine& engine;
     juce::TextButton addStripButton { "+" }, addBusButton { "+" };
-    juce::Rectangle<int> inputsLegend, outputsLegend;
-    int dividerX = 0;
+    juce::Rectangle<int> inputsLegend, soundLegend, outputsLegend;
+    int dividerX = 0, soundDividerX = 0;
 };
 
 class MainComponent : public juce::Component,
@@ -63,7 +64,7 @@ private:
     void showRecordMenu();
     void saveReplay();
     void applyReplaySettings();
-    void showSoundboard();
+    void setSoundboardShown (bool);
     void applyOsc();
     void showNote (const juce::String&);
     void updateRecordButton();
@@ -79,9 +80,8 @@ private:
     StripKey recordButton { "Record" };
     MenuDotsButton recordMenuButton;
     juce::TextButton replayButton { "Save replay" };
-    juce::TextButton soundboardButton { "Soundboard" };
+    StripKey soundboardButton { "Soundboard" };
     juce::TextButton updateButton;
-    std::unique_ptr<SoundboardWindow> soundboardWindow;
     OscControl osc { engine };
     UpdateChecker updater;
     juce::URL updatePage;

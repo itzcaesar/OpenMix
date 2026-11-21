@@ -104,8 +104,9 @@ cmake --build --preset release
    file each in `Documents\OpenMix Recordings\<date and time>`. The dots next to it choose
    what to record and set the **replay buffer**: keep the last 30, 60 or 120 seconds of one
    bus in memory and save them with **Replay** (Ctrl+Shift+S).
-10. **Soundboard** (header): eight pads for WAV, MP3, FLAC or Ogg files up to 60 s. Click a
-   pad or press 1-8 in the soundboard window to play, again to stop; right-click to load,
+10. **Soundboard**: a column in the console, between the inputs and the buses (the header
+   button shows or hides it). Eight pads for WAV, MP3, FLAC or Ogg files up to 60 s. Click a
+   pad or press 1-8 anywhere in OpenMix to play, again to stop; right-click to load,
    rename or clear. It has its own volume and plays on the buses you pick (A1 and B1 by
    default, so you and your stream both hear it).
 
@@ -142,7 +143,7 @@ Tab and Shift+Tab move through the header, then each strip top to bottom, then t
 | Meter | Enter resets the clip lamp |
 | Buttons and pickers | Enter or Space |
 | Record, save replay | Ctrl+Shift+R, Ctrl+Shift+S (while OpenMix has focus) |
-| Soundboard pads | 1-8 in the soundboard window, M opens a pad's menu |
+| Soundboard pads | 1-8 while the soundboard is shown, M opens a focused pad's menu |
 
 Everything (device, theme, strips, plugins and their settings, buses, soundboard) is saved to
 `%APPDATA%\OpenMix\session.xml` every 10 seconds and when the app closes.

@@ -64,8 +64,8 @@ namespace omx
             }
         }
 
-        double momentary() const  { return stepsFilled >= 4 ? toLufs (meanOfLast (4)) : -INFINITY; }
-        double shortTerm() const  { return stepsFilled >= 30 ? toLufs (meanOfLast (30)) : -INFINITY; }
+        double momentary() const  { return stepsFilled >= 4 ? floored (toLufs (meanOfLast (4))) : -INFINITY; }
+        double shortTerm() const  { return stepsFilled >= 30 ? floored (toLufs (meanOfLast (30))) : -INFINITY; }
 
         double integrated() const
         {
@@ -84,6 +84,9 @@ namespace omx
                 if (toLufs (b) > -70.0 && toLufs (b) > relativeGate) { sum += b; ++n; }
             return n > 0 ? toLufs (sum / n) : -INFINITY;
         }
+
+        // Below the -70 LUFS absolute gate a reading means nothing (dither, denormals): no signal.
+        static double floored (double lufs) { return lufs > -70.0 ? lufs : -INFINITY; }
 
         static double toLufs (double meanSquare) { return meanSquare > 0.0 ? -0.691 + 10.0 * std::log10 (meanSquare) : -INFINITY; }
 

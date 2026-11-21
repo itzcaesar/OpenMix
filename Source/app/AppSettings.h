@@ -38,6 +38,10 @@ public:
     int replayBus() const                     { return props->getIntValue ("replayBus", 3); }   // B1
     void setReplayBus (int b)                 { props->setValue ("replayBus", b); props->saveIfNeeded(); }
 
+    // Soundboard column in the console
+    bool soundboardShown() const              { return props->getBoolValue ("soundboardShown", true); }
+    void setSoundboardShown (bool b)          { props->setValue ("soundboardShown", b); props->saveIfNeeded(); }
+
     static juce::File getLogFolder()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("OpenMix");
