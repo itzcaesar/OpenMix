@@ -1,8 +1,8 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "AppCapture.h"
-#include "ClockBridge.h"
+#include "engine/AppCapture.h"
+#include "engine/ClockBridge.h"
 
 // Audio that arrives on a different clock than the main device: a second Windows
 // input device, or one app's audio. The main callback pulls it through `bridge`.

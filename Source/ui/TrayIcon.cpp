@@ -1,5 +1,5 @@
-#include "TrayIcon.h"
-#include "../Theme.h"
+#include "ui/TrayIcon.h"
+#include "ui/Theme.h"
 
 TrayIcon::TrayIcon()
 {

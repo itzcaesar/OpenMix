@@ -1,13 +1,13 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "../MixerEngine.h"
+#include "engine/MixerEngine.h"
 
 // Contents of the Settings window: startup, tray, theme, plugins, about.
 class SettingsPanel : public juce::Component, private juce::ChangeListener
 {
 public:
-    SettingsPanel (MixerEngine&, std::function<void()> toggleTheme);
+    SettingsPanel (MixerEngine&, std::function<void()> toggleTheme, std::function<void()> oscChanged = {});
     ~SettingsPanel() override;
 
     void paint (juce::Graphics&) override;
@@ -18,7 +18,7 @@ private:
     void updateScanText();
 
     MixerEngine& engine;
-    std::function<void()> toggleTheme;
+    std::function<void()> toggleTheme, oscChanged;
 
     juce::ToggleButton startWithWindows { "Start OpenMix when Windows starts" };
     juce::ToggleButton startMinimized   { "Start minimized to the tray" };
@@ -28,7 +28,11 @@ private:
     juce::TextButton retryButton  { "Retry skipped plugins" };
     juce::TextButton presetsButton { "Open presets folder" };
     juce::TextButton pluginsButton { "Open VST3 folder" };
+    juce::ToggleButton checkUpdates { "Check GitHub for new versions at startup" };
+    juce::ToggleButton oscEnabled { "Remote control over OSC, UDP port" };
+    juce::TextEditor oscPort;
+    juce::TextButton logsButton { "Open log folder" };
 
     juce::String scanText;
-    juce::Rectangle<int> startupLegend, themeLegend, pluginsLegend, aboutLegend, scanTextArea, aboutArea;
+    juce::Rectangle<int> startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend, oscNoteArea, scanTextArea, aboutArea;
 };

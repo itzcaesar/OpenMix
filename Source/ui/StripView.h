@@ -1,10 +1,10 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "../MixerEngine.h"
-#include "../VoicePad.h"
-#include "Widgets.h"
-#include "Panels.h"
+#include "engine/MixerEngine.h"
+#include "engine/VoicePad.h"
+#include "ui/Widgets.h"
+#include "ui/Panels.h"
 
 // A plugin's own editor in its own window.
 class PluginWindow : public juce::DocumentWindow
@@ -93,6 +93,12 @@ private:
     bool inLayout = false;
 
     std::map<juce::AudioPluginInstance*, std::unique_ptr<PluginWindow>> editorWindows;
+
+    // A/B compare: two snapshots of a plugin's settings (kept while OpenMix runs).
+    struct AbState { juce::MemoryBlock a, b; bool onB = false; };
+    std::map<juce::AudioPluginInstance*, AbState> abStates;
+    void abSwitch (juce::AudioPluginInstance*, bool toB);
+    void openMixPanel (int slot);
     std::unique_ptr<juce::FileChooser> chooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StripView)

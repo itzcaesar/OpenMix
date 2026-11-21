@@ -1,9 +1,12 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "MixerEngine.h"
+#include "engine/MixerEngine.h"
 #include "ui/StripView.h"
 #include "ui/BusView.h"
+#include "ui/SoundboardPanel.h"
+#include "app/OscControl.h"
+#include "app/UpdateChecker.h"
 
 // The console: input strips on the left, the master section (buses) on the right.
 class ConsoleContent : public juce::Component
@@ -54,6 +57,17 @@ private:
     void applyTheme();
     void updateStatus();
 
+    // Creator tools
+    void toggleRecording();
+    void startRecording();
+    void showRecordMenu();
+    void saveReplay();
+    void applyReplaySettings();
+    void showSoundboard();
+    void applyOsc();
+    void showNote (const juce::String&);
+    void updateRecordButton();
+
     // Declared first so it is destroyed last (after plugin editor windows).
     MixerEngine engine;
 
@@ -62,6 +76,18 @@ private:
     juce::TextButton appSettingsButton { "Settings" };
     juce::TextButton themeButton;
     juce::TextButton fixButton { "Open audio settings" };
+    StripKey recordButton { "Record" };
+    MenuDotsButton recordMenuButton;
+    juce::TextButton replayButton { "Save replay" };
+    juce::TextButton soundboardButton { "Soundboard" };
+    juce::TextButton updateButton;
+    std::unique_ptr<SoundboardWindow> soundboardWindow;
+    OscControl osc { engine };
+    UpdateChecker updater;
+    juce::URL updatePage;
+    juce::String note;
+    juce::uint32 noteUntilMs = 0;
+    int lastExternalChanges = 0;
     juce::Viewport consoleView;
     std::unique_ptr<ConsoleContent> console;
 

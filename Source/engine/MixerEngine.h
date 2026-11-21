@@ -1,9 +1,11 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "ChannelStrip.h"
-#include "ExternalIO.h"
-#include "PluginScanner.h"
+#include "engine/ChannelStrip.h"
+#include "engine/ExternalIO.h"
+#include "engine/PluginScanner.h"
+#include "creator/Recorder.h"
+#include "creator/Soundboard.h"
 
 // Where a bus goes.
 enum class BusTarget : int
@@ -24,6 +26,10 @@ struct Bus
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
     std::atomic<float> limiterGain { 1.0f };   // lowest safety-limiter gain since the UI last read it
 
+    // Analysis feed for the UI (loudness, spectrum): the audio thread writes, the UI reads.
+    juce::AbstractFifo analysisFifo { 32768 };
+    juce::AudioBuffer<float> analysisBuffer { 2, 32768 };
+
     juce::String deviceName;                    // for BusTarget::Device (message thread only)
     std::unique_ptr<DeviceOutputSink> sink;
     juce::CriticalSection sinkLock;
@@ -41,6 +47,12 @@ public:
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formatManager; }
     PluginScanner& getScanner() noexcept { return *scanner; }
+    Recorder& getRecorder() noexcept { return recorder; }
+    ReplayBuffer& getReplay() noexcept { return replay; }
+    Soundboard& getSoundboard() noexcept { return soundboard; }
+
+    // Bumped when something outside the UI (OSC remote control) changes a setting.
+    std::atomic<int> externalChanges { 0 };
 
     ChannelStrip& getStrip (int i) noexcept { return *strips[(size_t) i]; }
     Bus& getBus (int i) noexcept { return buses[(size_t) i]; }
@@ -111,7 +123,12 @@ private:
     std::array<std::unique_ptr<ChannelStrip>, kNumStrips> strips;
     std::array<Bus, kNumBuses> buses;
 
-    juce::AudioBuffer<float> stripBuffer, preBuffer, busBuffer, sourceBuffer;
+    Recorder recorder;
+    ReplayBuffer replay;
+    Soundboard soundboard;
+    std::array<juce::SmoothedValue<float>, kNumBuses> soundSend;
+
+    juce::AudioBuffer<float> stripBuffer, preBuffer, busBuffer, sourceBuffer, soundBuffer;
     std::array<juce::SmoothedValue<float>, kNumBuses> busGain;
     std::array<AudioSafety::SafetyLimiter, kNumBuses> busLimiter;
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;

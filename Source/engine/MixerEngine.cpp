@@ -1,4 +1,4 @@
-#include "MixerEngine.h"
+#include "engine/MixerEngine.h"
 #include <optional>
 
 static float dbToGain (float db) noexcept
@@ -46,7 +46,7 @@ void MixerEngine::start (const juce::XmlElement* savedDeviceState)
     const auto error = deviceManager.initialise (8, 8, savedDeviceState, true);
     if (error.isNotEmpty())
     {
-        DBG ("Audio device error: " << error);
+        juce::Logger::writeToLog ("Audio device error: " + error);
     }
 
     deviceManager.addAudioCallback (this);
@@ -484,6 +484,15 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 
     stripBuffer.setSize (2, maxBlock);
     preBuffer.setSize (2, maxBlock);
+    soundBuffer.setSize (2, maxBlock);
+    soundboard.prepare (sr);
+    if (replay.isEnabled())
+        replay.configure (sr, replay.getSeconds());
+    for (auto& g : soundSend)
+    {
+        g.reset (sr, 0.02);
+        g.setCurrentAndTargetValue (0.0f);
+    }
     sourceBuffer.setSize (2, maxBlock);
     busBuffer.setSize (kNumBuses * 2, maxBlock);
 
@@ -602,6 +611,7 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         }
 
         strip.process (inL, inR, stripBuffer, preBuffer, n);
+        recorder.writeStrip (s, stripBuffer.getReadPointer (0), stripBuffer.getReadPointer (1), n);
 
         for (int b = 0; b < kNumBuses; ++b)
         {
@@ -625,6 +635,22 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
             busBuffer.addFromWithRamp (b * 2,     0, src.getReadPointer (0), n, startGain, endGain);
             busBuffer.addFromWithRamp (b * 2 + 1, 0, src.getReadPointer (1), n, startGain, endGain);
         }
+    }
+
+    // Soundboard: mixed into its buses like a strip, with smoothed sends.
+    soundBuffer.clear (0, n);
+    const bool soundPlaying = soundboard.render (soundBuffer.getWritePointer (0), soundBuffer.getWritePointer (1), n);
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        auto& g = soundSend[(size_t) b];
+        g.setTargetValue (soundPlaying && buses[(size_t) b].active.load() && soundboard.busOn[b].load() ? 1.0f : 0.0f);
+        if (! g.isSmoothing() && g.getTargetValue() == 0.0f)
+            continue;
+        const float startGain = g.getCurrentValue();
+        g.skip (n);
+        const float endGain = g.getCurrentValue();
+        busBuffer.addFromWithRamp (b * 2,     0, soundBuffer.getReadPointer (0), n, startGain, endGain);
+        busBuffer.addFromWithRamp (b * 2 + 1, 0, soundBuffer.getReadPointer (1), n, startGain, endGain);
     }
 
     for (int b = 0; b < kNumBuses; ++b)
@@ -655,6 +681,24 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
 
         const auto* busL = busBuffer.getReadPointer (b * 2);
         const auto* busR = busBuffer.getReadPointer (b * 2 + 1);
+
+        // Taps after the limiter: recorder, replay buffer, analysis for the UI.
+        recorder.writeBus (b, busL, busR, n);
+        if (replay.sourceBus.load (std::memory_order_relaxed) == b)
+            replay.push (busL, busR, n);
+        {
+            const auto scope = bus.analysisFifo.write (n);
+            if (scope.blockSize1 > 0)
+            {
+                bus.analysisBuffer.copyFrom (0, scope.startIndex1, busL, scope.blockSize1);
+                bus.analysisBuffer.copyFrom (1, scope.startIndex1, busR, scope.blockSize1);
+            }
+            if (scope.blockSize2 > 0)
+            {
+                bus.analysisBuffer.copyFrom (0, scope.startIndex2, busL + scope.blockSize1, scope.blockSize2);
+                bus.analysisBuffer.copyFrom (1, scope.startIndex2, busR + scope.blockSize1, scope.blockSize2);
+            }
+        }
 
         switch ((BusTarget) bus.target.load())
         {

@@ -1,12 +1,13 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "Biquad.h"
+#include "dsp/Biquad.h"
 
 // Shared state between the pad UI (message thread) and the DSP (audio thread).
 struct VoicePadParams
 {
-    enum Mode { Voice = 0, Pan = 1 };
+    enum Mode { Voice = 0, Pan = 1, Color = 2, Space = 3 };
+    static constexpr int numModes = 4;
 
     std::atomic<float> x { 0.0f };   // -1 (left / Lo)  .. +1 (right / Hi)
     std::atomic<float> y { -1.0f };  // -1 (bottom, neutral) .. +1 (top)
@@ -15,6 +16,9 @@ struct VoicePadParams
 
 // Voice mode: X = tone tilt (Lo <-> Hi), Y = presence + echo.
 // Pan mode:   X = constant-power pan,     Y = stereo width (100% .. 200%).
+// Color mode: the four corners are voice characters (warm, bright, radio, close mic);
+//             the puck blends between them.
+// Space mode: X = pan, Y = distance (quieter, darker, more short room reflections).
 class VoicePadProcessor
 {
 public:
@@ -26,13 +30,16 @@ public:
 
 private:
     void updateFilters (float x, float y01) noexcept;
+    void updateColor (float x, float y01) noexcept;
+    void updateSpace (float y01) noexcept;
 
     VoicePadParams& params;
     double fs = 48000.0;
 
     juce::SmoothedValue<float> smX, smY;
     float lastX = 99.0f, lastY = 99.0f;
-    Biquad lowShelf, highShelf, presence;
+    Biquad lowShelf, highShelf, presence, midPeak;
+    int lastMode = -1;
 
     std::vector<float> delayL, delayR;
     int writePos = 0, delaySamplesL = 0, delaySamplesR = 0;
@@ -67,6 +74,6 @@ private:
     juce::String readout() const;
 
     VoicePadParams& params;
-    juce::TextButton voiceButton { "Voice" }, panButton { "Pan" };
+    juce::TextButton voiceButton { "Voice" }, panButton { "Pan" }, colorButton { "Color" }, spaceButton { "Space" };
     bool dragging = false;
 };

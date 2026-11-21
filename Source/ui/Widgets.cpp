@@ -1,6 +1,6 @@
-#include "Widgets.h"
-#include "../Theme.h"
-#include "../OpenMixLookAndFeel.h"
+#include "ui/Widgets.h"
+#include "ui/Theme.h"
+#include "ui/OpenMixLookAndFeel.h"
 
 void makeLamp (juce::TextButton& b, const char* kind)
 {
@@ -405,9 +405,11 @@ PluginSlotRow::PluginSlotRow()
 }
 
 void PluginSlotRow::setState (State newState, const juce::String& newName, bool isBypassed, bool isFaulted,
-                              int latency, double sampleRate)
+                              int latency, double sampleRate, int mixPercent, const juce::String& newAbTag)
 {
     state = newState;
+    mixText = mixPercent < 100 ? juce::String (mixPercent) + "%" : juce::String();
+    abTag = newAbTag;
     name = newName;
     bypassed = isBypassed;
     faulted = isFaulted;
@@ -570,16 +572,17 @@ void PluginSlotRow::paint (juce::Graphics& g)
                 g.drawRoundedRectangle (powerArea().expanded (2.5f), 2.0f, 1.0f);
             }
 
+            g.setFont (Theme::mono (11.0f));
+            g.setColour (t.textFaint);
             if (latencyText.isNotEmpty() && ! faulted)
-            {
-                g.setFont (Theme::mono (11.0f));
-                g.setColour (t.textFaint);
                 g.drawText (latencyText, nameArea.removeFromRight (52.0f), juce::Justification::centredRight);
-            }
+            if (mixText.isNotEmpty() && ! faulted)
+                g.drawText (mixText, nameArea.removeFromRight (36.0f), juce::Justification::centredRight);
 
             g.setColour (faulted || bypassed ? t.textDim : t.text);
             g.setFont (Theme::ui (13.0f));
-            g.drawText (faulted ? name + " (stopped)" : name, nameArea, juce::Justification::centredLeft, true);
+            const auto shown = faulted ? name + " (stopped)" : abTag.isNotEmpty() ? name + " (" + abTag + ")" : name;
+            g.drawText (shown, nameArea, juce::Justification::centredLeft, true);
 
             // Menu dots
             const float mx = r.getRight() - 13.0f;

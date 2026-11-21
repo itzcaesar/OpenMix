@@ -1,4 +1,4 @@
-#include "ChannelStrip.h"
+#include "engine/ChannelStrip.h"
 
 static float dbToGain (float db) noexcept
 {
@@ -8,6 +8,8 @@ static float dbToGain (float db) noexcept
 ChannelStrip::ChannelStrip()
 {
     busOn[0].store (true);   // new strips go to A1
+    for (auto& m : slotMix)
+        m.store (1.0f);
 }
 
 ChannelStrip::~ChannelStrip()
@@ -27,12 +29,14 @@ void ChannelStrip::prepare (double newSampleRate, int maxBlockSize)
 
     scratch.setSize (kMaxPluginChannels, maxBlockSize);
     dryBuffer.setSize (2, maxBlockSize);
+    mixDryBuffer.setSize (2, maxBlockSize);
     midi.ensureSize (256);
     dcBlocker.prepare (sampleRate);
     wasActive.fill (false);
 
     denoiser.prepare (sampleRate);
     fx.denoiseUnavailable.store (! denoiser.isAvailable());
+    fx.denoiseLatencyMs.store ((int) std::lround (1000.0 * denoiser.getLatency() / sampleRate));
     gate.prepare (sampleRate);
     eq.prepare (sampleRate);
     comp.prepare (sampleRate);
@@ -41,6 +45,8 @@ void ChannelStrip::prepare (double newSampleRate, int maxBlockSize)
 
     // Latency compensation: up to 250 ms per bypassed plugin, 500 ms per strip.
     for (auto& d : bypassDelay)
+        d.prepare ((int) (sampleRate * 0.25));
+    for (auto& d : mixDelay)
         d.prepare ((int) (sampleRate * 0.25));
     alignLine.prepare ((int) (sampleRate * 0.5));
 
@@ -116,8 +122,10 @@ void ChannelStrip::installPlugin (int slot, std::unique_ptr<juce::AudioPluginIns
         slots[(size_t) slot] = std::move (instance);
         wasActive[(size_t) slot] = false;   // fade the new plugin in
         bypassDelay[(size_t) slot].clear();
+        mixDelay[(size_t) slot].clear();
     }
     slotBypass[(size_t) slot].store (false);
+    slotMix[(size_t) slot].store (1.0f);
     slotFault[(size_t) slot].store (false);
 
     if (old != nullptr)
@@ -142,8 +150,11 @@ void ChannelStrip::removePlugin (int slot)
             slotFault[(size_t) i].store (slotFault[(size_t) i + 1].load());
             std::swap (wasActive[(size_t) i], wasActive[(size_t) i + 1]);
             std::swap (bypassDelay[(size_t) i], bypassDelay[(size_t) i + 1]);
+            std::swap (mixDelay[(size_t) i], mixDelay[(size_t) i + 1]);
+            slotMix[(size_t) i].store (slotMix[(size_t) i + 1].load());
         }
         slotBypass[kNumSlots - 1].store (false);
+        slotMix[kNumSlots - 1].store (1.0f);
         slotFault[kNumSlots - 1].store (false);
         wasActive[kNumSlots - 1] = false;
     }
@@ -175,6 +186,9 @@ void ChannelStrip::movePlugin (int from, int to)
         slotFault[a].store (slotFault[b].load());   slotFault[b].store (faultA);
         std::swap (wasActive[a], wasActive[b]);
         std::swap (bypassDelay[a], bypassDelay[b]);
+        std::swap (mixDelay[a], mixDelay[b]);
+        const float mixA = slotMix[a].load();
+        slotMix[a].store (slotMix[b].load()); slotMix[b].store (mixA);
     }
 }
 
@@ -204,6 +218,8 @@ void ChannelStrip::resetToDefaults()
         sendDb[b].store (0.0f);
         sendPre[b].store (false);
     }
+    for (auto& m : slotMix)
+        m.store (1.0f);
     pad.x.store (0.0f);
     pad.y.store (-1.0f);
     pad.mode.store (VoicePadParams::Voice);
@@ -283,6 +299,16 @@ void ChannelStrip::runInserts (float* L, float* R, juce::AudioBuffer<float>& out
             dryBuffer.copyFrom (1, 0, R, numSamples);
         }
 
+        // Wet/dry: keep the dry input, delayed by the plugin's latency so the blend lines up.
+        const float mix = slotMix[s].load();
+        const bool blendDry = mix < 0.999f;
+        if (blendDry)
+        {
+            mixDryBuffer.copyFrom (0, 0, L, numSamples);
+            mixDryBuffer.copyFrom (1, 0, R, numSamples);
+            mixDelay[s].process (mixDryBuffer.getWritePointer (0), mixDryBuffer.getWritePointer (1), numSamples, pluginLatency);
+        }
+
         juce::AudioBuffer<float> view (scratch.getArrayOfWritePointers(), numCh, numSamples);
         view.clear();
         view.copyFrom (0, 0, L, numSamples);
@@ -312,6 +338,17 @@ void ChannelStrip::runInserts (float* L, float* R, juce::AudioBuffer<float>& out
 
         out.copyFrom (0, 0, view, 0, 0, numSamples);
         out.copyFrom (1, 0, view, rightSrc, 0, numSamples);
+
+        if (blendDry && (slotOn || crossfade))
+        {
+            out.applyGain (0, numSamples, mix);
+            out.addFrom (0, 0, mixDryBuffer, 0, 0, numSamples, 1.0f - mix);
+            out.addFrom (1, 0, mixDryBuffer, 1, 0, numSamples, 1.0f - mix);
+        }
+        else if (! blendDry)
+        {
+            mixDelay[s].clear();
+        }
 
         // Bypass / enable / newly loaded: crossfade over this block instead of clicking.
         if (crossfade)
@@ -378,7 +415,7 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
     if (denoiseOn)
     {
         fx.voiceProbability.store (denoiser.process (L, R, numSamples, fx.denoiseAmount.load(), monoSource || mono.load()));
-        latency += omx::Denoiser::latency;
+        latency += denoiser.getLatency();
     }
 
     if (fx.gateOn.load())

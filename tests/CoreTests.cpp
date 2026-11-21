@@ -1,11 +1,12 @@
 // Core DSP / real-time tests. Plain C++, no JUCE: build target OpenMixCoreTests, run with ctest.
 
-#include "AudioSafety.h"
-#include "Biquad.h"
-#include "ClockBridge.h"
-#include "DelayLine.h"
+#include "dsp/AudioSafety.h"
+#include "dsp/Biquad.h"
+#include "engine/ClockBridge.h"
+#include "dsp/DelayLine.h"
 #include "dsp/Dynamics.h"
 #include "dsp/Denoiser.h"
+#include "dsp/Loudness.h"
 
 #include <cmath>
 #include <cstdio>
@@ -404,7 +405,7 @@ int main()
         CHECK (std::abs (lowDb) < 0.5f, "300 Hz changed by %+.2f dB", lowDb);
     });
 
-    run ("Denoiser: exactly 480 samples of latency, dry blend matches, passes through at 44.1 kHz", [&]
+    run ("Denoiser: exactly 960 samples of latency at 48 kHz, resampled path reports its delay", [&]
     {
         omx::Denoiser dn;
         dn.prepare (48000.0);
@@ -413,7 +414,8 @@ int main()
         std::vector<float> l (2400, 0.0f), r (2400, 0.0f);
         l[100] = r[100] = 0.5f;
         dn.process (l.data(), r.data(), (int) l.size(), 0.0f, false);   // amount 0 = delayed dry only
-        CHECK (std::abs (l[100 + omx::Denoiser::latency] - 0.5f) < 1e-6f, "impulse not delayed by 480: %f", l[580]);
+        CHECK (dn.getLatency() == omx::Denoiser::latency48k, "48 kHz latency %d", dn.getLatency());
+        CHECK (std::abs (l[100 + omx::Denoiser::latency48k] - 0.5f) < 1e-6f, "impulse not delayed by 960: %f", l[1060]);
         CHECK (std::abs (l[100]) < 1e-9f, "output before the latency should be silent");
 
         std::vector<float> s (4800, 0.0f), s2 (4800, 0.0f);
@@ -421,12 +423,31 @@ int main()
         dn.process (s.data(), s2.data(), (int) s.size(), 1.0f, false);   // silence in, silence out
         CHECK (peakOf (s, 0) < 1e-3f, "silence produced %g", peakOf (s, 0));
 
-        omx::Denoiser off;
-        off.prepare (44100.0);
-        CHECK (! off.isAvailable(), "should report unavailable at 44.1 kHz");
-        float a[4] { 0.1f, 0.2f, 0.3f, 0.4f }, b[4] { 0.1f, 0.2f, 0.3f, 0.4f };
-        off.process (a, b, 4, 1.0f, false);
-        CHECK (a[2] == 0.3f, "44.1 kHz should pass through untouched");
+        omx::Denoiser rs;
+        rs.prepare (44100.0);
+        CHECK (rs.isAvailable() && rs.isResampling(), "should resample at 44.1 kHz");
+        std::vector<float> il (8820, 0.0f), ir (8820, 0.0f);
+        il[200] = ir[200] = 0.5f;
+        for (int i = 0; i < (int) il.size(); i += 256)   // device-sized blocks
+            rs.process (il.data() + i, ir.data() + i, std::min (256, (int) il.size() - i), 0.0f, false);
+        int peakAt = 0;
+        for (int i = 1; i < (int) il.size(); ++i)
+            if (std::abs (il[(size_t) i]) > std::abs (il[(size_t) peakAt])) peakAt = i;
+        CHECK (std::abs (peakAt - (200 + rs.getLatency())) <= 2, "44.1k impulse at %d, reported latency %d", peakAt - 200, rs.getLatency());
+        CHECK (std::abs (il[(size_t) peakAt]) > 0.35f, "44.1k impulse lost level: %f", il[(size_t) peakAt]);
+    });
+
+    run ("Loudness: EBU reference, -23 dBFS 1 kHz stereo sine reads -23 LUFS", [&]
+    {
+        omx::LoudnessMeter m;
+        m.prepare (48000.0);
+        const float amp = std::pow (10.0f, -23.0f / 20.0f);   // peak -23 dBFS (EBU Tech 3341 case 1)
+        auto tone = sine (amp, 1000.0, 48000 * 5);
+        for (size_t i = 0; i < tone.size(); i += 480)
+            m.push (tone.data() + i, tone.data() + i, 480);
+        const double lufs = m.integrated();
+        CHECK (std::abs (lufs - (-23.0)) < 0.1, "integrated %.2f LUFS", lufs);
+        CHECK (std::abs (m.shortTerm() - (-23.0)) < 0.1, "short-term %.2f LUFS", m.shortTerm());
     });
 
     std::printf (failures == 0 ? "\nAll tests passed\n" : "\n%d check(s) failed\n", failures);

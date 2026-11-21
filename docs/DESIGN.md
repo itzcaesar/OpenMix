@@ -42,7 +42,7 @@ information: the channel name, editable in place.
 ## Accessibility bar
 
 - Text 4.5:1, large text and component boundaries 3:1, checked for both themes
-  (see the table in `Source/Theme.h`).
+  (see the table in `Source/ui/Theme.h`).
 - Every control reachable by Tab, operable by keyboard, with a 2 px focus ring in the text
   colour of the active theme.
 - Every control has an accessible title for screen readers.

@@ -21,8 +21,8 @@
 #include <future>
 #include <thread>
 
-#include "AppCapture.h"
-#include "ClockBridge.h"
+#include "engine/AppCapture.h"
+#include "engine/ClockBridge.h"
 
 using Microsoft::WRL::ComPtr;
 

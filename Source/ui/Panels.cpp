@@ -1,5 +1,5 @@
-#include "Panels.h"
-#include "../Theme.h"
+#include "ui/Panels.h"
+#include "ui/Theme.h"
 
 juce::String processorShortName (Processor p)
 {
@@ -215,9 +215,9 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, int stripIndex, Processor p)
             addKnob ({ "Amount", 0, 100, 1, " %", fx.denoiseAmount, 0.0, 100.0 });
             setMeter (nullptr, {});
             setHelp (fx.denoiseUnavailable.load()
-                       ? "Noise removal needs a 48 kHz sample rate. Set it in Audio settings."
-                       : "Removes steady background noise (fans, hum, keyboard) from voice. Adds 10 ms of latency, "
-                         "which the other strips are matched to.");
+                       ? "Noise removal couldn't start. Restart OpenMix and try again."
+                       : "Removes steady background noise (fans, hum, keyboard) from voice. Adds "
+                         + juce::String (fx.denoiseLatencyMs.load()) + " ms of latency, which the other strips are matched to.");
             break;
 
         case Processor::Gate:
@@ -301,9 +301,22 @@ void ProcessorPanel::tick()
     if (kind == Processor::Denoise && strip.fx.denoiseOn.load() && ! strip.fx.denoiseUnavailable.load())
     {
         const auto voice = juce::roundToInt (strip.fx.voiceProbability.load() * 100.0f);
-        setHelp ("Removes steady background noise (fans, hum, keyboard) from voice. Adds 10 ms of latency, "
-                 "which the other strips are matched to. Voice detected: " + juce::String (voice) + "%.");
+        setHelp ("Removes steady background noise (fans, hum, keyboard) from voice. Adds "
+                 + juce::String (strip.fx.denoiseLatencyMs.load()) + " ms of latency, which the other strips are matched to. "
+                 "Voice detected: " + juce::String (voice) + "%.");
     }
+}
+
+//==============================================================================
+// SlotMixPanel
+
+SlotMixPanel::SlotMixPanel (const juce::String& pluginName, std::atomic<float>& mix)
+    : PanelBase (pluginName + ": wet/dry", nullptr)
+{
+    addKnob ({ "Mix", 0, 100, 1, " %", mix, 0.0, 100.0 });
+    setHelp ("100% is the plugin only. Lower values blend in the dry signal, delayed to match the "
+             "plugin's latency (parallel compression, subtle reverb).");
+    setSize (300, 210);
 }
 
 //==============================================================================

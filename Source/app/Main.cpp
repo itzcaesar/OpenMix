@@ -1,14 +1,24 @@
 #include <JuceHeader.h>
-#include "MainComponent.h"
-#include "Theme.h"
-#include "OpenMixLookAndFeel.h"
-#include "PluginScanner.h"
-#include "AppSettings.h"
+#include "app/MainComponent.h"
+#include "ui/Theme.h"
+#include "ui/OpenMixLookAndFeel.h"
+#include "engine/PluginScanner.h"
+#include "app/AppSettings.h"
 #include "ui/TrayIcon.h"
 
 static bool isScanChild()
 {
     return juce::JUCEApplicationBase::getCommandLineParameters().contains (PluginScanner::childFlag);
+}
+
+// If OpenMix crashes, leave a stack trace next to the session so the cause can be found.
+static void writeCrashReport (void*)
+{
+    const auto file = AppSettings::getLogFolder()
+                          .getChildFile ("crash-" + juce::Time::getCurrentTime().formatted ("%Y-%m-%d_%H-%M-%S") + ".txt");
+    file.getParentDirectory().createDirectory();
+    file.replaceWithText ("OpenMix " + juce::String (JUCE_APPLICATION_VERSION_STRING) + " crashed.\n\n"
+                          + juce::SystemStats::getStackBacktrace());
 }
 
 class OpenMixApplication : public juce::JUCEApplication
@@ -34,6 +44,11 @@ public:
             return;
         }
 
+        juce::SystemStats::setApplicationCrashHandler (writeCrashReport);
+        logger.reset (juce::FileLogger::createDefaultAppLogger ("OpenMix", "openmix.log",
+                                                                "OpenMix " + getApplicationVersion() + " started"));
+        juce::Logger::setCurrentLogger (logger.get());
+
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
 
         tray = std::make_unique<TrayIcon>();
@@ -50,6 +65,8 @@ public:
         mainWindow.reset();
         tray.reset();
         juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+        juce::Logger::setCurrentLogger (nullptr);
+        logger.reset();
     }
 
     void systemRequestedQuit() override { quit(); }
@@ -115,6 +132,7 @@ private:
     }
 
     OpenMixLookAndFeel lookAndFeel;
+    std::unique_ptr<juce::FileLogger> logger;
     std::unique_ptr<TrayIcon> tray;
     std::unique_ptr<MainWindow> mainWindow;
 };

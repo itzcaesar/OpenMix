@@ -1,4 +1,4 @@
-#include "AppSettings.h"
+#include "app/AppSettings.h"
 
 static const juce::String runKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\OpenMix";
 

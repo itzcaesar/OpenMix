@@ -1,6 +1,6 @@
-#include "Session.h"
-#include "MixerEngine.h"
-#include "Theme.h"
+#include "app/Session.h"
+#include "engine/MixerEngine.h"
+#include "ui/Theme.h"
 
 // Session format
 //   version 1: 3 strips, buses saved by position (0 = A1, 1 = A2, 2 = B1)
@@ -128,6 +128,7 @@ void Session::save (MixerEngine& engine)
             auto* xp = xs->createNewChildElement ("Slot");
             xp->setAttribute ("index", slot);
             xp->setAttribute ("bypass", strip.slotBypass[(size_t) slot].load());
+            xp->setAttribute ("mix", strip.slotMix[(size_t) slot].load());
             xp->addChildElement (plugin->getPluginDescription().createXml().release());
 
             juce::MemoryBlock state;
@@ -148,6 +149,24 @@ void Session::save (MixerEngine& engine)
         xb->setAttribute ("output", bus.outputPair.load());
         xb->setAttribute ("target", bus.target.load());
         xb->setAttribute ("device", bus.deviceName);
+    }
+
+    {
+        auto& board = engine.getSoundboard();
+        auto* xsb = root.createNewChildElement ("Soundboard");
+        xsb->setAttribute ("volume", board.volumeDb.load());
+        for (int b = 0; b < kNumBuses; ++b)
+            xsb->setAttribute (juce::String ("bus") + kBusNames[b], board.busOn[b].load());
+        for (int p = 0; p < Soundboard::numPads; ++p)
+        {
+            const auto info = board.getPadInfo (p);
+            if (info.file.isEmpty())
+                continue;
+            auto* xp = xsb->createNewChildElement ("Pad");
+            xp->setAttribute ("index", p);
+            xp->setAttribute ("file", info.file);
+            xp->setAttribute ("name", info.name);
+        }
     }
 
     // Only touch the disk when something actually changed (this runs every few seconds).
@@ -248,13 +267,14 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
             juce::String pluginError;
             if (! strip.loadPlugin (slot, desc, engine.getFormatManager(), pluginError))
             {
-                DBG ("Could not restore " << desc.name << ": " << pluginError);
+                juce::Logger::writeToLog ("Could not restore " + desc.name + ": " + pluginError);
                 continue;
             }
 
             // Slots are packed, so the plugin may sit lower than its saved index.
             const int installed = strip.getNumPlugins() - 1;
             strip.slotBypass[(size_t) installed].store (xp->getBoolAttribute ("bypass", false));
+            strip.slotMix[(size_t) installed].store ((float) xp->getDoubleAttribute ("mix", 1.0));
 
             juce::MemoryBlock state;
             if (state.fromBase64Encoding (xp->getStringAttribute ("state")) && state.getSize() > 0)
@@ -290,4 +310,24 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
 
     if (version < 2 || ! anyMonitor)
         engine.setMonitorBus (0);   // A1 by default
+
+    if (auto* xsb = root.getChildByName ("Soundboard"))
+    {
+        auto& board = engine.getSoundboard();
+        board.volumeDb.store ((float) xsb->getDoubleAttribute ("volume", 0.0));
+        for (int b = 0; b < kNumBuses; ++b)
+            board.busOn[b].store (xsb->getBoolAttribute (juce::String ("bus") + kBusNames[b], b == 0 || b == 3));
+        for (auto* xp : xsb->getChildWithTagNameIterator ("Pad"))
+        {
+            const int p = xp->getIntAttribute ("index", -1);
+            const juce::File file (xp->getStringAttribute ("file"));
+            if (! juce::isPositiveAndBelow (p, Soundboard::numPads) || ! file.existsAsFile())
+                continue;
+            juce::String error;
+            if (board.loadPad (p, file, error))
+                board.renamePad (p, xp->getStringAttribute ("name", file.getFileNameWithoutExtension()));
+            else
+                juce::Logger::writeToLog ("Soundboard pad " + juce::String (p + 1) + ": " + error);
+        }
+    }
 }

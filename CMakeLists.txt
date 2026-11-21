@@ -43,25 +43,41 @@ juce_add_gui_app(OpenMix
 juce_generate_juce_header(OpenMix)
 
 target_sources(OpenMix PRIVATE
-    Source/Main.cpp
-    Source/MainComponent.cpp
-    Source/MixerEngine.cpp
-    Source/ChannelStrip.cpp
-    Source/VoicePad.cpp
-    Source/Session.cpp
-    Source/ExternalIO.cpp
-    Source/AppCapture.cpp
-    Source/AppRouting.cpp
-    Source/AppSettings.cpp
-    Source/PluginScanner.cpp
-    Source/OpenMixLookAndFeel.cpp
+    # app shell: window, settings, session, remote control
+    Source/app/Main.cpp
+    Source/app/MainComponent.cpp
+    Source/app/AppSettings.cpp
+    Source/app/Session.cpp
+    Source/app/OscControl.cpp
+
+    # audio engine and device I/O
+    Source/engine/MixerEngine.cpp
+    Source/engine/ChannelStrip.cpp
+    Source/engine/VoicePad.cpp
+    Source/engine/ExternalIO.cpp
+    Source/engine/AppCapture.cpp
+    Source/engine/AppRouting.cpp
+    Source/engine/PluginScanner.cpp
+
+    # creator tools
+    Source/creator/Recorder.cpp
+    Source/creator/Soundboard.cpp
+
+    # DSP (the rest is header-only)
     Source/dsp/Denoiser.cpp
+
+    # interface
+    Source/ui/OpenMixLookAndFeel.cpp
     Source/ui/Widgets.cpp
     Source/ui/StripView.cpp
     Source/ui/BusView.cpp
     Source/ui/Panels.cpp
     Source/ui/SettingsPanel.cpp
-    Source/ui/TrayIcon.cpp)
+    Source/ui/TrayIcon.cpp
+    Source/ui/AnalyserPanel.cpp
+    Source/ui/SoundboardPanel.cpp)
+
+target_include_directories(OpenMix PRIVATE Source)
 
 target_compile_definitions(OpenMix PRIVATE
     JUCE_WEB_BROWSER=0
@@ -74,6 +90,7 @@ target_compile_definitions(OpenMix PRIVATE
     JUCE_PLUGINHOST_LADSPA=0
     JUCE_PLUGINHOST_LV2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_USE_MP3AUDIOFORMAT=1   # soundboard pads (Windows Media decoders are not used)
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_VERSION>")
 
@@ -96,6 +113,7 @@ target_link_libraries(OpenMix
         juce::juce_audio_processors
         juce::juce_gui_extra        # tray icon
         juce::juce_dsp
+        juce::juce_osc              # remote control
         rnnoise
         mmdevapi            # ActivateAudioInterfaceAsync (per-app capture)
         avrt                # MMCSS thread priority for capture threads

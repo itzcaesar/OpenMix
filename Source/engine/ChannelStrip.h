@@ -1,10 +1,10 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "VoicePad.h"
-#include "ExternalIO.h"
-#include "AudioSafety.h"
-#include "DelayLine.h"
+#include "engine/VoicePad.h"
+#include "engine/ExternalIO.h"
+#include "dsp/AudioSafety.h"
+#include "dsp/DelayLine.h"
 #include "dsp/Dynamics.h"
 #include "dsp/Denoiser.h"
 
@@ -56,7 +56,8 @@ struct ProcessingParams
     // Meters for the UI: lowest gain since the UI last read it (1 = nothing happening).
     std::atomic<float> gateGain { 1.0f }, compGain { 1.0f }, deessGain { 1.0f }, duckGain { 1.0f };
     std::atomic<float> voiceProbability { 0.0f };
-    std::atomic<bool>  denoiseUnavailable { false }; // sample rate isn't 48 kHz
+    std::atomic<bool>  denoiseUnavailable { false }; // RNNoise couldn't start
+    std::atomic<int>   denoiseLatencyMs { 20 };      // for the panel text
 };
 
 // One input strip. Signal flow (top to bottom, same as the UI):
@@ -102,6 +103,7 @@ public:
 
     std::array<std::atomic<bool>, kNumSlots> slotBypass {};
     std::array<std::atomic<bool>, kNumSlots> slotFault {};   // plugin output NaN/Inf -> auto-bypassed
+    std::array<std::atomic<float>, kNumSlots> slotMix {};    // wet/dry per insert, 0..1 (1 = fully wet)
     std::atomic<int> faultCount { 0 };                       // NaN/Inf events caught on this strip
 
     // Message thread only
@@ -172,6 +174,8 @@ private:
     juce::AudioBuffer<float> dryBuffer; // dry copy for bypass crossfades
     std::array<bool, kNumSlots> wasActive {};   // audio-thread view of each slot, for crossfades
     std::array<DelayLine, kNumSlots> bypassDelay;   // keeps latency for bypassed plugins without a bypass parameter
+    std::array<DelayLine, kNumSlots> mixDelay;      // dry path delayed by the plugin's latency for wet/dry
+    juce::AudioBuffer<float> mixDryBuffer;
     DelayLine alignLine;                            // strip-level latency alignment
     juce::MidiBuffer midi;
     juce::SmoothedValue<float> inGain, muteGain, faderGain, duckGain;

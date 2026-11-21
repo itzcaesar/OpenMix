@@ -1,6 +1,6 @@
-#include "StripView.h"
-#include "../Theme.h"
-#include "../AppCapture.h"
+#include "ui/StripView.h"
+#include "ui/Theme.h"
+#include "engine/AppCapture.h"
 
 //==============================================================================
 // PluginWindow
@@ -535,8 +535,11 @@ void StripView::updateSlotRows()
         else if (s < n)
         {
             auto* p = strip.getPlugin (s);
+            const auto ab = abStates.find (p);
             row.setState (PluginSlotRow::State::Loaded, p->getName(), strip.slotBypass[(size_t) s].load(),
-                          strip.slotFault[(size_t) s].load(), p->getLatencySamples(), sr);
+                          strip.slotFault[(size_t) s].load(), p->getLatencySamples(), sr,
+                          juce::roundToInt (strip.slotMix[(size_t) s].load() * 100.0f),
+                          ab == abStates.end() ? juce::String() : juce::String (ab->second.onB ? "B" : "A"));
         }
         else
             row.setState (PluginSlotRow::State::Empty, {}, false, false, 0, sr);
@@ -579,7 +582,10 @@ void StripView::toggleBypass (int slot)
 void StripView::removeSlot (int slot)
 {
     if (auto* p = strip.getPlugin (slot))
+    {
         closeEditor (p);
+        abStates.erase (p);
+    }
     strip.removePlugin (slot);
     updateSlotRows();
 
@@ -615,6 +621,41 @@ void StripView::showSlotMenu (int slot)
     menu.addSeparator();
     menu.addItem ("Move up", slot > 0, false, [this, slot] { moveSlot (slot, slot - 1); });
     menu.addItem ("Move down", slot < n - 1, false, [this, slot] { moveSlot (slot, slot + 1); });
+    menu.addSeparator();
+    menu.addItem ("Wet/dry mix...", [this, slot] { openMixPanel (slot); });
+
+    juce::PopupMenu ab;
+    if (auto it = abStates.find (p); it == abStates.end())
+    {
+        ab.addItem ("Start comparing (A and B = current settings)", [this, p]
+        {
+            juce::MemoryBlock state;
+            p->getStateInformation (state);
+            abStates[p] = { state, state, false };
+            updateSlotRows();
+        });
+    }
+    else
+    {
+        const bool onB = it->second.onB;
+        ab.addItem ("Listen to A", true, ! onB, [this, p] { abSwitch (p, false); });
+        ab.addItem ("Listen to B", true, onB, [this, p] { abSwitch (p, true); });
+        ab.addSeparator();
+        ab.addItem (onB ? "Copy B to A" : "Copy A to B", [this, p]
+        {
+            auto& st = abStates[p];
+            juce::MemoryBlock current;
+            p->getStateInformation (current);
+            st.a = current;
+            st.b = current;
+        });
+        ab.addItem ("Stop comparing (keep what you hear)", [this, p]
+        {
+            abStates.erase (p);
+            updateSlotRows();
+        });
+    }
+    menu.addSubMenu ("A/B compare", ab);
     menu.addSeparator();
     menu.addItem ("Save preset...", [this, slot] { savePreset (slot); });
     menu.addItem ("Load preset...", [this, slot] { loadPreset (slot); });
@@ -726,7 +767,10 @@ void StripView::loadPluginAsync (int slot, const juce::PluginDescription& desc,
                 }
 
                 if (auto* old = safe->strip.getPlugin (slot))
+                {
                     safe->closeEditor (old);
+                    safe->abStates.erase (old);
+                }
 
                 auto* raw = instance.get();
                 safe->strip.installPlugin (slot, std::move (instance));
@@ -837,6 +881,39 @@ void StripView::openEditor (juce::AudioPluginInstance* plugin)
 void StripView::closeEditor (juce::AudioPluginInstance* plugin)
 {
     editorWindows.erase (plugin);
+}
+
+void StripView::abSwitch (juce::AudioPluginInstance* plugin, bool toB)
+{
+    auto it = abStates.find (plugin);
+    if (it == abStates.end() || it->second.onB == toB)
+        return;
+
+    // Remember what's playing now in its own slot, then load the other one.
+    auto& st = it->second;
+    juce::MemoryBlock current;
+    plugin->getStateInformation (current);
+    (st.onB ? st.b : st.a) = current;
+
+    const auto& next = toB ? st.b : st.a;
+    plugin->setStateInformation (next.getData(), (int) next.getSize());
+    st.onB = toB;
+    updateSlotRows();
+}
+
+void StripView::openMixPanel (int slot)
+{
+    auto* p = strip.getPlugin (slot);
+    if (p == nullptr)
+        return;
+
+    auto panel = std::make_unique<SlotMixPanel> (p->getName(), strip.slotMix[(size_t) slot]);
+    juce::Component::SafePointer<StripView> safe (this);
+    panel->onChange = [safe] { if (safe != nullptr) safe->updateSlotRows(); };
+
+    auto& row = insertList->rows[(size_t) slot];
+    auto* top = popupParent();
+    juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&row, row.getLocalBounds()), top);
 }
 
 //==============================================================================

@@ -1,7 +1,8 @@
-#include "MainComponent.h"
-#include "Session.h"
-#include "Theme.h"
-#include "OpenMixLookAndFeel.h"
+#include "app/MainComponent.h"
+#include "app/Session.h"
+#include "app/AppSettings.h"
+#include "ui/Theme.h"
+#include "ui/OpenMixLookAndFeel.h"
 #include "ui/SettingsPanel.h"
 
 static constexpr int stripGap = Theme::s2;
@@ -252,6 +253,47 @@ MainComponent::MainComponent()
     engine.getScanner().addChangeListener (this);
     engine.getScanner().startScan();   // background, crash-safe; only new or changed plugins
 
+    // Creator tools in the header
+    makeLamp (recordButton, "mute");
+    recordButton.setClickingTogglesState (false);
+    recordButton.onClick = [this] { toggleRecording(); };
+    recordButton.onSecondary = [this] { showRecordMenu(); };
+    addAndMakeVisible (recordButton);
+
+    recordMenuButton.setTitle ("Recording options");
+    recordMenuButton.setTooltip ("What to record, the replay buffer, and the recordings folder.");
+    recordMenuButton.onClick = [this] { showRecordMenu(); };
+    addAndMakeVisible (recordMenuButton);
+
+    replayButton.onClick = [this] { saveReplay(); };
+    makeClickable (replayButton);
+    addAndMakeVisible (replayButton);
+
+    soundboardButton.setTooltip ("Eight sound pads you can play into any bus.");
+    soundboardButton.onClick = [this] { showSoundboard(); };
+    makeClickable (soundboardButton);
+    addAndMakeVisible (soundboardButton);
+
+    updateButton.onClick = [this] { updatePage.launchInDefaultBrowser(); };
+    makeClickable (updateButton);
+    addChildComponent (updateButton);
+    updater.onUpdateAvailable = [this] (juce::String version, juce::URL page)
+    {
+        updatePage = page;
+        updateButton.setButtonText ("Update: " + version);
+        updateButton.setTooltip ("OpenMix " + version + " is available. Opens the release page on GitHub.");
+        updateButton.setVisible (true);
+        resized();
+    };
+    if (AppSettings::get().checkForUpdates())
+        updater.checkInBackground();
+
+    osc.onRecord = [this] (bool on) { if (on != engine.getRecorder().isRecording()) toggleRecording(); };
+    osc.onSaveReplay = [this] { saveReplay(); };
+    applyOsc();
+    applyReplaySettings();
+    updateRecordButton();
+
     changeListenerCallback (&engine.getDeviceManager());
     startTimerHz (30);
 
@@ -260,6 +302,8 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+    engine.getRecorder().stop();
+    soundboardWindow.reset();
     stopTimer();
     engine.getScanner().removeChangeListener (this);
     engine.getDeviceManager().removeChangeListener (this);
@@ -316,7 +360,7 @@ void MainComponent::showAudioSettings()
 void MainComponent::showSettings()
 {
     juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }));
+    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyOsc(); }));
     o.dialogTitle = "Settings";
     o.dialogBackgroundColour = Theme::p().panel;
     o.escapeKeyTriggersCloseButton = true;
@@ -358,6 +402,9 @@ void MainComponent::updateStatus()
         statusSegments.add ("No audio device. Open Audio settings to choose one.");
     }
 
+    if (note.isNotEmpty() && juce::Time::getMillisecondCounter() < noteUntilMs)
+        statusSegments.insert (0, note);
+
     auto& scanner = engine.getScanner();
     if (scanner.isScanning() && scanner.getNumToScan() > 0)
         statusSegments.add ("Scanning plugins " + juce::String (scanner.getNumDone()) + "/" + juce::String (scanner.getNumToScan()));
@@ -380,7 +427,18 @@ void MainComponent::timerCallback()
     for (auto& b : console->buses)  if (b->isVisible()) b->tick();
 
     if (++ticks % 15 == 0)
+    {
         updateStatus();
+        updateRecordButton();
+    }
+
+    // Changes made over OSC: refresh what's on screen.
+    if (const int ext = engine.externalChanges.load(); ext != lastExternalChanges)
+    {
+        lastExternalChanges = ext;
+        for (auto& s : console->strips) if (s->isVisible()) s->refreshFromStrip();
+        for (auto& b : console->buses)  if (b->isVisible()) b->refreshFromBus();
+    }
 
     if (ticks % 60 == 0)
     {
@@ -464,8 +522,22 @@ void MainComponent::paint (juce::Graphics& g)
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
-    // Only reached while the window itself has focus: Tab / Shift+Tab enter the controls.
-    if (key.isKeyCode (juce::KeyPress::tabKey))
+    // Shortcuts (while OpenMix is focused). Global hotkeys while gaming come with scenes/hotkeys.
+    const auto mods = key.getModifiers();
+    if (mods.isCtrlDown() && mods.isShiftDown() && (key.getKeyCode() == 'R' || key.getKeyCode() == 'r'))
+    {
+        toggleRecording();
+        return true;
+    }
+    if (mods.isCtrlDown() && mods.isShiftDown() && (key.getKeyCode() == 'S' || key.getKeyCode() == 's'))
+    {
+        saveReplay();
+        return true;
+    }
+
+    // Tab arrives here from children too (unhandled keys bubble up). Only step in when the
+    // window itself has focus, otherwise let JUCE's normal focus order work.
+    if (key.isKeyCode (juce::KeyPress::tabKey) && hasKeyboardFocus (false))
     {
         if (auto traverser = createKeyboardFocusTraverser())
         {
@@ -476,6 +548,187 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         return true;
     }
     return false;
+}
+
+//==============================================================================
+// Creator tools
+
+void MainComponent::showNote (const juce::String& text)
+{
+    note = text;
+    noteUntilMs = juce::Time::getMillisecondCounter() + 8000;
+    updateStatus();
+}
+
+void MainComponent::updateRecordButton()
+{
+    auto& rec = engine.getRecorder();
+    const bool on = rec.isRecording();
+    recordButton.setToggleState (on, juce::dontSendNotification);
+
+    if (on)
+    {
+        const int secs = (int) rec.getElapsedSeconds();
+        recordButton.setButtonText ("Rec " + juce::String (secs / 60).paddedLeft ('0', 2) + ":" + juce::String (secs % 60).paddedLeft ('0', 2));
+        recordButton.setTitle ("Stop recording");
+        recordButton.setTooltip ("Recording. Click (or Ctrl+Shift+R) to stop.");
+    }
+    else
+    {
+        static const char* what[] { "every bus", "every strip", "buses and strips" };
+        recordButton.setButtonText ("Record");
+        recordButton.setTitle ("Start recording");
+        recordButton.setTooltip (juce::String ("Record ") + what[juce::jlimit (0, 2, AppSettings::get().recordWhat())]
+                                 + " to WAV files (Ctrl+Shift+R). Right-click or the dots for options.");
+    }
+
+    auto& replay = engine.getReplay();
+    replayButton.setEnabled (replay.isEnabled());
+    replayButton.setButtonText (replay.isEnabled() ? "Replay " + juce::String ((int) replay.getSeconds()) + " s" : "Replay off");
+    replayButton.setTitle (replay.isEnabled() ? "Save the last " + juce::String ((int) replay.getSeconds()) + " seconds" : "Replay buffer is off");
+    replayButton.setTooltip (replay.isEnabled()
+        ? "Save the last " + juce::String ((int) replay.getSeconds()) + " seconds of " + juce::String (kBusNames[replay.sourceBus.load()]) + " (Ctrl+Shift+S)."
+        : juce::String ("Turn on the replay buffer in the recording options (the dots next to Record)."));
+}
+
+void MainComponent::toggleRecording()
+{
+    auto& rec = engine.getRecorder();
+    if (rec.isRecording())
+    {
+        rec.stop();
+        showNote ("Recording saved to " + rec.getLastFolder().getFullPathName());
+        juce::Logger::writeToLog ("Recording saved to " + rec.getLastFolder().getFullPathName());
+    }
+    else
+    {
+        startRecording();
+    }
+    updateRecordButton();
+}
+
+void MainComponent::startRecording()
+{
+    const int what = AppSettings::get().recordWhat();
+    std::vector<Recorder::Target> targets;
+
+    if (what == 0 || what == 2)
+        for (int b = 0; b < kNumBuses; ++b)
+            if (engine.getBus (b).active.load())
+                targets.push_back ({ juce::String ("Bus ") + kBusNames[b], true, b });
+
+    if (what == 1 || what == 2)
+        for (int s = 0; s < kNumStrips; ++s)
+        {
+            auto& strip = engine.getStrip (s);
+            if (strip.active.load())
+                targets.push_back ({ juce::String (s + 1) + " " + (strip.name.isNotEmpty() ? strip.name : "Input " + juce::String (s + 1)), false, s });
+        }
+
+    juce::String error;
+    if (! engine.getRecorder().start (targets, engine.getSampleRate(), error))
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't start recording", error);
+    else if (error.isNotEmpty())
+        showNote ("Recording, but: " + error);
+}
+
+void MainComponent::showRecordMenu()
+{
+    auto& settings = AppSettings::get();
+    juce::PopupMenu menu;
+
+    menu.addSectionHeader ("Record (one WAV file each)");
+    const char* choices[] { "Every bus", "Every strip", "Buses and strips" };
+    for (int i = 0; i < 3; ++i)
+        menu.addItem (choices[i], ! engine.getRecorder().isRecording(), settings.recordWhat() == i, [this, i]
+        {
+            AppSettings::get().setRecordWhat (i);
+            updateRecordButton();
+        });
+
+    menu.addSectionHeader ("Replay buffer (save the last seconds on demand)");
+    for (int secs : { 0, 30, 60, 120 })
+        menu.addItem (secs == 0 ? juce::String ("Off") : "Keep the last " + juce::String (secs) + " seconds", true,
+                      settings.replaySeconds() == secs, [this, secs]
+        {
+            AppSettings::get().setReplaySeconds (secs);
+            applyReplaySettings();
+        });
+
+    juce::PopupMenu source;
+    for (int b = 0; b < kNumBuses; ++b)
+        if (engine.getBus (b).active.load())
+            source.addItem (kBusNames[b], true, settings.replayBus() == b, [this, b]
+            {
+                AppSettings::get().setReplayBus (b);
+                applyReplaySettings();
+            });
+    menu.addSubMenu ("Replay listens to", source);
+
+    menu.addSeparator();
+    menu.addItem ("Open recordings folder", []
+    {
+        auto dir = Recorder::getRecordingsFolder();
+        dir.createDirectory();
+        dir.startAsProcess();
+    });
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (recordMenuButton));
+}
+
+void MainComponent::applyReplaySettings()
+{
+    auto& replay = engine.getReplay();
+    replay.sourceBus.store (juce::jlimit (0, kNumBuses - 1, AppSettings::get().replayBus()));
+    replay.configure (engine.getSampleRate(), AppSettings::get().replaySeconds());
+    updateRecordButton();
+}
+
+void MainComponent::saveReplay()
+{
+    if (! engine.getReplay().isEnabled())
+    {
+        showNote ("The replay buffer is off. Turn it on in the recording options.");
+        return;
+    }
+
+    juce::Component::SafePointer<MainComponent> safe (this);
+    engine.getReplay().save ([safe] (juce::File file, juce::String error)
+    {
+        if (safe == nullptr)
+            return;
+        if (file == juce::File())
+            safe->showNote ("Replay not saved: " + error);
+        else
+            safe->showNote ("Replay saved: " + file.getFileName());
+    });
+}
+
+void MainComponent::showSoundboard()
+{
+    if (soundboardWindow == nullptr)
+    {
+        soundboardWindow = std::make_unique<SoundboardWindow> (engine);
+        soundboardWindow->getPanel().onChanged = [this] { Session::save (engine); };
+    }
+
+    soundboardWindow->getPanel().refresh();
+    soundboardWindow->setVisible (true);
+    soundboardWindow->toFront (true);
+}
+
+void MainComponent::applyOsc()
+{
+    auto& settings = AppSettings::get();
+    if (! settings.oscEnabled())
+    {
+        osc.stop();
+        return;
+    }
+
+    juce::String error;
+    if (! osc.start (settings.oscPort(), error))
+        showNote ("OSC remote control is off: " + error);
 }
 
 void MainComponent::resized()
@@ -489,6 +742,19 @@ void MainComponent::resized()
     themeButton.setBounds (header.removeFromRight (108).withSizeKeepingCentre (108, 30));
     header.removeFromRight (Theme::s2);
     appSettingsButton.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 30));
+    header.removeFromRight (Theme::s2);
+    if (updateButton.isVisible())
+    {
+        updateButton.setBounds (header.removeFromRight (130).withSizeKeepingCentre (130, 30));
+        header.removeFromRight (Theme::s2);
+    }
+    soundboardButton.setBounds (header.removeFromRight (104).withSizeKeepingCentre (104, 30));
+    header.removeFromRight (Theme::s2);
+    replayButton.setBounds (header.removeFromRight (112).withSizeKeepingCentre (112, 30));
+    header.removeFromRight (Theme::s2);
+    recordMenuButton.setBounds (header.removeFromRight (30).withSizeKeepingCentre (30, 30));
+    header.removeFromRight (Theme::s1);
+    recordButton.setBounds (header.removeFromRight (104).withSizeKeepingCentre (104, 30));
     header.removeFromRight (Theme::s3);
     header.removeFromLeft (Theme::s3);
     statusArea = header.getWidth() > 160 ? header.withSizeKeepingCentre (header.getWidth(), 30) : juce::Rectangle<int>();

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "../MixerEngine.h"
-#include "Widgets.h"
+#include "engine/MixerEngine.h"
+#include "ui/Widgets.h"
 
 // Pop-over panels opened from a strip: one per built-in processor, and one per send.
 
@@ -75,6 +75,12 @@ private:
     Processor kind;
     juce::ComboBox duckSource;
     juce::Label duckLabel;
+};
+
+class SlotMixPanel : public PanelBase
+{
+public:
+    SlotMixPanel (const juce::String& pluginName, std::atomic<float>& mix);
 };
 
 class SendPanel : public PanelBase

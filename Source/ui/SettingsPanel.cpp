@@ -1,10 +1,10 @@
-#include "SettingsPanel.h"
-#include "Widgets.h"
-#include "../AppSettings.h"
-#include "../Theme.h"
+#include "ui/SettingsPanel.h"
+#include "ui/Widgets.h"
+#include "app/AppSettings.h"
+#include "ui/Theme.h"
 
-SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn)
-    : engine (e), toggleTheme (std::move (themeFn))
+SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std::function<void()> oscFn)
+    : engine (e), toggleTheme (std::move (themeFn)), oscChanged (std::move (oscFn))
 {
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
     auto& s = AppSettings::get();
@@ -49,9 +49,51 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn)
         addAndMakeVisible (b);
     }
 
+    checkUpdates.setToggleState (s.checkForUpdates(), juce::dontSendNotification);
+    checkUpdates.onClick = [this] { AppSettings::get().setCheckForUpdates (checkUpdates.getToggleState()); };
+
+    oscEnabled.setToggleState (s.oscEnabled(), juce::dontSendNotification);
+    oscEnabled.onClick = [this]
+    {
+        AppSettings::get().setOscEnabled (oscEnabled.getToggleState());
+        if (oscChanged) oscChanged();
+    };
+
+    oscPort.setText (juce::String (s.oscPort()), false);
+    oscPort.setInputRestrictions (5, "0123456789");
+    oscPort.setTitle ("OSC port");
+    oscPort.setJustification (juce::Justification::centredLeft);
+    auto commitPort = [this]
+    {
+        const int port = oscPort.getText().getIntValue();
+        if (port < 1024 || port > 65535)
+        {
+            oscPort.setText (juce::String (AppSettings::get().oscPort()), false);
+            return;
+        }
+        if (port != AppSettings::get().oscPort())
+        {
+            AppSettings::get().setOscPort (port);
+            if (oscChanged) oscChanged();
+        }
+    };
+    oscPort.onReturnKey = commitPort;
+    oscPort.onFocusLost = commitPort;
+
+    logsButton.onClick = [] { auto dir = AppSettings::getLogFolder(); dir.createDirectory(); dir.startAsProcess(); };
+
+    for (auto* t : { &checkUpdates, &oscEnabled })
+    {
+        makeClickable (*t);
+        addAndMakeVisible (t);
+    }
+    addAndMakeVisible (oscPort);
+    makeClickable (logsButton);
+    addAndMakeVisible (logsButton);
+
     engine.getScanner().addChangeListener (this);
     updateScanText();
-    setSize (520, 470);
+    setSize (540, 640);
 }
 
 SettingsPanel::~SettingsPanel()
@@ -84,11 +126,15 @@ void SettingsPanel::paint (juce::Graphics& g)
     Theme::drawLegend (g, "Startup", startupLegend);
     Theme::drawLegend (g, "Look", themeLegend);
     Theme::drawLegend (g, "Plugins", pluginsLegend);
+    Theme::drawLegend (g, "Network and logs", networkLegend);
     Theme::drawLegend (g, "About", aboutLegend);
 
     g.setFont (Theme::ui (13.0f));
     g.setColour (t.textDim);
     g.drawFittedText (scanText, scanTextArea, juce::Justification::centredLeft, 2);
+
+    g.drawFittedText ("While OSC is on, any device on your network can move faders and start recordings. "
+                      "Addresses start with /openmix (see the README).", oscNoteArea, juce::Justification::topLeft, 2);
 
     g.drawFittedText ("OpenMix " + juce::JUCEApplication::getInstance()->getApplicationVersion()
                         + ". Licensed under the GNU AGPLv3. Built with JUCE (AGPLv3) and RNNoise (BSD).",
@@ -119,6 +165,15 @@ void SettingsPanel::resized()
     presetsButton.setBounds (row.removeFromLeft (190));
     row.removeFromLeft (Theme::s2);
     pluginsButton.setBounds (row.removeFromLeft (190));
+    r.removeFromTop (Theme::s4);
+
+    networkLegend = r.removeFromTop (20);
+    checkUpdates.setBounds (r.removeFromTop (28));
+    row = r.removeFromTop (28);
+    oscEnabled.setBounds (row.removeFromLeft (270));
+    oscPort.setBounds (row.removeFromLeft (72).reduced (0, 2));
+    oscNoteArea = r.removeFromTop (36);
+    logsButton.setBounds (r.removeFromTop (30).withWidth (190));
     r.removeFromTop (Theme::s4);
 
     aboutLegend = r.removeFromTop (20);

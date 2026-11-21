@@ -1,4 +1,4 @@
-#include "PluginScanner.h"
+#include "engine/PluginScanner.h"
 
 static constexpr int childTimeoutMs = 30000;   // a plugin that takes longer than this to open is skipped
 

@@ -6,11 +6,13 @@
 #include <cstdint>
 #include <vector>
 
+#include "dsp/SincTable.h"
+
 // Carries stereo audio from one clock domain to another (e.g. a WASAPI device or an app
 // capture thread -> the main ASIO callback, or the main callback -> a second output device).
 //
-// One writer thread, one reader thread, lock-free. The reader resamples with 4-point Hermite
-// interpolation. Its rate = writerRate / readerRate, nudged by a few hundred ppm so the
+// One writer thread, one reader thread, lock-free. The reader resamples with a 16-tap
+// windowed sinc (clean enough for music, not just voice). Its rate = writerRate / readerRate, nudged by a few hundred ppm so the
 // buffer fill stays near a target: that cancels clock drift between devices that both
 // claim "48 kHz" but aren't exactly 48 kHz.
 class ClockBridge
@@ -65,6 +67,13 @@ public:
         const double step = wr / rate;
         readerBlock = std::max (readerBlock, numFrames);
 
+        // Anti-alias cutoff follows the conversion ratio (only recomputed when it changes).
+        if (std::abs (step - designedStep) > 0.01)
+        {
+            sinc.design (0.45 * std::min (1.0, 1.0 / step));
+            designedStep = step;
+        }
+
         // Enough to cover one block from each side plus scheduling jitter. Every underrun
         // widens the safety margin, so a jittery device settles on a margin that works.
         const double target = writerBlock.load (std::memory_order_relaxed) + readerBlock * step + margin;
@@ -82,7 +91,7 @@ public:
             fadeInPos = 0;   // resume with a short fade instead of a click
         }
 
-        if (fill < numFrames * step * 1.01 + 4.0)
+        if (fill < numFrames * step * 1.01 + 12.0)   // + the sinc's look-ahead
         {
             underruns.fetch_add (1, std::memory_order_relaxed);
             margin = std::min (margin + 256.0, 8192.0);
@@ -116,8 +125,8 @@ public:
         {
             const auto idx = (int64_t) std::floor (readPos);
             const float t = (float) (readPos - (double) idx);
-            outL[i] = interp (buf[0], idx, t);
-            outR[i] = interp (buf[1], idx, t);
+            outL[i] = sinc.at (buf[0].data(), mask, idx, t);
+            outR[i] = sinc.at (buf[1].data(), mask, idx, t);
             readPos += s;
 
             if (fadeInPos < fadeInLength)
@@ -128,7 +137,7 @@ public:
             }
         }
 
-        readFloor.store ((uint64_t) std::max<int64_t> (0, (int64_t) std::floor (readPos) - 4),
+        readFloor.store ((uint64_t) std::max<int64_t> (0, (int64_t) std::floor (readPos) - 10),
                          std::memory_order_release);
     }
 
@@ -137,18 +146,6 @@ public:
     std::atomic<float> ratioPpm { 0.0f };
 
 private:
-    float interp (const std::vector<float>& b, int64_t idx, float t) const noexcept
-    {
-        const float xm1 = b[(uint64_t) (idx - 1) & mask];
-        const float x0  = b[(uint64_t) idx & mask];
-        const float x1  = b[(uint64_t) (idx + 1) & mask];
-        const float x2  = b[(uint64_t) (idx + 2) & mask];
-        const float c1 = 0.5f * (x1 - xm1);
-        const float c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2;
-        const float c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
-        return ((c3 * t + c2) * t + c1) * t + x0;
-    }
-
     static void silence (float* l, float* r, int n) noexcept
     {
         std::fill (l, l + n, 0.0f);
@@ -164,6 +161,8 @@ private:
     std::atomic<int> writerBlock { 0 };
 
     // Reader-only state
+    omx::SincTable sinc;
+    double designedStep = 1.0;
     double readPos = 0.0;
     double avgFill = 0.0;
     double margin = 256.0;

@@ -1,6 +1,6 @@
-#include "BusView.h"
-#include "../Theme.h"
-#include "../OpenMixLookAndFeel.h"
+#include "ui/BusView.h"
+#include "ui/Theme.h"
+#include "ui/OpenMixLookAndFeel.h"
 
 BusView::BusView (MixerEngine& e, int i)
     : engine (e), bus (e.getBus (i)), index (i),
@@ -32,9 +32,46 @@ BusView::BusView (MixerEngine& e, int i)
     refreshFromBus();
 }
 
+void BusView::drainAnalysis()
+{
+    const double sr = engine.getSampleRate();
+    if (sr != analysis->sampleRate)
+    {
+        analysis->sampleRate = sr;
+        analysis->loudness.prepare (sr);
+    }
+
+    auto& fifo = bus.analysisFifo;
+    for (int ready = fifo.getNumReady(); ready > 0; ready = fifo.getNumReady())
+    {
+        const auto scope = fifo.read (juce::jmin (ready, drainBuffer.getNumSamples()));
+        int done = 0;
+        for (const auto [start, size] : { std::pair { scope.startIndex1, scope.blockSize1 }, std::pair { scope.startIndex2, scope.blockSize2 } })
+        {
+            if (size <= 0)
+                continue;
+            drainBuffer.copyFrom (0, done, bus.analysisBuffer, 0, start, size);
+            drainBuffer.copyFrom (1, done, bus.analysisBuffer, 1, start, size);
+            done += size;
+        }
+        analysis->push (drainBuffer.getReadPointer (0), drainBuffer.getReadPointer (1), done);
+    }
+}
+
+void BusView::openAnalyser()
+{
+    auto panel = std::make_unique<AnalyserPanel> ("Bus " + juce::String (kBusNames[index]), analysis);
+    auto* top = getTopLevelComponent();
+    juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&menuButton, menuButton.getLocalBounds()), top);
+}
+
 void BusView::tick()
 {
     faderSection.tick();
+
+    drainAnalysis();
+    if (++analysisTicks % 10 == 0)
+        repaint (loudnessArea);
 
     // The safety limiter lamp: lit while it reduces gain by more than 0.5 dB (held 1 s).
     const float g = bus.limiterGain.exchange (1.0f);
@@ -53,6 +90,8 @@ void BusView::tick()
 void BusView::showBusMenu()
 {
     juce::PopupMenu menu;
+    menu.addItem ("Analyser and loudness...", [this] { openAnalyser(); });
+    menu.addSeparator();
     menu.addItem ("Monitor bus (solo plays here)", true, bus.monitor.load(), [this]
     {
         engine.setMonitorBus (bus.monitor.load() ? -1 : index);
@@ -244,6 +283,14 @@ void BusView::paint (juce::Graphics& g)
     ma.removeFromLeft (6);
     g.setColour (isMonitor ? t.text : t.textFaint);
     g.drawText (isMonitor ? "MONITOR (SOLO)" : "MONITOR", ma, juce::Justification::centredLeft);
+
+    // Short-term loudness (3 s), the number streaming platforms normalise to.
+    auto la2 = loudnessArea;
+    Theme::drawLegend (g, "Loudness", la2.removeFromLeft (70));
+    const double st = analysis->loudness.shortTerm();
+    g.setFont (Theme::mono (11.5f));
+    g.setColour (std::isfinite (st) ? t.text : t.textFaint);
+    g.drawText (std::isfinite (st) ? juce::String (st, 1) + " LUFS" : juce::String ("no signal"), la2, juce::Justification::centredRight);
 }
 
 void BusView::resized()
@@ -263,6 +310,7 @@ void BusView::resized()
     r.removeFromTop (Theme::s3);
     limiterArea = r.removeFromTop (18);
     monitorArea = r.removeFromTop (18);
+    loudnessArea = r.removeFromTop (18);
 
     muteButton.setBounds (r.removeFromBottom (30));
     r.removeFromBottom (Theme::s3);

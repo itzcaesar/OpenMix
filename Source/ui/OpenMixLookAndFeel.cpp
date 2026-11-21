@@ -1,5 +1,5 @@
-#include "OpenMixLookAndFeel.h"
-#include "Theme.h"
+#include "ui/OpenMixLookAndFeel.h"
+#include "ui/Theme.h"
 
 OpenMixLookAndFeel::OpenMixLookAndFeel()
 {

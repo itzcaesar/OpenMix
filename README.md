@@ -2,8 +2,10 @@
 
 A virtual mixer for Windows: ASIO / WASAPI / DirectSound I/O, up to 8 input strips and
 6 buses, built-in voice processing (AI noise removal, gate, EQ, compressor, de-esser,
-ducking), VST3 plugin hosting, a VoicePad (XY voice/pan pad), send levels and a monitor bus,
-per-app audio capture, in a studio-hardware style UI with dark and light themes.
+ducking), VST3 plugin hosting with wet/dry and A/B compare, a VoicePad (XY pad with voice,
+pan, colour and space modes), send levels and a monitor bus, per-app audio capture, and
+creator tools (multitrack recorder, replay buffer, soundboard, spectrum analyser and LUFS
+meters, OSC remote control), in a studio-hardware style UI with dark and light themes.
 Design direction: `docs/DESIGN.md`.
 
 Built with C++20 + JUCE 9.0.5 (bundled in `external/JUCE`, includes JUCE's ASIO headers).
@@ -64,9 +66,13 @@ cmake --build --preset release
    menu moves it, saves or loads a preset (`.omxpreset`, in Documents\OpenMix Presets),
    replaces or removes it. Drag a plugin up or down to reorder the chain.
    Put the denoiser before the autotune.
+   **Wet/dry mix** (dots menu) blends the plugin with the dry signal, kept in time with the
+   plugin's latency; the row shows the percentage. **A/B compare** stores two settings of a
+   plugin so you can switch between them (the row shows "(B)" while you hear B).
 4. **Processing** keys, lit when on (click for settings, Space switches on/off):
    - **NR** noise removal (RNNoise). Removes fans, hum and keyboard noise from voice.
-     Needs 48 kHz; adds 10 ms, which the other strips are matched to.
+     Adds 20 ms at 48 kHz (RNNoise's own rate); at other rates it resamples to 48 kHz and
+     back, adding about 1 ms more. The other strips are delayed to match.
    - **Gate** turns the strip down while it's quiet. **EQ** low/mid/high.
    - **Comp** evens out loud and quiet parts (automatic make-up gain).
    - **DS** de-esser, softens harsh S sounds. **Duck** lowers this strip while another
@@ -75,6 +81,8 @@ cmake --build --preset release
 5. **VoicePad** (double-click or Home to reset):
    - *Voice*: X = tone tilt (Lo <-> Hi shelves, +/-6 dB), Y = presence (5 kHz) + echo.
    - *Pan*: X = constant-power pan, Y = stereo width (100-200%).
+   - *Color*: the four corners are Warm, Bright, Radio and Close; the puck blends them.
+   - *Space*: X = pan, Y = distance (quieter, darker, with early reflections further back).
 6. **Sends**: click a send key (A1, B1...) to switch it; right-click it (or press M) for
    its level and **pre-fader** (the send ignores the strip fader: a separate mix for Discord).
    A level other than 0 dB and "P" for pre-fader are printed on the key.
@@ -86,10 +94,38 @@ cmake --build --preset release
    their own clocks; OpenMix resamples them and corrects drift, which adds about 10-25 ms of
    latency on those devices only. The **LIMITER** lamp lights while the bus safety limiter
    is working. "+" after the last bus adds one (A1-A3 hardware, B1-B3 virtual); the
-   three-dot menu sets the monitor bus or removes the bus.
+   three-dot menu sets the monitor bus, opens the **analyser** (spectrum, momentary,
+   short-term and integrated LUFS) or removes the bus. The LOUDNESS readout under the fader
+   shows short-term LUFS.
 8. **Settings** (header): start with Windows, start minimized, keep running in the tray
-   when the window is closed, theme, plugin scanning. In the tray, double-click opens the
-   mixer; right-click to quit.
+   when the window is closed, theme, plugin scanning, the update check, OSC remote control
+   and the log folder. In the tray, double-click opens the mixer; right-click to quit.
+9. **Record** (header, Ctrl+Shift+R) writes every bus, every strip, or both, to one WAV
+   file each in `Documents\OpenMix Recordings\<date and time>`. The dots next to it choose
+   what to record and set the **replay buffer**: keep the last 30, 60 or 120 seconds of one
+   bus in memory and save them with **Replay** (Ctrl+Shift+S).
+10. **Soundboard** (header): eight pads for WAV, MP3, FLAC or Ogg files up to 60 s. Click a
+   pad or press 1-8 in the soundboard window to play, again to stop; right-click to load,
+   rename or clear. It has its own volume and plays on the buses you pick (A1 and B1 by
+   default, so you and your stream both hear it).
+
+### Remote control (OSC)
+
+Off by default (Settings). While it's on, OpenMix listens on a UDP port (9000 unless you
+change it) and anything on your network can control it, so only turn it on at home or on a
+network you trust. Values are dB unless noted; strips and pads count from 1.
+
+| Address | Argument |
+|---|---|
+| `/openmix/strip/<n>/fader`, `/gain` | dB |
+| `/openmix/strip/<n>/mute`, `/solo` | 0 or 1 |
+| `/openmix/strip/<n>/send/<bus>` | 0 or 1 (bus name, e.g. `B1`) |
+| `/openmix/strip/<n>/sendlevel/<bus>` | dB |
+| `/openmix/bus/<bus>/fader` | dB |
+| `/openmix/bus/<bus>/mute` | 0 or 1 |
+| `/openmix/soundboard/<n>/play` | none (plays or stops pad n) |
+| `/openmix/record` | 1 starts, 0 stops |
+| `/openmix/replay/save` | none |
 
 ### Keyboard
 
@@ -105,31 +141,25 @@ Tab and Shift+Tab move through the header, then each strip top to bottom, then t
 | Tape label | Enter or F2 rename |
 | Meter | Enter resets the clip lamp |
 | Buttons and pickers | Enter or Space |
+| Record, save replay | Ctrl+Shift+R, Ctrl+Shift+S (while OpenMix has focus) |
+| Soundboard pads | 1-8 in the soundboard window, M opens a pad's menu |
 
-Everything (device, theme, strips, plugins and their settings, buses) is saved to
+Everything (device, theme, strips, plugins and their settings, buses, soundboard) is saved to
 `%APPDATA%\OpenMix\session.xml` every 10 seconds and when the app closes.
 ## Layout
 
-| File | What it does |
+`Source/` is split by job. Includes are written relative to `Source/`
+(`#include "engine/MixerEngine.h"`).
+
+| Folder | What's in it |
 |---|---|
-| `Source/MixerEngine.*` | Audio device, real-time callback, strip -> bus -> output summing |
-| `Source/ChannelStrip.*` | Per-strip DSP and lock-safe VST3 slot loading |
-| `Source/VoicePad.*` | XY pad DSP (tilt EQ, presence, echo, pan/width) and its UI |
-| `Source/Biquad.h` | Allocation-free RBJ filters for the audio thread |
-| `Source/ClockBridge.h` | Lock-free FIFO + drift-correcting resampler between clock domains |
-| `Source/ExternalIO.*` | Extra Windows input/output devices and app sources |
-| `Source/AppCapture.*` | Per-app capture (WASAPI process loopback) and audio-app listing |
-| `Source/Session.*` | Save/restore to XML |
-| `Source/PluginScanner.*` | Crash-safe VST3 scanning in child processes, with a cache and skip list |
-| `Source/DelayLine.h` | Delay line for plugin latency compensation |
-| `Source/AudioSafety.h` | Safety limiter, NaN/Inf detection, DC blocker |
-| `Source/Theme.h`, `Source/OpenMixLookAndFeel.*` | Dark/light design tokens and control drawing |
-| `Source/ui/*` | Strip, bus and shared widgets (meter, fader, tape label, insert rows) |
-| `Source/MainComponent.*` | Window: header, status display, console layout |
-| `Source/dsp/*` | Gate, compressor, 3-band EQ, de-esser, RNNoise denoiser |
-| `Source/AppRouting.cpp` | Per-app output device (so a captured app isn't heard twice) |
-| `Source/AppSettings.*`, `Source/ui/TrayIcon.*`, `Source/ui/SettingsPanel.*` | Startup, tray, settings window |
-| `Source/ui/Panels.*` | Processor and send pop-over panels |
+| `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, status, console layout), `AppSettings`, `Session` (save/restore to XML), `OscControl`, `UpdateChecker` |
+| `Source/engine/` | `MixerEngine` (device, real-time callback, strip -> bus -> output), `ChannelStrip` (per-strip DSP, VST3 slots, wet/dry), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices and app sources), `AppCapture` (per-app loopback), `AppRouting` (per-app output device), `PluginScanner` (crash-safe scanning in child processes) |
+| `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
+| `Source/dsp/` | Header-only real-time building blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS); plus `Denoiser` (RNNoise at any sample rate) |
+| `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `Panels` (processor, send and wet/dry pop-overs), `AnalyserPanel`, `SoundboardPanel`, `SettingsPanel`, `TrayIcon` |
+| `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |
+| `tests/CoreTests.cpp` | Core unit tests (no JUCE) |
 | `installer/OpenMix.iss` | Inno Setup installer (built by CI for version tags) |
 
 ## Reliability
@@ -148,8 +178,12 @@ Everything (device, theme, strips, plugins and their settings, buses) is saved t
   Windows audio changes (checked every 2 s).
 - **Crash-safe startup:** if a plugin crashes OpenMix while loading, the next start skips
   plugins and backs up the session to `session-before-crash.xml`.
+- **Crash report and log:** if OpenMix crashes, it writes `crash-<time>.txt` with a stack
+  trace to `%APPDATA%\OpenMix`; `openmix.log` there records device and plugin events
+  (Settings > Open log folder).
 - **Core tests** (`ctest`): clock drift/jitter, resampling pitch, limiter, NaN detection,
-  DC blocker and filter stability. They run in CI on every push.
+  DC blocker, filter stability, dynamics, denoiser latency at 44.1 and 48 kHz, and the EBU
+  loudness reference. They run in CI on every push.
 
 ## License
 
@@ -165,12 +199,12 @@ release.
 
 ## Known limits / next steps
 
-- Extra devices use simple (Hermite) resampling; fine for voice and monitoring, but a
-  higher-quality resampler is planned for 44.1k <-> 48k music.
 - No own virtual audio driver yet; use a virtual cable meanwhile.
 - VST3 plugins have to start on the UI thread (a VST3 rule), so a slow plugin can still pause
   the window briefly while it opens; the slot shows "Loading..." meanwhile.
-- Noise removal runs at 48 kHz only (RNNoise's native rate).
+- Hotkeys only work while OpenMix has focus; global hotkeys (while gaming) are planned.
+- The update check (off by default) only tells you a new version exists and opens its
+  release page; it doesn't download or install anything.
 - "App's own output" uses the same Windows setting as Settings > Sound > Volume mixer; the
   interface behind it is undocumented, so on an unusual Windows build it can report that it's
   unavailable.

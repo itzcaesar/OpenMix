@@ -134,7 +134,8 @@ public:
     enum class State { Empty, Loading, Loaded };
 
     PluginSlotRow();
-    void setState (State, const juce::String& name, bool bypassed, bool faulted, int latencySamples, double sampleRate);
+    void setState (State, const juce::String& name, bool bypassed, bool faulted, int latencySamples, double sampleRate,
+                   int mixPercent = 100, const juce::String& abTag = {});
     State getState() const noexcept { return state; }
 
     void paint (juce::Graphics&) override;
@@ -160,6 +161,6 @@ private:
     State state = State::Empty;
     juce::String name;
     bool bypassed = false, faulted = false, dragging = false;
-    juce::String latencyText;
+    juce::String latencyText, mixText, abTag;
     Zone hover = Zone::None;
 };

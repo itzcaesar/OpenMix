@@ -5,7 +5,7 @@
 // Each process() works in place on a stereo pair and returns its lowest gain in the block
 // (1 = untouched), which the UI shows as a gain-reduction meter.
 
-#include "../Biquad.h"
+#include "dsp/Biquad.h"
 #include <algorithm>
 #include <cmath>
 

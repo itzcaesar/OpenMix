@@ -95,33 +95,33 @@ Built-in so the basics work without third-party plugins:
 - [ ] Bus EQ (graphic / parametric) and a bus limiter to prevent clipping
 - [x] Solo, mono, polarity invert, per-send levels (send matrix instead of on/off)
 - [x] Ducking: lower music when the mic talks (sidechain from one strip to another)
-- [ ] Recorder: record any bus to WAV/FLAC (`juce::AudioFormatWriter::ThreadedWriter`)
-- [ ] Meter improvements: RMS + peak, peak hold, clip indicators, LUFS on buses
+- [x] Recorder: every bus and/or strip to WAV (`juce::AudioFormatWriter::ThreadedWriter`)
+- [ ] Meter improvements: RMS + peak, peak hold, clip indicators (LUFS on buses done)
 - [x] Built-in neural-network denoise: RNNoise (light, 48 kHz, 10 ms frames) with DeepFilterNet as a
       "high quality" option (more CPU, adds latency)
 - [ ] Built-in pitch correction (YIN/McLeod pitch detection + PSOLA shift, key/scale, speed)
       and voice changer presets (formant shift, robot, radio, megaphone)
-- [ ] Replay buffer: keep the last N seconds of chosen buses in RAM, save on hotkey
-- [ ] Soundboard strip: pads that play WAV/MP3 files, with hotkeys, routable like any strip
-- [ ] Spectrum analyzer per strip/bus (FFT on a UI-side FIFO copy, never on the audio thread)
+- [x] Replay buffer: keep the last 30-120 s of one bus in RAM, save on Ctrl+Shift+S
+- [x] Soundboard: 8 pads (WAV/MP3/FLAC/Ogg), keys 1-8, own volume and bus sends
+- [x] Spectrum analyzer per bus (FFT on a UI-side FIFO copy, never on the audio thread)
 
 ## Phase 5 - Plugin hosting hardening  *(~2 weeks)*
 
 - [x] **Out-of-process plugin scanning** (a child process scans each plugin; a crash only
       marks that plugin as bad) plus a `KnownPluginList` cache and a blacklist
 - [x] Load plugins asynchronously with a "loading..." state on the slot
-- [x] Per-slot bypass, drag to reorder slots, 6 slots per strip (wet/dry mix still open)
+- [x] Per-slot bypass, drag to reorder slots, 6 slots per strip, wet/dry mix per slot
 - [x] **Latency compensation**: read `getLatencySamples()` and delay the other strips so
       sends that reach the same bus stay aligned
-- [x] Plugin presets: save and load per slot (A/B compare still open)
+- [x] Plugin presets: save and load per slot, A/B compare
 - [ ] Optional VST2 hosting (only if you own the old SDK; not available to new developers)
 - [ ] Stretch: sandboxed plugin process so a crashing plugin can't take down the mixer
 
 ## Phase 6 - XY pad extensions  *(~1-2 weeks)*
 
-- [ ] **Color mode**: X/Y blend between 4 corner presets (EQ + compression character)
-- [ ] **Spatial mode**: 5.1/7.1 positioning, plus binaural (HRTF convolution with
-      `juce::dsp::Convolution`) for headphones
+- [x] **Color mode**: X/Y blend between 4 corner EQ presets (Warm, Bright, Radio, Close)
+- [x] **Space mode** (stereo): pan + distance with early reflections
+- [ ] Surround 5.1/7.1 positioning, binaural (HRTF convolution with `juce::dsp::Convolution`)
 - [ ] MIDI/OSC/hotkey control of pad position; snapshots (store and recall positions)
 - [ ] Pad automation: smooth glide between snapshots
 
@@ -147,12 +147,13 @@ This removes the need for VB-Cable. Two parts:
 ## Phase 8 - Product polish  *(~2 weeks)*
 
 - [x] System tray icon, start with Windows, start minimized
-- [ ] Global hotkeys (mute mic, push-to-talk), MIDI controller mapping, OSC / WebSocket API
+- [x] OSC remote control (faders, mutes, sends, soundboard, record, replay)
+- [ ] Global hotkeys (mute mic, push-to-talk), MIDI controller mapping, WebSocket API
       (Stream Deck plugins, a phone remote)
 - [x] Dark/light themes, resizable UI (laptop to desktop), strip renaming (settings window still open)
-- [ ] Crash handler + log file; "safe mode" start that skips plugins
+- [x] Crash handler + log file; "safe mode" start that skips plugins
 - [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)
-- [ ] Auto-update check
+- [x] Update check (opt-in, GitHub releases)
 
 ## Phase 9 - Release
 
