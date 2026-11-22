@@ -10,25 +10,28 @@ that needs kernel work, and everything before it works with a third-party virtua
 
 ## Beyond VoiceMeeter
 
-What OpenMix should do that VoiceMeeter doesn't, and the phase each item lands in:
+What OpenMix should do that VoiceMeeter doesn't, the phase each item lands in, and where it
+stands:
 
-| Feature | Phase |
-|---|---|
-| Unlimited strips and buses (add/remove at runtime) instead of fixed 3/5/8 layouts | 3 |
-| VST3 chains on every strip **and** every bus, drag to reorder, wet/dry, per-slot bypass | 1, 5 |
-| Crash-safe plugin scanning and sandboxing: one bad plugin doesn't kill your audio | 5 |
-| Built-in neural-network denoise (RNNoise / DeepFilterNet), no plugin needed | 4 |
-| Built-in pitch correction and voice changer (formant shift, robot, radio) | 4 |
-| **Per-app routing**: send Spotify, a game or Discord to any strip without changing the Windows default device | 3 |
-| Auto-ducking (music dips when you talk), with any strip as the sidechain | 4 |
-| Soundboard / sampler strip with hotkeys | 4 |
-| Multitrack recording plus a **replay buffer** ("save the last 60 s") | 4 |
-| Scenes: snapshot the whole mixer and switch with a hotkey | 6 |
-| Send matrix with per-send levels instead of on/off bus buttons | 4 |
-| Spectrum analyzer, LUFS loudness meters, loudness normalization per bus | 4 |
-| Latency compensation for plugin chains | 5 |
-| Phone/browser remote, WebSocket/OSC/MIDI API, Stream Deck | 8 |
-| Modern resizable UI with themes, strip colors and custom names | 8 |
+| Feature | Phase | Status |
+|---|---|---|
+| Strips and buses added and removed at runtime (up to 8 and 6) instead of fixed layouts | 3 | Done |
+| VST3 chains on every strip **and** every bus, drag to reorder, wet/dry, per-slot bypass | 1, 5 | Done |
+| Crash-safe plugin scanning: one bad plugin doesn't kill your audio | 5 | Done (sandboxing open) |
+| Built-in neural-network denoise, no plugin needed | 4 | RNNoise done, DeepFilterNet open |
+| Built-in pitch correction and voice changer (formant shift, robot, radio) | 4 | Open |
+| **Per-app routing**: Spotify, a game or Discord on its own strip without changing the Windows default device | 3 | Done |
+| Capture what any output device plays, no virtual cable | 3 | Done |
+| Auto-ducking (music dips when you talk), with any strip as the sidechain | 4 | Done |
+| Soundboard with hotkeys | 4 | Done (in-window keys; global hotkeys open) |
+| Multitrack recording plus a **replay buffer** ("save the last 60 s") | 4 | Done |
+| Scenes: snapshot the whole mixer and switch with a hotkey | 6 | Open |
+| Per-send levels and pre-fader sends instead of on/off bus buttons | 4 | Done |
+| Spectrum analyser and LUFS loudness per bus | 4 | Done (loudness normalization open) |
+| Latency compensation for plugin chains | 5 | Done |
+| OSC remote control | 8 | Done |
+| Phone/browser remote, WebSocket/MIDI API, Stream Deck | 8 | Open |
+| Resizable UI with light and dark themes, channel colours and names | 8 | Done |
 
 ---
 
@@ -42,7 +45,7 @@ What OpenMix should do that VoiceMeeter doesn't, and the phase each item lands i
 
 ## Phase 1 - Build and stabilize the MVP  *(~1 week)*
 
-- [ ] Build Debug + Release, fix compiler warnings
+- [x] Build Debug + Release, fix compiler warnings (CI builds Release on every push)
 - [ ] Test on WASAPI (built-in mic + headphones) and ASIO (interface driver, or ASIO4ALL)
 - [ ] Test loading, removing and replacing plugins while audio runs. Try a denoiser
       (RNNoise-based or DeepFilterNet) and a pitch corrector (Graillon / MAutoPitch)
@@ -58,24 +61,24 @@ with no dropouts, and comes back exactly the same after a restart.
 VoiceMeeter's key feature is that every bus can go to a different device: A1 to
 headphones, A2 to speakers, B1 to a virtual cable for Discord.
 
-- [ ] **Master device** (usually ASIO or the A1 device) drives the mix clock
-- [ ] **Secondary devices**: one `AudioIODevice` each (WASAPI shared/exclusive), joined to the
-      engine through lock-free ring buffers (`juce::AbstractFifo`)
-- [ ] **Drift correction**: device clocks differ slightly (for example 48000 vs 48003 Hz).
-      Measure how full each FIFO is and adjust a resampler ratio per device by a few ppm
-      (`juce::LagrangeInterpolator`, or libsamplerate / r8brain for higher quality)
-- [ ] Sample-rate conversion when a device runs at 44.1k and the master at 48k
-- [ ] Per-bus device picker in the UI instead of an "output pair"
-- [ ] Inputs from secondary devices too, e.g. a USB mic alongside an ASIO interface
-- [ ] Device unplug and replug while running: the device goes silent, then reconnects
+- [x] **Master device** (usually ASIO or the A1 device) drives the mix clock
+- [x] **Secondary devices**: one `AudioIODevice` each (WASAPI shared), joined to the engine
+      through lock-free ring buffers (`ClockBridge`)
+- [x] **Drift correction**: the bridge measures how full each FIFO is and adjusts its
+      resampler ratio by a few ppm (tested at +/-200 ppm with jitter in the core tests)
+- [x] Sample-rate conversion when a device runs at 44.1k and the master at 48k
+      (16-tap windowed sinc)
+- [x] Per-bus device picker: an output pair of the main device or any Windows output
+- [x] Inputs from secondary devices too, e.g. a USB mic alongside an ASIO interface
+- [x] Device unplug and replug while running: the device goes silent, then reconnects
 
 **Done when:** mic (USB) + interface (ASIO) -> A1 headphones, A2 speakers and B1
 VB-Cable at the same time, for hours, with no drift clicks.
 
 ## Phase 3 - Virtual strips and app audio  *(~1 week)*
 
-- [ ] **Virtual input strips** (stereo) that read desktop or app audio. Set Windows' default
-      output to a virtual cable, and OpenMix captures that cable's other end
+- [x] **Virtual input strips** (stereo) that read desktop or app audio: a strip can take a
+      virtual cable's output as a Windows input device, or use device loopback (below)
 - [x] Stereo hardware strips (L/R input pair), selectable per strip
 - [x] Configurable strip count (add or remove strips at runtime)
 - [x] WASAPI loopback capture as a strip source (what a device plays, without a cable)
@@ -96,9 +99,10 @@ Built-in so the basics work without third-party plugins:
 - [x] Solo, mono, polarity invert, per-send levels (send matrix instead of on/off)
 - [x] Ducking: lower music when the mic talks (sidechain from one strip to another)
 - [x] Recorder: every bus and/or strip to WAV (`juce::AudioFormatWriter::ThreadedWriter`)
-- [ ] Meter improvements: RMS + peak, peak hold, clip indicators (LUFS on buses done)
-- [x] Built-in neural-network denoise: RNNoise (light, 48 kHz, 10 ms frames) with DeepFilterNet as a
-      "high quality" option (more CPU, adds latency)
+- [x] Meter improvements: peak hold with a held-peak readout, latching clip lamp, LUFS on buses
+- [ ] RMS alongside peak on the meters
+- [x] Built-in neural-network denoise: RNNoise (light, 10 ms frames, any sample rate)
+- [ ] DeepFilterNet as a "high quality" option (more CPU, adds latency)
 - [ ] Built-in pitch correction (YIN/McLeod pitch detection + PSOLA shift, key/scale, speed)
       and voice changer presets (formant shift, robot, radio, megaphone)
 - [x] Replay buffer: keep the last 30-120 s of one bus in RAM, save on Ctrl+Shift+S
@@ -150,17 +154,17 @@ This removes the need for VB-Cable. Two parts:
 - [x] OSC remote control (faders, mutes, sends, soundboard, record, replay)
 - [ ] Global hotkeys (mute mic, push-to-talk), MIDI controller mapping, WebSocket API
       (Stream Deck plugins, a phone remote)
-- [x] Dark/light themes, resizable UI (laptop to desktop), strip renaming (settings window still open)
+- [x] Dark/light themes, resizable UI (laptop to desktop), channel names and colours, settings window
 - [x] Crash handler + log file; "safe mode" start that skips plugins
 - [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)
 - [x] Update check (opt-in, GitHub releases)
 
 ## Phase 9 - Release
 
-- [ ] **Licensing decision:** JUCE is AGPLv3 or commercial. Releasing OpenMix publicly
-      under AGPLv3 (open source) is free; a closed-source release needs a JUCE licence.
-      Check juce.com for the current tiers
-- [ ] Docs: setup guide for Discord/OBS/games, troubleshooting (buffer sizes, ASIO tips)
+- [x] **Licensing decision:** OpenMix is released under AGPLv3, using JUCE under its AGPLv3
+      option (a closed-source release would need a JUCE licence)
+- [x] Docs: README with a Discord/OBS quick start
+- [ ] Troubleshooting guide (buffer sizes, ASIO tips, common device problems)
 - [ ] Beta testing on different hardware (Realtek, USB headsets, Focusrite/Behringer ASIO)
 
 ---
@@ -169,10 +173,10 @@ This removes the need for VB-Cable. Two parts:
 
 ```
  Hardware inputs (ASIO / WASAPI) ─┐
- Virtual inputs (OpenMix driver) ─┼─> Strips: gain -> VST3 chain -> built-in dyn/EQ -> XY pad -> fader
+ Virtual inputs (OpenMix driver) ─┼─> Strips: gain -> built-in dyn/EQ -> VST3 chain -> XY pad -> fader
  Loopback capture ────────────────┘                                   │
                                                                       ▼
-                                              Send matrix -> Buses (EQ, limiter, fader)
+                                              Send matrix -> Buses (EQ, comp, VST3, limiter, fader)
                                                                       │
                      ┌──────────────────┬─────────────────────────────┼─────────────────┐
                      ▼                  ▼                             ▼                 ▼

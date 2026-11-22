@@ -47,7 +47,8 @@ The colour helps find a channel on a full desk; the name is editable in place.
 | No glow; gradients only on the module shade and the cap highlight | Nothing in a mixer should compete with the meters for attention. |
 | Signal-flow order top to bottom: source + gain, processing, inserts, pad, then the bay (fader, sends, mute) | It is the order audio actually travels through the strip. |
 | Master section (buses) separated by a gap and a divider | Desks separate input channels from the master section; it tells you where audio ends up. |
-| Optional tape colours per channel (yellow, green, blue, pink, grey) | Real masking tape comes in colours; they help find a channel at a glance on a full desk. The one place colour goes beyond the 2-3 core colours, on purpose. |
+| Channel colours (default cream, yellow, green, blue, pink, grey) as the name plate's cap | They help find a channel at a glance on a full desk. The one place colour goes beyond the 2-3 core colours, on purpose, and only as a 3 px line. |
+| App icon: a dark module with three faders, the middle cap lit amber (`resources/make_icon.py`) | It is the app's own fader bay in miniature, in the same graphite and amber, and reads at 16 px. |
 | Processing as a row of six keys (NR, Gate, EQ, Comp, DS, Duck), details in a panel | Shows what's on at a glance without eating the height the fader needs; the panel holds the knobs and a gain-reduction meter. |
 | Sends: click toggles, right-click (or M) opens level and pre/post | On/off is the common action; levels are set once. A level other than 0 dB is printed on the key. |
 | Motion: hover and press feedback only | A mixer is watched for hours; nothing moves except the meters, which move because the audio does. |
