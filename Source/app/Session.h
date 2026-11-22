@@ -16,4 +16,8 @@ namespace Session
     // Applies everything except the audio device (which MixerEngine::start handles).
     // loadPlugins = false skips plugin slots (safe mode after a crash while loading them).
     void apply (const juce::XmlElement&, MixerEngine&, bool loadPlugins = true);
+
+    // Scenes: a snapshot of the mix only (not sources, devices or plugins), for quick recall.
+    std::unique_ptr<juce::XmlElement> captureScene (MixerEngine&);
+    void applyScene (const juce::XmlElement&, MixerEngine&);
 }

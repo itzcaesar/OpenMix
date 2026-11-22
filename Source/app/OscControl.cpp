@@ -102,6 +102,12 @@ void OscControl::oscMessageReceived (const juce::OSCMessage& m)
     {
         if (onSaveReplay) onSaveReplay();
     }
+    else if (p[1] == "scene" && p.size() >= 3)
+    {
+        // /openmix/scene/<n> (counting from 1); the scene sets externalChanges itself
+        if (onRecallScene) onRecallScene (p[2].getIntValue() - 1);
+        return;
+    }
     else
     {
         changed = false;

@@ -23,9 +23,9 @@ stands:
 | **Per-app routing**: Spotify, a game or Discord on its own strip without changing the Windows default device | 3 | Done |
 | Capture what any output device plays, no virtual cable | 3 | Done |
 | Auto-ducking (music dips when you talk), with any strip as the sidechain | 4 | Done |
-| Soundboard with hotkeys | 4 | Done (in-window keys; global hotkeys open) |
+| Soundboard with hotkeys | 4 | Done (global hotkeys) |
 | Multitrack recording plus a **replay buffer** ("save the last 60 s") | 4 | Done |
-| Scenes: snapshot the whole mixer and switch with a hotkey | 6 | Open |
+| Scenes: snapshot the whole mixer and switch with a hotkey | 6 | Done |
 | Per-send levels and pre-fader sends instead of on/off bus buttons | 4 | Done |
 | Spectrum analyser and LUFS loudness per bus | 4 | Done (loudness normalization open) |
 | Latency compensation for plugin chains | 5 | Done |
@@ -152,8 +152,9 @@ This removes the need for VB-Cable. Two parts:
 
 - [x] System tray icon, start with Windows, start minimized
 - [x] OSC remote control (faders, mutes, sends, soundboard, record, replay)
-- [ ] Global hotkeys (mute mic, push-to-talk), MIDI controller mapping, WebSocket API
-      (Stream Deck plugins, a phone remote)
+- [x] Global hotkeys: mute, push to talk, soundboard pads, recording, replay, scenes
+- [x] Scenes: save and recall the mix (levels, mutes, sends, processing), OSC recall
+- [ ] MIDI controller mapping, WebSocket API (Stream Deck plugins, a phone remote)
 - [x] Dark/light themes, resizable UI (laptop to desktop), channel names and colours, settings window
 - [x] Crash handler + log file; "safe mode" start that skips plugins
 - [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)

@@ -124,6 +124,135 @@ static void loadChain (const juce::XmlElement& x, PluginChain& chain, MixerEngin
     }
 }
 
+//==============================================================================
+// Scenes: the mix only (levels, mutes, sends, processing, plugin bypass and wet/dry, the pad,
+// bus processing, soundboard level and buses). Sources, devices and plugins are left alone, so
+// recalling one is instant; every value is smoothed on the audio thread, so it doesn't click.
+
+static void saveSlots (juce::XmlElement& x, PluginChain& chain)
+{
+    for (int s = 0; s < kNumSlots; ++s)
+    {
+        auto* e = x.createNewChildElement ("SlotMix");
+        e->setAttribute ("index", s);
+        e->setAttribute ("bypass", chain.slotBypass[(size_t) s].load());
+        e->setAttribute ("mix", chain.slotMix[(size_t) s].load());
+    }
+}
+
+static void loadSlots (const juce::XmlElement& x, PluginChain& chain)
+{
+    for (auto* e : x.getChildWithTagNameIterator ("SlotMix"))
+    {
+        const int s = e->getIntAttribute ("index", -1);
+        if (! juce::isPositiveAndBelow (s, kNumSlots) || chain.getPlugin (s) == nullptr)
+            continue;
+        chain.slotFault[(size_t) s].store (false);
+        chain.slotBypass[(size_t) s].store (e->getBoolAttribute ("bypass"));
+        chain.slotMix[(size_t) s].store ((float) e->getDoubleAttribute ("mix", 1.0));
+    }
+}
+
+std::unique_ptr<juce::XmlElement> Session::captureScene (MixerEngine& engine)
+{
+    auto root = std::make_unique<juce::XmlElement> ("Mix");
+
+    for (int s = 0; s < kNumStrips; ++s)
+    {
+        auto& strip = engine.getStrip (s);
+        auto* x = root->createNewChildElement ("Strip");
+        x->setAttribute ("index", s);
+        x->setAttribute ("gain", strip.gainDb.load());
+        x->setAttribute ("fader", strip.faderDb.load());
+        x->setAttribute ("mute", strip.mute.load());
+        x->setAttribute ("solo", strip.solo.load());
+        x->setAttribute ("mono", strip.mono.load());
+        x->setAttribute ("invertPolarity", strip.invertPolarity.load());
+        x->setAttribute ("padX", strip.pad.x.load());
+        x->setAttribute ("padY", strip.pad.y.load());
+        x->setAttribute ("padMode", strip.pad.mode.load());
+        for (int b = 0; b < kNumBuses; ++b)
+        {
+            const juce::String bus (kBusNames[b]);
+            x->setAttribute ("bus" + bus, strip.busOn[b].load());
+            x->setAttribute ("send" + bus, strip.sendDb[b].load());
+            x->setAttribute ("pre" + bus, strip.sendPre[b].load());
+        }
+        saveProcessing (*x, strip.fx);
+        saveSlots (*x, strip.inserts);
+    }
+
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        auto& bus = engine.getBus (b);
+        auto* x = root->createNewChildElement ("Bus");
+        x->setAttribute ("index", b);
+        x->setAttribute ("fader", bus.faderDb.load());
+        x->setAttribute ("mute", bus.mute.load());
+        saveProcessing (*x, bus.fx);
+        saveSlots (*x, bus.inserts);
+    }
+
+    auto& board = engine.getSoundboard();
+    auto* xsb = root->createNewChildElement ("Soundboard");
+    xsb->setAttribute ("volume", board.volumeDb.load());
+    for (int b = 0; b < kNumBuses; ++b)
+        xsb->setAttribute (juce::String ("bus") + kBusNames[b], board.busOn[b].load());
+
+    return root;
+}
+
+void Session::applyScene (const juce::XmlElement& root, MixerEngine& engine)
+{
+    for (auto* x : root.getChildWithTagNameIterator ("Strip"))
+    {
+        const int s = x->getIntAttribute ("index", -1);
+        if (! juce::isPositiveAndBelow (s, kNumStrips))
+            continue;
+        auto& strip = engine.getStrip (s);
+        strip.gainDb.store ((float) x->getDoubleAttribute ("gain", strip.gainDb.load()));
+        strip.faderDb.store ((float) x->getDoubleAttribute ("fader", strip.faderDb.load()));
+        strip.mute.store (x->getBoolAttribute ("mute", strip.mute.load()));
+        strip.solo.store (x->getBoolAttribute ("solo", false));
+        strip.mono.store (x->getBoolAttribute ("mono", strip.mono.load()));
+        strip.invertPolarity.store (x->getBoolAttribute ("invertPolarity", strip.invertPolarity.load()));
+        strip.pad.x.store ((float) x->getDoubleAttribute ("padX", strip.pad.x.load()));
+        strip.pad.y.store ((float) x->getDoubleAttribute ("padY", strip.pad.y.load()));
+        strip.pad.mode.store (x->getIntAttribute ("padMode", strip.pad.mode.load()));
+        for (int b = 0; b < kNumBuses; ++b)
+        {
+            const juce::String bus (kBusNames[b]);
+            strip.busOn[b].store (x->getBoolAttribute ("bus" + bus, strip.busOn[b].load()));
+            strip.sendDb[b].store ((float) x->getDoubleAttribute ("send" + bus, strip.sendDb[b].load()));
+            strip.sendPre[b].store (x->getBoolAttribute ("pre" + bus, strip.sendPre[b].load()));
+        }
+        loadProcessing (x->getChildByName ("Processing"), strip.fx);
+        loadSlots (*x, strip.inserts);
+    }
+
+    for (auto* x : root.getChildWithTagNameIterator ("Bus"))
+    {
+        const int b = x->getIntAttribute ("index", -1);
+        if (! juce::isPositiveAndBelow (b, kNumBuses))
+            continue;
+        auto& bus = engine.getBus (b);
+        bus.faderDb.store ((float) x->getDoubleAttribute ("fader", bus.faderDb.load()));
+        bus.mute.store (x->getBoolAttribute ("mute", bus.mute.load()));
+        loadProcessing (x->getChildByName ("Processing"), bus.fx);
+        loadSlots (*x, bus.inserts);
+    }
+
+    if (auto* xsb = root.getChildByName ("Soundboard"))
+    {
+        auto& board = engine.getSoundboard();
+        board.volumeDb.store ((float) xsb->getDoubleAttribute ("volume", board.volumeDb.load()));
+        for (int b = 0; b < kNumBuses; ++b)
+            board.busOn[b].store (xsb->getBoolAttribute (juce::String ("bus") + kBusNames[b], board.busOn[b].load()));
+    }
+
+    engine.externalChanges.fetch_add (1);   // the UI refreshes what it shows
+}
+
 void Session::save (MixerEngine& engine)
 {
     juce::XmlElement root ("OpenMixSession");
@@ -205,6 +334,18 @@ void Session::save (MixerEngine& engine)
             xp->setAttribute ("index", p);
             xp->setAttribute ("file", info.file);
             xp->setAttribute ("name", info.name);
+        }
+    }
+
+    if (! engine.scenes.empty())
+    {
+        auto* xs = root.createNewChildElement ("Scenes");
+        xs->setAttribute ("current", engine.currentScene);
+        for (const auto& scene : engine.scenes)
+        {
+            auto* e = xs->createNewChildElement ("Scene");
+            e->setAttribute ("name", scene.name);
+            e->addChildElement (new juce::XmlElement (*scene.state));
         }
     }
 
@@ -327,6 +468,16 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
 
     if (version < 2 || ! anyMonitor)
         engine.setMonitorBus (0);   // A1 by default
+
+    engine.scenes.clear();
+    engine.currentScene = -1;
+    if (auto* xs = root.getChildByName ("Scenes"))
+    {
+        for (auto* e : xs->getChildWithTagNameIterator ("Scene"))
+            if (auto* state = e->getChildByName ("Mix"))
+                engine.scenes.push_back ({ e->getStringAttribute ("name", "Scene"), std::make_unique<juce::XmlElement> (*state) });
+        engine.currentScene = juce::jlimit (-1, (int) engine.scenes.size() - 1, xs->getIntAttribute ("current", -1));
+    }
 
     if (auto* xsb = root.getChildByName ("Soundboard"))
     {

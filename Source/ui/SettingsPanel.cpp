@@ -3,9 +3,15 @@
 #include "app/AppSettings.h"
 #include "ui/Theme.h"
 
-SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std::function<void()> oscFn)
-    : engine (e), toggleTheme (std::move (themeFn)), oscChanged (std::move (oscFn))
+SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std::function<void()> oscFn,
+                              std::function<void()> hotkeysFn)
+    : engine (e), toggleTheme (std::move (themeFn)), oscChanged (std::move (oscFn)), openHotkeys (std::move (hotkeysFn))
 {
+    hotkeysButton.setTooltip ("Global hotkeys for mute, push to talk, the soundboard, recording and scenes.");
+    hotkeysButton.onClick = [this] { if (openHotkeys) openHotkeys(); };
+    makeClickable (hotkeysButton);
+    addAndMakeVisible (hotkeysButton);
+
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
     auto& s = AppSettings::get();
 
@@ -124,7 +130,7 @@ void SettingsPanel::paint (juce::Graphics& g)
     g.fillAll (t.panel);
 
     Theme::drawLegend (g, "Startup", startupLegend);
-    Theme::drawLegend (g, "Look", themeLegend);
+    Theme::drawLegend (g, "Look and hotkeys", themeLegend);
     Theme::drawLegend (g, "Plugins", pluginsLegend);
     Theme::drawLegend (g, "Network and logs", networkLegend);
     Theme::drawLegend (g, "About", aboutLegend);
@@ -151,7 +157,12 @@ void SettingsPanel::resized()
     r.removeFromTop (Theme::s4);
 
     themeLegend = r.removeFromTop (20);
-    themeButton.setBounds (r.removeFromTop (30).withWidth (190));
+    {
+        auto row = r.removeFromTop (30);
+        themeButton.setBounds (row.removeFromLeft (190));
+        row.removeFromLeft (Theme::s2);
+        hotkeysButton.setBounds (row.removeFromLeft (190));
+    }
     r.removeFromTop (Theme::s4);
 
     pluginsLegend = r.removeFromTop (20);

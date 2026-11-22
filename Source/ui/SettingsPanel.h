@@ -7,7 +7,8 @@
 class SettingsPanel : public juce::Component, private juce::ChangeListener
 {
 public:
-    SettingsPanel (MixerEngine&, std::function<void()> toggleTheme, std::function<void()> oscChanged = {});
+    SettingsPanel (MixerEngine&, std::function<void()> toggleTheme, std::function<void()> oscChanged = {},
+                   std::function<void()> openHotkeys = {});
     ~SettingsPanel() override;
 
     void paint (juce::Graphics&) override;
@@ -18,7 +19,8 @@ private:
     void updateScanText();
 
     MixerEngine& engine;
-    std::function<void()> toggleTheme, oscChanged;
+    std::function<void()> toggleTheme, oscChanged, openHotkeys;
+    juce::TextButton hotkeysButton { "Hotkeys..." };
 
     juce::ToggleButton startWithWindows { "Start OpenMix when Windows starts" };
     juce::ToggleButton startMinimized   { "Start minimized to the tray" };

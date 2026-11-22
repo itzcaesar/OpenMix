@@ -59,6 +59,15 @@ public:
     // Bumped when something outside the UI (OSC remote control) changes a setting.
     std::atomic<int> externalChanges { 0 };
 
+    // Scenes (message thread only): saved snapshots of the mix, see Session::captureScene.
+    struct Scene
+    {
+        juce::String name;
+        std::unique_ptr<juce::XmlElement> state;
+    };
+    std::vector<Scene> scenes;
+    int currentScene = -1;
+
     ChannelStrip& getStrip (int i) noexcept { return *strips[(size_t) i]; }
     Bus& getBus (int i) noexcept { return buses[(size_t) i]; }
 

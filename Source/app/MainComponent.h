@@ -8,6 +8,7 @@
 #include "ui/Theme.h"
 #include "app/OscControl.h"
 #include "app/UpdateChecker.h"
+#include "app/GlobalHotkeys.h"
 
 // The console: input strips on the left, the master section (buses) on the right.
 class ConsoleContent : public juce::Component
@@ -83,6 +84,18 @@ private:
     void showNote (const juce::String&);
     void updateRecordButton();
 
+    // Scenes and hotkeys
+    void showSceneMenu();
+    void recallScene (int index);
+    void saveScene (int index);          // -1 = as a new scene (asks for a name)
+    void renameScene (int index);
+    void deleteScene (int index);
+    void updateSceneButton();
+    void handleHotkey (const GlobalHotkeys::Binding&, bool down);
+    void showHotkeys();
+    juce::StringArray stripNames() const;
+    juce::StringArray sceneNames() const;
+
     // Declared first so it is destroyed last (after plugin editor windows).
     MixerEngine engine;
 
@@ -94,7 +107,9 @@ private:
     MenuDotsButton recordMenuButton;
     juce::TextButton replayButton { "Save replay" };
     StripKey soundboardButton { "Soundboard" };
+    ChipButton sceneButton;
     juce::TextButton updateButton;
+    GlobalHotkeys hotkeys;
     OscControl osc { engine };
     UpdateChecker updater;
     juce::URL updatePage;

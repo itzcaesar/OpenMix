@@ -24,6 +24,7 @@ public:
 
     std::function<void (bool)> onRecord;   // UI decides what to record
     std::function<void()> onSaveReplay;
+    std::function<void (int scene)> onRecallScene;   // 0-based
 
 private:
     void oscMessageReceived (const juce::OSCMessage&) override;

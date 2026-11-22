@@ -17,6 +17,8 @@ to your headphones, speakers, stream and calls.
   limiter.
 - **Creator tools:** multitrack recorder, replay buffer, soundboard, spectrum and LUFS
   loudness on every bus.
+- **Scenes and global hotkeys:** save whole mixes and switch between them; mute, push to
+  talk, soundboard, recording and scenes on hotkeys that work while a game has focus.
 - **Control:** keyboard throughout, OSC remote control, tray icon, start with Windows.
 
 Built with C++20 and JUCE 9.0.5. Licensed under the GNU AGPLv3.
@@ -68,8 +70,8 @@ Everything is saved automatically.
 ## The window
 
 - **Header:** app name, the status readout (device, sample rate, latency, CPU, dropouts;
-  click it for Audio settings), **Record** and its options, **Replay**, **Soundboard**
-  (shows or hides the soundboard bar) and **Settings**.
+  click it for Audio settings), the **Scene** picker, **Record** and its options,
+  **Replay**, **Soundboard** (shows or hides the soundboard bar) and **Settings**.
 - **Inputs** on the left, **outputs** (buses) on the right. **+ Strip** and **+ Bus** sit
   next to the section names.
 - Every strip and bus ends in the same **fader bay**, so faders, meters and mute rows line
@@ -171,9 +173,35 @@ A bar along the bottom of the window (the header's **Soundboard** button shows o
 - Its own volume and meter, and **Play on** keys for the buses it plays on (A1 and B1 by
   default, so you and your stream both hear it). **Stop all** stops every pad.
 
+## Scenes
+
+A scene is a saved mix: strip and bus levels, mutes, solos, sends (on, level, pre-fader),
+processing settings, plugin bypass and wet/dry, the voice pad, bus EQ and compressor, and
+the soundboard's level and buses. Sources, devices and the plugins themselves are not part
+of a scene, so switching is instant, and every level glides to its new value without a
+click.
+
+The **Scene** picker in the header lists your scenes; click one to switch. The same menu
+saves the current mix as a new scene, updates the current scene, renames or deletes it, and
+opens Hotkeys. Scenes are saved with the session. Over OSC, `/openmix/scene/<n>` switches to
+scene n (counting from 1).
+
+## Global hotkeys
+
+**Settings > Hotkeys** (or **Hotkeys...** in the Scene menu). These work in any app, also
+while a game is in front, and the keys still reach that app, so pick combinations it doesn't
+use (for example with Ctrl+Alt).
+
+- **+ Add hotkey**, pick what it does, then press the keys (Escape cancels). Click a
+  hotkey's keys to change them; **Remove** deletes it. A combination can only be used once.
+- Actions: mute or unmute a strip, **push to talk** on a strip (open while you hold the keys,
+  muted when you let go), play a soundboard pad, stop all sounds, start or stop recording,
+  save the replay, switch to a scene.
+- Keys sent by other software (macro tools, remote desktop) are ignored on purpose.
+
 ## Settings
 
-Light or dark theme, start with Windows, start minimized, keep running in the tray when the
+Light or dark theme, hotkeys, start with Windows, start minimized, keep running in the tray when the
 window closes, plugin scanning, presets and VST3 folders, the update check, OSC remote
 control, and the log folder. In the tray, double-click opens the mixer; right-click to quit.
 
@@ -198,6 +226,7 @@ network you trust. Values are dB unless noted; strips and pads count from 1.
 | `/openmix/soundboard/<n>/play` | none (plays or stops pad n) |
 | `/openmix/record` | 1 starts, 0 stops |
 | `/openmix/replay/save` | none |
+| `/openmix/scene/<n>` | none (switches to scene n) |
 
 ## Keyboard
 
@@ -217,14 +246,16 @@ Tab and Shift+Tab move through the header, then each strip top to bottom, then t
 | Record, save replay | Ctrl+Shift+R, Ctrl+Shift+S |
 | Soundboard pads | 1-8 while the soundboard is shown; M opens a focused pad's menu |
 
-Shortcuts work while OpenMix has focus.
+These shortcuts work while OpenMix has focus. For keys that work in any app, set up
+[global hotkeys](#global-hotkeys).
 
 ## Where things are saved
 
 | What | Where |
 |---|---|
 | Session (devices, theme, strips, plugins and their settings, buses, soundboard) | `%APPDATA%\OpenMix\session.xml`, every 10 seconds and on exit |
-| App settings (startup, tray, OSC, recording options) | `%APPDATA%\OpenMix\settings.xml` |
+| Scenes | inside the session |
+| App settings (startup, tray, OSC, hotkeys, recording options) | `%APPDATA%\OpenMix\settings.xml` |
 | Log and crash reports | `%APPDATA%\OpenMix\openmix.log`, `crash-<time>.txt` |
 | Recordings and replays | `Documents\OpenMix Recordings` |
 | Plugin presets | `Documents\OpenMix Presets` |
@@ -256,11 +287,11 @@ Shortcuts work while OpenMix has focus.
 
 | Folder | What's in it |
 |---|---|
-| `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout), `AppSettings`, `Session` (save and restore), `OscControl`, `UpdateChecker` |
+| `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `UpdateChecker` |
 | `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning in child processes) |
 | `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
 | `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS); plus `Denoiser` (RNNoise at any sample rate) |
-| `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send and wet/dry pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `TrayIcon` |
+| `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send and wet/dry pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |
 | `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |
 | `tests/CoreTests.cpp` | Core unit tests |
 | `resources/` | App icon: `make_icon.py` draws `icon.png` and `icon.ico` |
@@ -279,7 +310,8 @@ runs the tests, and attaches the zip and `OpenMix-<version>-setup.exe` to a GitH
   need a virtual cable (VB-Audio Virtual Cable or similar) on a B bus.
 - VST3 plugins have to start on the UI thread (a VST3 rule), so a slow plugin can pause the
   window briefly while it opens; its slot shows "Loading..." meanwhile.
-- Shortcuts only work while OpenMix has focus; global hotkeys are planned.
+- Global hotkeys use a keyboard hook that only listens. A game with strict anti-cheat could
+  in principle object to any keyboard hook; Discord and OBS use the same mechanism.
 - "App's own output" uses the same Windows setting as Settings > Sound > Volume mixer. The
   interface behind it is undocumented, so on an unusual Windows build it can report that it's
   unavailable.

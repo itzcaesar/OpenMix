@@ -50,6 +50,7 @@ target_sources(OpenMix PRIVATE
     Source/app/AppSettings.cpp
     Source/app/Session.cpp
     Source/app/OscControl.cpp
+    Source/app/GlobalHotkeys.cpp
 
     # audio engine and device I/O
     Source/engine/MixerEngine.cpp
@@ -78,7 +79,8 @@ target_sources(OpenMix PRIVATE
     Source/ui/SettingsPanel.cpp
     Source/ui/TrayIcon.cpp
     Source/ui/AnalyserPanel.cpp
-    Source/ui/SoundboardPanel.cpp)
+    Source/ui/SoundboardPanel.cpp
+    Source/ui/HotkeysPanel.cpp)
 
 target_include_directories(OpenMix PRIVATE Source)
 

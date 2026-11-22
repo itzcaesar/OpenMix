@@ -42,6 +42,10 @@ public:
     bool soundboardShown() const              { return props->getBoolValue ("soundboardShown", true); }
     void setSoundboardShown (bool b)          { props->setValue ("soundboardShown", b); props->saveIfNeeded(); }
 
+    // Global hotkeys, as XML (GlobalHotkeys reads and writes it)
+    juce::String hotkeysXml() const           { return props->getValue ("hotkeys"); }
+    void setHotkeysXml (const juce::String& x) { props->setValue ("hotkeys", x); props->saveIfNeeded(); }
+
     static juce::File getLogFolder()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("OpenMix");

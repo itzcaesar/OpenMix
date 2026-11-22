@@ -5,6 +5,7 @@
 #include "ui/OpenMixLookAndFeel.h"
 #include "ui/SettingsPanel.h"
 #include "ui/TrayIcon.h"
+#include "ui/HotkeysPanel.h"
 
 static constexpr int stripGap = Theme::s2;
 static constexpr int sectionGap = 32;   // space between inputs and the master section
@@ -364,7 +365,17 @@ MainComponent::MainComponent()
 
     osc.onRecord = [this] (bool on) { if (on != engine.getRecorder().isRecording()) toggleRecording(); };
     osc.onSaveReplay = [this] { saveReplay(); };
+    osc.onRecallScene = [this] (int index) { recallScene (index); };
     applyOsc();
+
+    // Scenes and global hotkeys
+    sceneButton.setTooltip ("Scenes: saved mixes (levels, mutes, sends, processing) you can switch between.");
+    sceneButton.onClick = [this] { showSceneMenu(); };
+    addAndMakeVisible (sceneButton);
+    updateSceneButton();
+
+    hotkeys.onAction = [this] (const GlobalHotkeys::Binding& b, bool down) { handleHotkey (b, down); };
+    hotkeys.load();
     applyReplaySettings();
     updateRecordButton();
 
@@ -429,7 +440,7 @@ void MainComponent::showAudioSettings()
 void MainComponent::showSettings()
 {
     juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyOsc(); }));
+    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyOsc(); }, [this] { showHotkeys(); }));
     o.dialogTitle = "Settings";
     o.dialogBackgroundColour = Theme::p().panel;
     o.escapeKeyTriggersCloseButton = true;
@@ -508,6 +519,8 @@ void MainComponent::timerCallback()
         lastExternalChanges = ext;
         for (auto& s : console->strips) if (s->isVisible()) s->refreshFromStrip();
         for (auto& b : console->buses)  if (b->isVisible()) b->refreshFromBus();
+        console->soundboard.refresh();
+        updateSceneButton();
     }
 
     if (ticks % 60 == 0)
@@ -570,7 +583,11 @@ void MainComponent::paint (juce::Graphics& g)
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
-    // Shortcuts (while OpenMix is focused). Global hotkeys while gaming come with scenes/hotkeys.
+    // Shortcuts while OpenMix is focused. If a global hotkey just fired for this key press,
+    // it has already been handled: don't act twice.
+    if (juce::Time::getMillisecondCounter() - hotkeys.getLastFireMs() < 250)
+        return true;
+
     const auto mods = key.getModifiers();
     if (mods.isCtrlDown() && mods.isShiftDown() && (key.getKeyCode() == 'R' || key.getKeyCode() == 'r'))
     {
@@ -782,12 +799,243 @@ void MainComponent::applyOsc()
         showNote ("OSC remote control is off: " + error);
 }
 
+//==============================================================================
+// Scenes
+
+juce::StringArray MainComponent::stripNames() const
+{
+    juce::StringArray names;
+    for (int s = 0; s < kNumStrips; ++s)
+    {
+        const auto& n = const_cast<MixerEngine&> (engine).getStrip (s).name;
+        names.add (n.isNotEmpty() ? n : "Input " + juce::String (s + 1));
+    }
+    return names;
+}
+
+juce::StringArray MainComponent::sceneNames() const
+{
+    juce::StringArray names;
+    for (const auto& s : engine.scenes)
+        names.add (s.name);
+    return names;
+}
+
+void MainComponent::updateSceneButton()
+{
+    const bool has = juce::isPositiveAndBelow (engine.currentScene, (int) engine.scenes.size());
+    const auto text = has ? engine.scenes[(size_t) engine.currentScene].name
+                          : engine.scenes.empty() ? juce::String ("Save a scene") : juce::String ("None");
+    sceneButton.setContent ("SCENE", text, false);
+    sceneButton.setTitle ("Scene: " + text + ". Opens the scene menu.");
+}
+
+void MainComponent::recallScene (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) engine.scenes.size()))
+        return;
+
+    Session::applyScene (*engine.scenes[(size_t) index].state, engine);
+    engine.currentScene = index;
+    updateSceneButton();
+    showNote ("Scene: " + engine.scenes[(size_t) index].name);
+}
+
+void MainComponent::saveScene (int index)
+{
+    if (juce::isPositiveAndBelow (index, (int) engine.scenes.size()))
+    {
+        engine.scenes[(size_t) index].state = Session::captureScene (engine);
+        engine.currentScene = index;
+        updateSceneButton();
+        showNote ("Scene \"" + engine.scenes[(size_t) index].name + "\" updated");
+        Session::save (engine);
+        return;
+    }
+
+    auto* w = new juce::AlertWindow ("Save the current mix as a scene",
+                                     "Levels, mutes, sends, processing and plugin bypass are saved. "
+                                     "Sources, devices and plugins stay as they are when you switch.",
+                                     juce::MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("name", "Scene " + juce::String ((int) engine.scenes.size() + 1), "Name");
+    w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<MainComponent> safe (this);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+        const auto name = w->getTextEditorContents ("name").trim();
+        auto& engine = safe->engine;
+        engine.scenes.push_back ({ name.isNotEmpty() ? name : "Scene " + juce::String ((int) engine.scenes.size() + 1),
+                                   Session::captureScene (engine) });
+        engine.currentScene = (int) engine.scenes.size() - 1;
+        safe->updateSceneButton();
+        Session::save (engine);
+    }), true);
+}
+
+void MainComponent::renameScene (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) engine.scenes.size()))
+        return;
+
+    auto* w = new juce::AlertWindow ("Rename scene", {}, juce::MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("name", engine.scenes[(size_t) index].name, "Name");
+    w->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<MainComponent> safe (this);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w, index] (int result)
+    {
+        if (safe == nullptr || result != 1 || ! juce::isPositiveAndBelow (index, (int) safe->engine.scenes.size()))
+            return;
+        const auto name = w->getTextEditorContents ("name").trim();
+        if (name.isNotEmpty())
+            safe->engine.scenes[(size_t) index].name = name;
+        safe->updateSceneButton();
+        Session::save (safe->engine);
+    }), true);
+}
+
+void MainComponent::deleteScene (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) engine.scenes.size()))
+        return;
+
+    const auto name = engine.scenes[(size_t) index].name;
+    juce::Component::SafePointer<MainComponent> safe (this);
+    juce::AlertWindow::showAsync (
+        juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle ("Delete scene \"" + name + "\"?")
+            .withMessage ("The mix as it is now doesn't change. Hotkeys for later scenes move up with them.")
+            .withButton ("Delete", 1).withButton ("Cancel", 0).withAssociatedComponent (this),
+        [safe, index] (int result)
+        {
+            if (safe == nullptr || result != 1 || ! juce::isPositiveAndBelow (index, (int) safe->engine.scenes.size()))
+                return;
+            auto& engine = safe->engine;
+            engine.scenes.erase (engine.scenes.begin() + index);
+            if (engine.currentScene == index)     engine.currentScene = -1;
+            else if (engine.currentScene > index) --engine.currentScene;
+
+            // Hotkeys that recall scenes keep pointing at the same scenes.
+            auto bindings = safe->hotkeys.getBindings();
+            std::vector<GlobalHotkeys::Binding> kept;
+            for (auto b : bindings)
+            {
+                if (b.action == GlobalHotkeys::Action::RecallScene)
+                {
+                    if (b.index == index) continue;
+                    if (b.index > index)  --b.index;
+                }
+                kept.push_back (b);
+            }
+            safe->hotkeys.setBindings (std::move (kept));
+            safe->hotkeys.save();
+
+            safe->updateSceneButton();
+            Session::save (engine);
+        });
+}
+
+void MainComponent::showSceneMenu()
+{
+    juce::PopupMenu menu;
+    const int n = (int) engine.scenes.size();
+
+    if (n == 0)
+        menu.addItem ("No scenes yet. Save the current mix to make one.", false, false, nullptr);
+    for (int i = 0; i < n; ++i)
+        menu.addItem (engine.scenes[(size_t) i].name, true, i == engine.currentScene, [this, i] { recallScene (i); });
+
+    menu.addSeparator();
+    menu.addItem ("Save current mix as a new scene...", [this] { saveScene (-1); });
+
+    if (juce::isPositiveAndBelow (engine.currentScene, n))
+    {
+        const int c = engine.currentScene;
+        const auto name = engine.scenes[(size_t) c].name;
+        menu.addItem ("Update \"" + name + "\" with the current mix", [this, c] { saveScene (c); });
+        menu.addItem ("Rename \"" + name + "\"...", [this, c] { renameScene (c); });
+        menu.addItem ("Delete \"" + name + "\"...", [this, c] { deleteScene (c); });
+    }
+
+    menu.addSeparator();
+    menu.addItem ("Hotkeys...", [this] { showHotkeys(); });
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (sceneButton).withMinimumWidth (sceneButton.getWidth()));
+}
+
+//==============================================================================
+// Global hotkeys
+
+void MainComponent::handleHotkey (const GlobalHotkeys::Binding& b, bool down)
+{
+    using A = GlobalHotkeys::Action;
+    auto strip = [&]() -> ChannelStrip* { return juce::isPositiveAndBelow (b.index, kNumStrips) ? &engine.getStrip (b.index) : nullptr; };
+
+    switch (b.action)
+    {
+        case A::ToggleMute:
+            if (! down) return;
+            if (auto* s = strip()) s->mute.store (! s->mute.load());
+            break;
+
+        case A::PushToTalk:
+            // Open while the key is held, muted again when it's released.
+            if (auto* s = strip()) s->mute.store (! down);
+            break;
+
+        case A::PlayPad:
+            if (down) engine.getSoundboard().trigger (b.index);
+            return;
+
+        case A::StopSounds:
+            if (down) engine.getSoundboard().stopAll();
+            return;
+
+        case A::ToggleRecord:
+            if (down) toggleRecording();
+            return;
+
+        case A::SaveReplay:
+            if (down) saveReplay();
+            return;
+
+        case A::RecallScene:
+            if (down) recallScene (b.index);
+            return;
+    }
+
+    engine.externalChanges.fetch_add (1);   // mute changes show on the strip
+}
+
+void MainComponent::showHotkeys()
+{
+    juce::Array<int> active;
+    for (int s = 0; s < kNumStrips; ++s)
+        if (engine.getStrip (s).active.load())
+            active.add (s);
+    auto* panel = new HotkeysPanel (hotkeys, stripNames(), active, sceneNames());
+
+    juce::DialogWindow::LaunchOptions o;
+    o.content.setOwned (panel);
+    o.dialogTitle = "Hotkeys";
+    o.dialogBackgroundColour = Theme::p().panel;
+    o.escapeKeyTriggersCloseButton = true;
+    o.useNativeTitleBar = true;
+    o.resizable = false;
+    o.componentToCentreAround = this;
+    o.launchAsync();
+}
+
 void MainComponent::resized()
 {
     auto r = getLocalBounds();
 
-    // Header, left to right: name | status readout (opens Audio settings) | transport
-    // (record, its options, replay) | window tools (soundboard, update, settings).
+    // Header, left to right: name | status readout (opens Audio settings) | scene picker |
+    // transport (record, its options, replay) | window tools (soundboard, update, settings).
     headerArea = r.removeFromTop (48);
     auto header = headerArea.reduced (consolePad, 0);
     constexpr int h = 28;
@@ -812,6 +1060,9 @@ void MainComponent::resized()
     header.removeFromRight (2);
     recordButton.setBounds (header.removeFromRight (100).withSizeKeepingCentre (100, h));
     header.removeFromRight (Theme::s4);
+
+    sceneButton.setBounds (header.removeFromRight (170).withSizeKeepingCentre (170, h));
+    header.removeFromRight (Theme::s3);
 
     // The readout takes what's left, up to a comfortable width.
     const int statusW = juce::jmin (header.getWidth(), 640);
