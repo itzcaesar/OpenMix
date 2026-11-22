@@ -22,6 +22,32 @@ struct BusAnalysis
     }
 };
 
+// Small live spectrum shown inside a bus (32 log-spaced bands, 30 Hz to 18 kHz). Click, Enter
+// or Space opens the full analyser.
+class MiniSpectrum : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit MiniSpectrum (std::shared_ptr<BusAnalysis>);
+
+    void update();   // ~10 Hz from the owner's timer
+    void paint (juce::Graphics&) override;
+    void mouseUp (const juce::MouseEvent&) override  { if (onClick) onClick(); }
+    bool keyPressed (const juce::KeyPress&) override;
+    void focusGained (FocusChangeType) override      { repaint(); }
+    void focusLost (FocusChangeType) override        { repaint(); }
+
+    std::function<void()> onClick;
+
+private:
+    static constexpr int fftOrder = 10, fftSize = 1 << fftOrder, numBands = 32;
+
+    std::shared_ptr<BusAnalysis> analysis;
+    juce::dsp::FFT fft { fftOrder };
+    juce::dsp::WindowingFunction<float> window { (size_t) fftSize, juce::dsp::WindowingFunction<float>::hann };
+    std::array<float, fftSize * 2> fftData {};
+    std::array<float, numBands> bands {};   // dB, with decay
+};
+
 // Pop-over: spectrum of the bus plus momentary / short-term / integrated loudness.
 class AnalyserPanel : public juce::Component, private juce::Timer
 {

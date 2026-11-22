@@ -26,6 +26,7 @@ public:
     void renamePad (int pad, const juce::String& name);
     PadInfo getPadInfo (int pad) const;
     void trigger (int pad);                     // play, or stop if it's playing
+    void stopAll();
     bool isPlaying (int pad) const noexcept     { return pads[(size_t) pad].playingFlag.load(); }
 
     // Device thread (before audio starts).

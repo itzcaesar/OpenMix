@@ -4,7 +4,8 @@
 #include "engine/MixerEngine.h"
 #include "ui/Widgets.h"
 
-// The soundboard column in the console: 8 pads, a volume fader and bus sends.
+// The soundboard: a bar along the bottom of the console. Name and Stop all on the left, the
+// 8 pads in a row, then volume, meter and the buses it plays on.
 class SoundboardPanel : public juce::Component, private juce::Timer
 {
 public:
@@ -17,7 +18,8 @@ public:
     void refresh();
     std::function<void()> onChanged;   // something worth saving changed
 
-    static constexpr int columnWidth = 196;
+    static constexpr int barHeight = 104;
+    static constexpr int minWidth = 640;
 
 private:
     class Pad;
@@ -28,9 +30,12 @@ private:
 
     MixerEngine& engine;
     Soundboard& board;
+    TapeLabel tape { false };
     std::vector<std::unique_ptr<Pad>> pads;
-    DbSlider volume { juce::Slider::LinearHorizontal, juce::Slider::TextBoxBelow };
+    DbSlider volume { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    LevelMeter meter;
     std::array<StripKey, kNumBuses> sendButtons;
+    juce::TextButton stopButton { "Stop all" };
     std::unique_ptr<juce::FileChooser> chooser;
-    juce::Rectangle<int> titleArea, padsLegend, volumeLegend, sendsLegend;
+    juce::Rectangle<int> padsLegend, volumeLegend, sendsLegend;
 };

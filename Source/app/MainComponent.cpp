@@ -4,6 +4,7 @@
 #include "ui/Theme.h"
 #include "ui/OpenMixLookAndFeel.h"
 #include "ui/SettingsPanel.h"
+#include "ui/TrayIcon.h"
 
 static constexpr int stripGap = Theme::s2;
 static constexpr int sectionGap = 32;   // space between inputs and the master section
@@ -11,8 +12,6 @@ static constexpr int consolePad = Theme::s4;
 
 //==============================================================================
 // ConsoleContent
-
-static constexpr int addColumnWidth = 40;   // the slim "+" columns
 
 ConsoleContent::ConsoleContent (MixerEngine& e) : soundboard (e), engine (e)
 {
@@ -32,6 +31,8 @@ ConsoleContent::ConsoleContent (MixerEngine& e) : soundboard (e), engine (e)
         addChildComponent (*buses[(size_t) b]);
     }
 
+    addStripButton.setButtonText ("+ Strip");
+    addBusButton.setButtonText ("+ Bus");
     addStripButton.setTitle ("Add input strip");
     addStripButton.setTooltip ("Add an input strip (up to " + juce::String (kNumStrips) + ").");
     addStripButton.onClick = [this]
@@ -99,11 +100,10 @@ int ConsoleContent::minimumWidth() const
 {
     const int ns = juce::jmax (1, engine.getNumActiveStrips());
     const int nb = juce::jmax (1, engine.getNumActiveBuses());
-    return consolePad * 2
-         + ns * StripView::minWidth + (ns - 1) * stripGap + (addStripButton.isVisible() ? stripGap + addColumnWidth : 0)
-         + sectionGap
-         + (soundboard.isVisible() ? SoundboardPanel::columnWidth + sectionGap : 0)
-         + nb * BusView::minWidth + (nb - 1) * stripGap + (addBusButton.isVisible() ? stripGap + addColumnWidth : 0);
+    const int desk = ns * StripView::minWidth + (ns - 1) * stripGap
+                   + sectionGap
+                   + juce::jmax (nb * BusView::minWidth + (nb - 1) * stripGap, 150);
+    return consolePad * 2 + (soundboard.isVisible() ? juce::jmax (desk, SoundboardPanel::minWidth) : desk);
 }
 
 void ConsoleContent::paint (juce::Graphics& g)
@@ -113,12 +113,7 @@ void ConsoleContent::paint (juce::Graphics& g)
 
     // Divider between the input channels and the master section, as on a desk.
     g.setColour (Theme::p().line);
-    g.fillRect (dividerX, inputsLegend.getBottom() + Theme::s1, 1, getHeight() - inputsLegend.getBottom() - consolePad - Theme::s1);
-    if (soundboard.isVisible())
-    {
-        Theme::drawLegend (g, "Sounds", soundLegend);
-        g.fillRect (soundDividerX, inputsLegend.getBottom() + Theme::s1, 1, getHeight() - inputsLegend.getBottom() - consolePad - Theme::s1);
-    }
+    g.fillRect (dividerX, inputsLegend.getBottom(), 1, deskBottom - inputsLegend.getBottom());
 }
 
 void ConsoleContent::resized()
@@ -127,64 +122,123 @@ void ConsoleContent::resized()
 
     const int ns = juce::jmax (1, engine.getNumActiveStrips());
     const int nb = juce::jmax (1, engine.getNumActiveBuses());
-    const int addS = addStripButton.isVisible() ? stripGap + addColumnWidth : 0;
-    const int addB = addBusButton.isVisible() ? stripGap + addColumnWidth : 0;
-    const int soundW = soundboard.isVisible() ? SoundboardPanel::columnWidth + sectionGap : 0;
+    constexpr int soundW = 0;   // the soundboard is a bar below the desk, not a column
 
-    // Strip width: share the room, within limits. Leftover space is split around the desk.
-    const int busesMax = nb * BusView::maxWidth + (nb - 1) * stripGap + addB;
-    int stripW = (r.getWidth() - busesMax - sectionGap - soundW - addS - (ns - 1) * stripGap) / ns;
-    stripW = juce::jlimit (StripView::minWidth, StripView::maxWidth, stripW);
-    const int busW = juce::jlimit (BusView::minWidth, BusView::maxWidth,
-                                   (r.getWidth() - ns * stripW - (ns - 1) * stripGap - addS - sectionGap - soundW
-                                    - (nb - 1) * stripGap - addB) / nb);
+    // Fill the window: strips and buses share the width, a bus getting about 3/4 of a strip,
+    // within each one's limits. Only past those limits is the desk centred with margins.
+    const int avail = r.getWidth() - sectionGap - soundW - (ns - 1) * stripGap - (nb - 1) * stripGap;
+    const int unit = (int) (avail / (ns + nb * 0.75f));
+    const int stripW = juce::jlimit (StripView::minWidth, StripView::maxWidth, unit);
+    const int busW = juce::jlimit (BusView::minWidth, BusView::maxWidth, (avail - ns * stripW) / nb);
 
-    const int inputsW = ns * stripW + (ns - 1) * stripGap + addS;
-    const int deskW = inputsW + sectionGap + soundW + nb * busW + (nb - 1) * stripGap + addB;
-    r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), deskW), r.getHeight());
+    const int inputsW = ns * stripW + (ns - 1) * stripGap;
+    const int outputsW = juce::jmax (nb * busW + (nb - 1) * stripGap, 150);
+    const int deskW = inputsW + sectionGap + soundW + outputsW;
+    r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), juce::jmax (deskW, soundboard.isVisible() ? SoundboardPanel::minWidth : 0)),
+                                 r.getHeight());
 
-    auto legends = r.removeFromTop (28);
-    inputsLegend = legends.removeFromLeft (inputsW);
-    legends.removeFromLeft (sectionGap);
+    // Soundboard: a bar under the whole desk, so the strips and buses keep one fader line.
     if (soundboard.isVisible())
     {
-        soundLegend = legends.removeFromLeft (SoundboardPanel::columnWidth);
-        legends.removeFromLeft (sectionGap);
+        soundboard.setBounds (r.removeFromBottom (SoundboardPanel::barHeight));
+        r.removeFromBottom (Theme::s3);
     }
+    deskBottom = r.getBottom();
+    r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), deskW), r.getHeight());
+
+    // Section legends, with the add buttons at their right end.
+    auto legends = r.removeFromTop (36);
+    inputsLegend = legends.removeFromLeft (inputsW);
+    legends.removeFromLeft (sectionGap);
     outputsLegend = legends;
+    addStripButton.setBounds (inputsLegend.withTrimmedLeft (inputsLegend.getWidth() - 72).withSizeKeepingCentre (72, 24));
+    addBusButton.setBounds (outputsLegend.withTrimmedLeft (outputsLegend.getWidth() - 64).withSizeKeepingCentre (64, 24));
+
+    // One fader bay for every column: faders, meters and mute rows line up across the desk,
+    // whatever sits above them. The bay takes about half the height.
+    const int bayHeight = juce::jlimit (230, 440, (int) (r.getHeight() * 0.48f));
+    const int bayTop = r.getHeight() - bayHeight;
 
     for (int s = 0; s < kNumStrips; ++s)
     {
         if (! strips[(size_t) s]->isVisible())
             continue;
+        strips[(size_t) s]->setBayTop (bayTop);
         strips[(size_t) s]->setBounds (r.removeFromLeft (stripW));
-        r.removeFromLeft (stripGap);
-    }
-    if (addStripButton.isVisible())
-    {
-        addStripButton.setBounds (r.removeFromLeft (addColumnWidth).withHeight (juce::jmin (r.getHeight(), 120)));
         r.removeFromLeft (stripGap);
     }
 
     r.removeFromLeft (sectionGap - stripGap);
     dividerX = r.getX() - sectionGap / 2;
 
-    if (soundboard.isVisible())
-    {
-        soundboard.setBounds (r.removeFromLeft (SoundboardPanel::columnWidth));
-        r.removeFromLeft (sectionGap);
-        soundDividerX = r.getX() - sectionGap / 2;
-    }
-
     for (int b = 0; b < kNumBuses; ++b)
     {
         if (! buses[(size_t) b]->isVisible())
             continue;
+        buses[(size_t) b]->setBayTop (bayTop);
         buses[(size_t) b]->setBounds (r.removeFromLeft (busW));
         r.removeFromLeft (stripGap);
     }
-    if (addBusButton.isVisible())
-        addBusButton.setBounds (r.removeFromLeft (addColumnWidth).withHeight (juce::jmin (r.getHeight(), 120)));
+}
+
+//==============================================================================
+// StatusDisplay
+
+StatusDisplay::StatusDisplay() : juce::Button ({})
+{
+    makeClickable (*this);
+    setWantsKeyboardFocus (true);
+    setTooltip ("Audio settings: driver (ASIO or Windows Audio), device, channels, sample rate and buffer size.");
+}
+
+void StatusDisplay::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    const auto& t = Theme::p();
+    auto r = getLocalBounds().toFloat();
+
+    // A recessed readout; hover and press lift it like any other control.
+    g.setColour (down ? t.well.darker (0.2f) : highlighted ? t.well.brighter (0.06f) : t.well);
+    g.fillRoundedRectangle (r, Theme::controlRadius);
+    g.setColour (highlighted ? t.controlEdge : t.line);
+    g.drawRoundedRectangle (r.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+    auto area = getLocalBounds().reduced (Theme::s3, 0);
+
+    // Chevron: this readout opens Audio settings.
+    auto chevron = area.removeFromRight (12).toFloat().withSizeKeepingCentre (9, 5);
+    juce::Path p;
+    p.startNewSubPath (chevron.getX(), chevron.getY());
+    p.lineTo (chevron.getCentreX(), chevron.getBottom());
+    p.lineTo (chevron.getRight(), chevron.getY());
+    g.setColour (t.textDim);
+    g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    area.removeFromRight (Theme::s2);
+
+    const auto font = Theme::mono (12.0f);
+    g.setFont (font);
+    for (int i = 0; i < segments.size(); ++i)
+    {
+        const auto& seg = segments[i];
+        const bool isDevice = i == 0;
+        const int natural = juce::GlyphArrangement::getStringWidthInt (font, seg);
+        const int w = isDevice ? juce::jmin (natural, area.getWidth()) : natural;
+        if (w > area.getWidth() || w <= 0)
+            break;
+
+        g.setColour (isDevice ? t.text : t.textDim);
+        g.drawText (seg, area.removeFromLeft (w), juce::Justification::centredLeft, true);
+
+        if (i < segments.size() - 1 && area.getWidth() > 30)
+        {
+            area.removeFromLeft (Theme::s3);
+            g.setColour (t.line);
+            g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
+            area.removeFromLeft (Theme::s3);
+        }
+    }
+
+    if (hasKeyboardFocus (false))
+        Theme::drawFocusRing (g, getLocalBounds().toFloat());
 }
 
 //==============================================================================
@@ -246,19 +300,13 @@ MainComponent::MainComponent()
             safe->grabKeyboardFocus();
     });
 
-    settingsButton.setTooltip ("Driver (ASIO or Windows Audio), device, channels, sample rate and buffer size.");
-    settingsButton.onClick = [this] { showAudioSettings(); };
-    makeClickable (settingsButton);
-    addAndMakeVisible (settingsButton);
+    statusDisplay.onClick = [this] { showAudioSettings(); };
+    addAndMakeVisible (statusDisplay);
 
-    appSettingsButton.setTooltip ("Startup, tray, theme and plugin options.");
+    appSettingsButton.setTooltip ("Light or dark theme, startup and tray, plugins, remote control, updates.");
     appSettingsButton.onClick = [this] { showSettings(); };
     makeClickable (appSettingsButton);
     addAndMakeVisible (appSettingsButton);
-
-    themeButton.onClick = [this] { toggleTheme(); };
-    makeClickable (themeButton);
-    addAndMakeVisible (themeButton);
 
     fixButton.onClick = [this] { showAudioSettings(); };
     makeClickable (fixButton);
@@ -345,10 +393,6 @@ void MainComponent::applyTheme()
 {
     if (auto* laf = dynamic_cast<OpenMixLookAndFeel*> (&juce::LookAndFeel::getDefaultLookAndFeel()))
         laf->applyPalette();
-
-    themeButton.setButtonText (Theme::isDark() ? "Light mode" : "Dark mode");
-    themeButton.setTitle (Theme::isDark() ? "Switch to light mode" : "Switch to dark mode");
-    themeButton.setTooltip (themeButton.getTitle() + ".");
 
     if (auto* window = dynamic_cast<juce::DocumentWindow*> (getTopLevelComponent()))
         window->setBackgroundColour (Theme::p().window);
@@ -442,8 +486,9 @@ void MainComponent::updateStatus()
         resized();
     }
 
-    setDescription (statusSegments.joinIntoString (", "));
-    repaint (headerArea.getUnion (bannerArea));
+    statusDisplay.setSegments (statusSegments);
+    statusDisplay.setTitle ("Audio settings. " + statusSegments.joinIntoString (", "));
+    repaint (bannerArea);
 }
 
 void MainComponent::timerCallback()
@@ -489,42 +534,20 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (t.line);
     g.fillRect (headerArea.withTop (headerArea.getBottom() - 1));
 
-    // Product name as text (no invented logo)
+    // App icon + name
+    auto brand = headerArea.reduced (consolePad, 0).removeFromLeft (110);
+    static const auto icon = TrayIcon::makeIcon (48);
+    g.drawImage (icon, brand.removeFromLeft (24).withSizeKeepingCentre (24, 24).toFloat(), juce::RectanglePlacement::centred);
+    brand.removeFromLeft (Theme::s2);
     g.setColour (t.text);
-    g.setFont (Theme::ui (18.0f, true));
-    g.drawText ("OpenMix", headerArea.reduced (consolePad, 0).removeFromLeft (110), juce::Justification::centredLeft);
+    g.setFont (Theme::ui (16.0f, true));
+    g.drawText ("OpenMix", brand, juce::Justification::centredLeft);
 
-    // Status display: a recessed readout, segments right to left by importance.
-    if (! statusArea.isEmpty())
+    // Divider between the transport group (record, replay) and the window tools.
+    if (transportDividerX > 0)
     {
-        g.setColour (t.well);
-        g.fillRoundedRectangle (statusArea.toFloat(), Theme::controlRadius);
         g.setColour (t.line);
-        g.drawRoundedRectangle (statusArea.toFloat().reduced (0.5f), Theme::controlRadius, 1.0f);
-
-        const auto font = Theme::mono (12.0f);
-        g.setFont (font);
-        auto area = statusArea.reduced (Theme::s3, 0);
-        for (int i = 0; i < statusSegments.size(); ++i)
-        {
-            const auto& seg = statusSegments[i];
-            const bool isDevice = i == 0;
-            const int natural = juce::GlyphArrangement::getStringWidthInt (font, seg);
-            const int w = isDevice ? juce::jmin (natural, area.getWidth()) : natural;
-            if (w > area.getWidth() || w <= 0)
-                break;
-
-            g.setColour (isDevice ? t.text : t.textDim);
-            g.drawText (seg, area.removeFromLeft (w), juce::Justification::centredLeft, true);
-
-            if (i < statusSegments.size() - 1 && area.getWidth() > 30)
-            {
-                area.removeFromLeft (Theme::s3);
-                g.setColour (t.line);
-                g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
-                area.removeFromLeft (Theme::s3);
-            }
-        }
+        g.fillRect (transportDividerX, headerArea.getCentreY() - 12, 1, 24);
     }
 
     // Clock-drift warning (text first, the edge is secondary)
@@ -763,29 +786,37 @@ void MainComponent::resized()
 {
     auto r = getLocalBounds();
 
-    headerArea = r.removeFromTop (52);
+    // Header, left to right: name | status readout (opens Audio settings) | transport
+    // (record, its options, replay) | window tools (soundboard, update, settings).
+    headerArea = r.removeFromTop (48);
     auto header = headerArea.reduced (consolePad, 0);
-    header.removeFromLeft (110);
-    settingsButton.setBounds (header.removeFromLeft (128).withSizeKeepingCentre (128, 30));
-    themeButton.setBounds (header.removeFromRight (108).withSizeKeepingCentre (108, 30));
-    header.removeFromRight (Theme::s2);
-    appSettingsButton.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 30));
-    header.removeFromRight (Theme::s2);
+    constexpr int h = 28;
+    header.removeFromLeft (120);
+
+    appSettingsButton.setBounds (header.removeFromRight (84).withSizeKeepingCentre (84, h));
+    header.removeFromRight (Theme::s1);
     if (updateButton.isVisible())
     {
-        updateButton.setBounds (header.removeFromRight (130).withSizeKeepingCentre (130, 30));
-        header.removeFromRight (Theme::s2);
+        updateButton.setBounds (header.removeFromRight (124).withSizeKeepingCentre (124, h));
+        header.removeFromRight (Theme::s1);
     }
-    soundboardButton.setBounds (header.removeFromRight (104).withSizeKeepingCentre (104, 30));
-    header.removeFromRight (Theme::s2);
-    replayButton.setBounds (header.removeFromRight (112).withSizeKeepingCentre (112, 30));
-    header.removeFromRight (Theme::s2);
-    recordMenuButton.setBounds (header.removeFromRight (30).withSizeKeepingCentre (30, 30));
-    header.removeFromRight (Theme::s1);
-    recordButton.setBounds (header.removeFromRight (104).withSizeKeepingCentre (104, 30));
+    soundboardButton.setBounds (header.removeFromRight (108).withSizeKeepingCentre (108, h));
+
     header.removeFromRight (Theme::s3);
-    header.removeFromLeft (Theme::s3);
-    statusArea = header.getWidth() > 160 ? header.withSizeKeepingCentre (header.getWidth(), 30) : juce::Rectangle<int>();
+    transportDividerX = header.getRight();
+    header.removeFromRight (Theme::s3);
+
+    replayButton.setBounds (header.removeFromRight (104).withSizeKeepingCentre (104, h));
+    header.removeFromRight (Theme::s1);
+    recordMenuButton.setBounds (header.removeFromRight (h).withSizeKeepingCentre (h, h));
+    header.removeFromRight (2);
+    recordButton.setBounds (header.removeFromRight (100).withSizeKeepingCentre (100, h));
+    header.removeFromRight (Theme::s4);
+
+    // The readout takes what's left, up to a comfortable width.
+    const int statusW = juce::jmin (header.getWidth(), 640);
+    statusDisplay.setVisible (statusW > 120);
+    statusDisplay.setBounds (header.removeFromLeft (statusW).withSizeKeepingCentre (statusW, h));
 
     r.removeFromTop (Theme::s3);
 
@@ -802,7 +833,7 @@ void MainComponent::resized()
 
     consoleView.setBounds (r);
     const int minW = console->minimumWidth();
-    console->setSize (juce::jmax (r.getWidth() - (r.getHeight() < ConsoleContent::minimumHeight ? consoleView.getScrollBarThickness() : 0), minW),
+    console->setSize (juce::jmax (r.getWidth() - (r.getHeight() < console->minimumHeight() ? consoleView.getScrollBarThickness() : 0), minW),
                       juce::jmax (r.getHeight() - (r.getWidth() < minW ? consoleView.getScrollBarThickness() : 0),
-                                  ConsoleContent::minimumHeight));
+                                  console->minimumHeight()));
 }

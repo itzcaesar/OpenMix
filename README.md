@@ -34,12 +34,12 @@ cmake --build --preset release
 
 ## Using it
 
-1. **Audio settings** (header): pick the driver type (ASIO for lowest latency, or Windows
-   Audio), then the device, the active input/output channels, sample rate and buffer size.
-   The status display next to it shows the device, sample rate, latency, CPU and dropouts.
-   **Light mode / Dark mode** switches the theme; the choice is saved.
-2. Each **strip** starts with its name on a tape label (double-click or Enter to rename).
-   Under it, the source picker. Pick one of:
+1. **Status display** (header): shows the device, sample rate, latency, CPU and dropouts.
+   Click it for Audio settings: the driver type (ASIO for lowest latency, or Windows Audio),
+   the device, the active input/output channels, sample rate and buffer size. The light or
+   dark theme is in **Settings**; the choice is saved.
+2. Each **strip** starts with its name plate (double-click or Enter to rename), then the
+   source picker with the input gain knob beside it. Pick one of:
    - a channel of the main device (mono, spread to stereo)
    - **Windows input device**: any other mic or capture device, at the same time as the main device
    - **Application audio**: one app's sound (Spotify, a game, Discord...). This uses
@@ -60,8 +60,9 @@ cmake --build --preset release
    compressor -> de-esser -> up to 6 VST3 inserts -> VoicePad -> ducking -> sends ->
    mute -> fader.
 
-   The three-dot button next to the name: rename, tape colour, mono, invert polarity,
-   remove the strip. "+" after the last strip adds one (up to 8).
+   The three-dot button next to the name: rename, colour, mono, invert polarity, remove the
+   strip. **+ Strip** (next to INPUTS) adds one (up to 8). Every column ends in the same fader
+   bay: the fader and meter, the send keys beside them, mute and solo along the bottom.
 3. **Inserts**: "+ Add plugin" lists the VST3 plugins found in
    `C:\Program Files\Common Files\VST3`, grouped by maker when there are many. Plugins are
    scanned in the background, each in a separate process, so a plugin that crashes while
@@ -97,7 +98,7 @@ cmake --build --preset release
    A2 speakers, B1 a virtual cable that Discord/OBS use as their mic. Extra devices run on
    their own clocks; OpenMix resamples them and corrects drift, which adds about 10-25 ms of
    latency on those devices only. The **LIMITER** lamp lights while the bus safety limiter
-   is working. "+" after the last bus adds one (A1-A3 hardware, B1-B3 virtual); the
+   is working. **+ Bus** (next to OUTPUTS) adds one (A1-A3 hardware, B1-B3 virtual); the
    Each bus has its own **EQ** and **Comp** keys (click for settings, Space switches them on)
    and up to 6 **VST3 inserts**, with the same plugin handling as a strip. Bus signal path:
    sum -> EQ -> compressor -> inserts -> fader -> safety limiter.
@@ -111,7 +112,7 @@ cmake --build --preset release
    file each in `Documents\OpenMix Recordings\<date and time>`. The dots next to it choose
    what to record and set the **replay buffer**: keep the last 30, 60 or 120 seconds of one
    bus in memory and save them with **Replay** (Ctrl+Shift+S).
-10. **Soundboard**: a column in the console, between the inputs and the buses (the header
+10. **Soundboard**: a bar along the bottom of the console, under the strips and buses (the header
    button shows or hides it). Eight pads for WAV, MP3, FLAC or Ogg files up to 60 s. Click a
    pad or press 1-8 anywhere in OpenMix to play, again to stop; right-click to load,
    rename or clear. It has its own volume and plays on the buses you pick (A1 and B1 by
@@ -146,7 +147,7 @@ Tab and Shift+Tab move through the header, then each strip top to bottom, then t
 | Plugin row | Enter open/add, Space bypass, Delete remove, Alt+Up/Down move, M menu |
 | Processing key | Enter opens settings, Space switches on/off |
 | Send key | Enter or Space switches, M or Shift+Enter opens level and pre-fader |
-| Tape label | Enter or F2 rename |
+| Name plate | Enter or F2 rename |
 | Meter | Enter resets the clip lamp |
 | Buttons and pickers | Enter or Space |
 | Record, save replay | Ctrl+Shift+R, Ctrl+Shift+S (while OpenMix has focus) |

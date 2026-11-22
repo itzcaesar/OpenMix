@@ -24,7 +24,11 @@ public:
 
     std::function<void()> onLayoutChanged;   // the strip was removed, or buses changed
 
-    static constexpr int minWidth = 214, maxWidth = 300;
+    // Where the fader bay starts (from the top of the strip); the console sets the same value
+    // on every column so faders line up.
+    void setBayTop (int y) { bayTop = y; }
+
+    static constexpr int minWidth = 210, maxWidth = 400;
 
 private:
     // Source + strip menu
@@ -57,7 +61,7 @@ private:
     FaderSection faderSection;
 
     juce::Rectangle<int> gainLegend, insertsLegend, processLegend, padLegend, sendsLegend;
-    int lastLatency = -1, tickCount = 0;
+    int lastLatency = -1, tickCount = 0, bayTop = 0;
     bool inLayout = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StripView)

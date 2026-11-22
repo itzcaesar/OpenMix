@@ -23,7 +23,9 @@ public:
 
     std::function<void()> onLayoutChanged;   // removed, or the monitor bus changed
 
-    static constexpr int minWidth = 150, maxWidth = 176;
+    void setBayTop (int y) { bayTop = y; }   // same fader-bay line as every other column
+
+    static constexpr int minWidth = 156, maxWidth = 300;
 
 private:
     void showTargetMenu();
@@ -44,10 +46,13 @@ private:
     StripKey eqKey { "EQ" }, compKey { "Comp" };
     InsertRack inserts;
     bool inLayout = false;
+    int bayTop = 0;
     FaderSection faderSection;
 
     juce::Rectangle<int> kindLegend, outputLegend, limiterArea, monitorArea, loudnessArea, processLegend, insertsLegend;
     std::shared_ptr<BusAnalysis> analysis = std::make_shared<BusAnalysis>();
+    MiniSpectrum spectrum { analysis };
+    juce::Rectangle<int> spectrumLegend;
     juce::AudioBuffer<float> drainBuffer { 2, 32768 };
     int analysisTicks = 0;
     void drainAnalysis();

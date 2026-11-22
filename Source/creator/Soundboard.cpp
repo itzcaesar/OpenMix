@@ -103,6 +103,13 @@ void Soundboard::trigger (int index)
     pad.command.store (pad.playingFlag.load() ? 2 : 1);
 }
 
+void Soundboard::stopAll()
+{
+    for (auto& pad : pads)
+        if (pad.playingFlag.load())
+            pad.command.store (2);
+}
+
 void Soundboard::prepare (double sampleRate)
 {
     gain.reset (sampleRate, 0.02);

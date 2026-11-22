@@ -10,9 +10,8 @@ TrayIcon::TrayIcon()
 
 // The app icon (resources/make_icon.py), drawn in code: a faceplate with three faders, the
 // middle cap lit amber. Keep the geometry in step with the script (1024 units -> 32 px).
-juce::Image TrayIcon::makeIcon()
+juce::Image TrayIcon::makeIcon (int size)
 {
-    constexpr int size = 32;
     juce::Image img (juce::Image::ARGB, size, size, true);
     juce::Graphics g (img);
     const auto& t = Theme::darkPalette();

@@ -449,96 +449,83 @@ void StripView::paint (juce::Graphics& g)
 
     Theme::drawLegend (g, "Processing", processLegend);
     Theme::drawLegend (g, "Voice pad", padLegend);
-    Theme::drawLegend (g, "Send to", sendsLegend);
+    Theme::drawLegend (g, "Sends", sendsLegend);
+
+    // A hairline above the fader bay, the same height on every column.
+    g.setColour (Theme::p().line);
+    g.fillRect (Theme::s3, (bayTop > 0 ? bayTop : getHeight() / 2) - Theme::s3 / 2 - 1, getWidth() - 2 * Theme::s3, 1);
 }
 
 void StripView::resized()
 {
     const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);
     auto r = getLocalBounds().reduced (Theme::s3, Theme::s3);
-    const bool compact = getHeight() < 760;
+    const int split = bayTop > 0 ? bayTop : getHeight() / 2;
+    auto top = r.withBottom (split - Theme::s3);
+    auto bay = r.withTop (split);
+    constexpr int legendH = 16, gap = 10;
 
-    auto titleRow = r.removeFromTop (30);
-    menuButton.setBounds (titleRow.removeFromRight (30));
+    // Header: name, options. Then source + input gain on one row.
+    auto titleRow = top.removeFromTop (28);
+    menuButton.setBounds (titleRow.removeFromRight (28));
     titleRow.removeFromRight (Theme::s1);
     tape.setBounds (titleRow);
-    r.removeFromTop (Theme::s2);
+    top.removeFromTop (Theme::s2);
 
-    // Source + gain. Roomy layout: their own rows. Compact: side by side.
-    if (compact)
+    auto sourceRow = top.removeFromTop (32);
+    gainKnob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    gainKnob.setPopupDisplayEnabled (true, true, this);
+    gainKnob.setBounds (sourceRow.removeFromRight (32));
+    sourceRow.removeFromRight (Theme::s1);
+    sourceButton.setBounds (sourceRow);
+    gainLegend = {};
+    top.removeFromTop (gap);
+
+    // Signal-flow order: processing, then the inserts, then the pad.
+    processLegend = top.removeFromTop (legendH);
     {
-        auto row = r.removeFromTop (40);
-        gainKnob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        gainKnob.setPopupDisplayEnabled (true, true, this);
-        gainKnob.setBounds (row.removeFromRight (40));
-        row.removeFromRight (Theme::s1);
-        sourceButton.setBounds (row.withSizeKeepingCentre (row.getWidth(), 30));
-        gainLegend = {};
-    }
-    else
-    {
-        sourceButton.setBounds (r.removeFromTop (30));
-        r.removeFromTop (Theme::s2);
-        auto row = r.removeFromTop (44);
-        gainLegend = row.removeFromLeft (48);
-        gainKnob.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 20);
-        gainKnob.setPopupDisplayEnabled (false, false, nullptr);
-        gainKnob.setBounds (row.withSizeKeepingCentre (44 + 64, 44).withX (row.getX()));
-    }
-    r.removeFromTop (Theme::s3);
-
-    // Bottom section first (fixed), so the pad and the fader share what's left.
-    int activeBuses = 0;
-    for (int b = 0; b < kNumBuses; ++b)
-        activeBuses += engine.getBus (b).active.load() ? 1 : 0;
-    const int sendRows = juce::jmax (1, (activeBuses + 2) / 3);
-
-    auto bottom = r.removeFromBottom (18 + sendRows * 30 + (sendRows - 1) * Theme::s1 + Theme::s2 + 30);
-    sendsLegend = bottom.removeFromTop (18);
-    {
-        const int bw = (bottom.getWidth() - 2 * Theme::s1) / 3;
-        int col = 0, row = 0;
-        for (int b = 0; b < kNumBuses; ++b)
-        {
-            if (! engine.getBus (b).active.load())
-                continue;
-            sendButtons[(size_t) b].setBounds (bottom.getX() + col * (bw + Theme::s1),
-                                               bottom.getY() + row * (30 + Theme::s1), bw, 30);
-            if (++col == 3) { col = 0; ++row; }
-        }
-        bottom.removeFromTop (sendRows * 30 + (sendRows - 1) * Theme::s1 + Theme::s2);
-    }
-    auto muteRow = bottom.removeFromTop (30);
-    muteButton.setBounds (muteRow.removeFromLeft ((muteRow.getWidth() - Theme::s1) / 2));
-    muteRow.removeFromLeft (Theme::s1);
-    soloButton.setBounds (muteRow);
-    r.removeFromBottom (Theme::s3);
-
-    // Inserts: as many rows as fit, the list scrolls beyond that.
-    insertsLegend = r.removeFromTop (18);
-    const int maxRows = compact ? 2 : 4;
-    inserts.setBounds (r.removeFromTop (InsertRack::heightForRows (juce::jmin (inserts.getVisibleRowCount(), maxRows))));
-    r.removeFromTop (Theme::s3);
-
-    // Processing keys: one row of six, in signal-flow order.
-    processLegend = r.removeFromTop (18);
-    {
-        auto row = r.removeFromTop (26);
+        auto row = top.removeFromTop (24);
         const int n = (int) processKeys.size();
-        const int kw = (row.getWidth() - (n - 1) * 3) / n;
+        const int kw = (row.getWidth() - (n - 1) * 2) / n;
         for (auto& key : processKeys)
         {
             key.setBounds (row.removeFromLeft (kw));
-            row.removeFromLeft (3);
+            row.removeFromLeft (2);
         }
     }
-    r.removeFromTop (Theme::s3);
+    top.removeFromTop (gap);
 
-    // Pad and fader share the rest; the fader keeps at least 140 px.
-    padLegend = r.removeFromTop (18);
-    const int padSize = juce::jlimit (64, juce::jmin (r.getWidth(), 180), r.getHeight() - VoicePadComponent::headerHeight - Theme::s3 - 140);
-    pad.setBounds (r.removeFromTop (padSize + VoicePadComponent::headerHeight));
-    r.removeFromTop (Theme::s3);
+    // Compact pad, pinned to the bottom of the top section: wide and short (it's a gesture
+    // surface, it doesn't need to be square). The inserts get everything between.
+    constexpr int rackMin = InsertRack::rowHeight;
+    const int padH = juce::jlimit (32, 88, juce::jmin ((int) (top.getWidth() * 0.42f),
+                                                       top.getHeight() - legendH - rackMin - gap - legendH - VoicePadComponent::headerHeight));
+    pad.setBounds (top.removeFromBottom (padH + VoicePadComponent::headerHeight));
+    padLegend = top.removeFromBottom (legendH);
+    top.removeFromBottom (gap);
 
-    faderSection.setBounds (r);
+    // Inserts: as many rows as fit; the list scrolls past that.
+    insertsLegend = top.removeFromTop (legendH);
+    const int fit = (top.getHeight() + InsertRack::rowGap) / (InsertRack::rowHeight + InsertRack::rowGap);
+    inserts.setBounds (top.removeFromTop (InsertRack::heightForRows (juce::jlimit (1, kNumSlots, juce::jmin (fit, inserts.getVisibleRowCount())))));
+
+    // Fader bay: mute and solo along the bottom, the fader with the send keys beside it.
+    auto muteRow = bay.removeFromBottom (28);
+    muteButton.setBounds (muteRow.removeFromLeft ((muteRow.getWidth() - Theme::s1) / 2));
+    muteRow.removeFromLeft (Theme::s1);
+    soloButton.setBounds (muteRow);
+    bay.removeFromBottom (Theme::s2);
+
+    auto sends = bay.removeFromRight (juce::jmax (56, bay.getWidth() - FaderSection::preferredWidth - Theme::s2));
+    bay.removeFromRight (Theme::s2);
+    faderSection.setBounds (bay);
+
+    sendsLegend = sends.removeFromTop (20);
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        if (! engine.getBus (b).active.load())
+            continue;
+        sendButtons[(size_t) b].setBounds (sends.removeFromTop (26));
+        sends.removeFromTop (Theme::s1);
+    }
 }

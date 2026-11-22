@@ -57,6 +57,11 @@ void LevelMeter::tick()
     repaint();
 }
 
+float LevelMeter::getPeakHoldDb() const
+{
+    return juce::Decibels::gainToDecibels (juce::jmax (left.hold, right.hold), -100.0f);
+}
+
 bool LevelMeter::keyPressed (const juce::KeyPress& k)
 {
     if (k == juce::KeyPress::returnKey || k == juce::KeyPress::spaceKey)
@@ -160,24 +165,54 @@ FaderSection::FaderSection (std::atomic<float>& peakL, std::atomic<float>& peakR
     addAndMakeVisible (meter);
 }
 
+void FaderSection::tick()
+{
+    meter.tick();
+
+    // Held peak above the meter, the number you check for headroom.
+    const float db = meter.getPeakHoldDb();
+    const auto text = db <= -60.0f ? juce::String ("-inf")
+                    : db > -10.0f  ? juce::String (db, 1)
+                                   : juce::String (juce::roundToInt (db));
+    if (text != peakText)
+    {
+        peakText = text;
+        repaint (peakArea);
+    }
+}
+
 void FaderSection::resized()
 {
     auto r = getLocalBounds();
-    const int scaleW = 30, meterW = 16, gap = 6;
-    auto content = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), scaleW + 46 + gap + meterW), r.getHeight());
+    const int scaleW = 30, meterW = 28, gap = 6;
+    auto content = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), preferredWidth), r.getHeight());
 
     content.removeFromLeft (scaleW);
     auto meterArea = content.removeFromRight (meterW);
     content.removeFromRight (gap);
     fader.setBounds (content);
 
-    meterArea.removeFromTop (fader.getTextBoxHeight() + 4);
+    peakArea = meterArea.removeFromTop (fader.getTextBoxHeight()).expanded (4, 0);
+    meterArea.removeFromTop (4);
     meter.setBounds (meterArea);
 }
 
 void FaderSection::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
+
+    // Held peak. At or above 0 dBFS the number turns full-strength with a red bar under it
+    // (the red is a second cue; the text itself keeps 4.5:1).
+    const bool over = meter.getPeakHoldDb() >= 0.0f;
+    g.setFont (Theme::mono (11.0f));
+    g.setColour (over ? t.text : t.textDim);
+    g.drawText (peakText, peakArea, juce::Justification::centred);
+    if (over)
+    {
+        g.setColour (t.meterHigh);
+        g.fillRect (peakArea.getX() + 4, peakArea.getBottom() - 2, peakArea.getWidth() - 8, 2);
+    }
+
     const int scaleRight = fader.getX() - 3;
     const int zeroY = fader.getY() + (int) fader.getPositionOfValue (0.0);
     int lastLabelY = -100;
@@ -223,13 +258,13 @@ TapeLabel::TapeLabel (bool canEdit) : editable (canEdit)
 void TapeLabel::applyColours()
 {
     const auto& t = Theme::p();
-    label.setColour (juce::Label::textColourId, t.tapeText);
-    label.setColour (juce::Label::textWhenEditingColourId, t.tapeText);
-    label.setColour (juce::Label::backgroundWhenEditingColourId, t.tape);
-    label.setColour (juce::Label::outlineWhenEditingColourId, t.tapeText);
-    label.setColour (juce::TextEditor::highlightColourId, t.tapeText.withAlpha (0.2f));
-    label.setColour (juce::TextEditor::highlightedTextColourId, t.tapeText);
-    label.setColour (juce::CaretComponent::caretColourId, t.tapeText);
+    label.setColour (juce::Label::textColourId, t.text);
+    label.setColour (juce::Label::textWhenEditingColourId, t.text);
+    label.setColour (juce::Label::backgroundWhenEditingColourId, t.well);
+    label.setColour (juce::Label::outlineWhenEditingColourId, t.focus);
+    label.setColour (juce::TextEditor::highlightColourId, t.accent.withAlpha (0.35f));
+    label.setColour (juce::TextEditor::highlightedTextColourId, t.text);
+    label.setColour (juce::CaretComponent::caretColourId, t.text);
 }
 
 void TapeLabel::setText (const juce::String& text)
@@ -241,26 +276,33 @@ void TapeLabel::setText (const juce::String& text)
 void TapeLabel::resized()
 {
     const int badgeW = badges_.isEmpty() ? 0 : juce::GlyphArrangement::getStringWidthInt (Theme::ui (11.0f, true), badges_) + 10;
-    label.setBounds (getLocalBounds().reduced (6, 2).withTrimmedRight (badgeW));
+    label.setBounds (getLocalBounds().withTrimmedTop (3).reduced (6, 1).withTrimmedRight (badgeW));
 }
 
+// Name plate: a recessed field with the channel's colour as a cap along its top edge
+// (the colour is for finding a channel at a glance on a full desk).
 void TapeLabel::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
-    const auto r = getLocalBounds().toFloat().reduced (0.5f);
-    const auto tape = Theme::tapeColour (colourIndex_);
-    g.setColour (tape);
-    g.fillRoundedRectangle (r, 2.0f);
-    label.setColour (juce::Label::backgroundWhenEditingColourId, tape);
-    g.setColour (colourIndex_ > 0 && t.dark ? tape : t.tapeEdge);
-    g.drawRoundedRectangle (r, 2.0f, 1.0f);
+    const auto r = getLocalBounds().toFloat();
 
-    // Status badges written on the tape (mono, polarity): real state, in marker text.
+    g.setColour (t.well);
+    g.fillRoundedRectangle (r, Theme::controlRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (r.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+    juce::Path cap;
+    cap.addRoundedRectangle (r.getX(), r.getY(), r.getWidth(), 3.0f, Theme::controlRadius, Theme::controlRadius, true, true, false, false);
+    // The default cream disappears on the light theme's pale field; use the darker edge tone there.
+    g.setColour (colourIndex_ == 0 && ! t.dark ? t.controlEdge : Theme::tapeColour (colourIndex_));
+    g.fillPath (cap);
+
+    // Status badges (mono, polarity): real state.
     if (badges_.isNotEmpty())
     {
-        g.setColour (t.tapeText);
+        g.setColour (t.textDim);
         g.setFont (Theme::ui (11.0f, true));
-        g.drawText (badges_, getLocalBounds().reduced (8, 0), juce::Justification::centredRight);
+        g.drawText (badges_, getLocalBounds().withTrimmedTop (3).reduced (8, 0), juce::Justification::centredRight);
     }
 
     if (hasKeyboardFocus (false))

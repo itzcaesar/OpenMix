@@ -14,6 +14,7 @@ class LevelMeter : public juce::Component, public juce::SettableTooltipClient
 public:
     LevelMeter (std::atomic<float>& l, std::atomic<float>& r);
     void tick();
+    float getPeakHoldDb() const;   // louder channel's held peak, -100 when silent
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override  { resetClip(); }
     bool keyPressed (const juce::KeyPress&) override;
@@ -53,10 +54,16 @@ public:
     FaderSection (std::atomic<float>& peakL, std::atomic<float>& peakR, const juce::String& ownerName);
     void resized() override;
     void paint (juce::Graphics&) override;
-    void tick() { meter.tick(); }
+    void tick();
+
+    static constexpr int preferredWidth = 30 + 46 + 6 + 28;   // scale, fader, gap, meter
 
     DbSlider fader { juce::Slider::LinearVertical, juce::Slider::TextBoxAbove };
     LevelMeter meter;
+
+private:
+    juce::Rectangle<int> peakArea;   // held-peak readout above the meter
+    juce::String peakText;
 };
 
 //==============================================================================

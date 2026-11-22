@@ -5,6 +5,7 @@
 #include "ui/StripView.h"
 #include "ui/BusView.h"
 #include "ui/SoundboardPanel.h"
+#include "ui/Theme.h"
 #include "app/OscControl.h"
 #include "app/UpdateChecker.h"
 
@@ -22,7 +23,7 @@ public:
     std::function<void()> onSizeChanged;   // the minimum width changed (MainComponent resizes)
 
     int minimumWidth() const;
-    static constexpr int minimumHeight = 560;
+    int minimumHeight() const { return 560 + (soundboard.isVisible() ? SoundboardPanel::barHeight + Theme::s3 : 0); }
 
     std::array<std::unique_ptr<StripView>, kNumStrips> strips;
     std::array<std::unique_ptr<BusView>, kNumBuses> buses;
@@ -33,8 +34,21 @@ private:
 
     MixerEngine& engine;
     juce::TextButton addStripButton { "+" }, addBusButton { "+" };
-    juce::Rectangle<int> inputsLegend, soundLegend, outputsLegend;
-    int dividerX = 0, soundDividerX = 0;
+    juce::Rectangle<int> inputsLegend, outputsLegend;
+    int dividerX = 0, deskBottom = 0;
+};
+
+// The header's status readout (device, rate, latency, CPU, dropouts). It is also the way into
+// Audio settings: one control instead of a readout plus a separate button.
+class StatusDisplay : public juce::Button
+{
+public:
+    StatusDisplay();
+    void setSegments (const juce::StringArray& s) { segments = s; repaint(); }
+    void paintButton (juce::Graphics&, bool isHighlighted, bool isDown) override;
+
+private:
+    juce::StringArray segments;
 };
 
 class MainComponent : public juce::Component,
@@ -73,9 +87,8 @@ private:
     MixerEngine engine;
 
     juce::TooltipWindow tooltips { this, 600 };
-    juce::TextButton settingsButton { "Audio settings" };
+    StatusDisplay statusDisplay;
     juce::TextButton appSettingsButton { "Settings" };
-    juce::TextButton themeButton;
     juce::TextButton fixButton { "Open audio settings" };
     StripKey recordButton { "Record" };
     MenuDotsButton recordMenuButton;
@@ -92,7 +105,8 @@ private:
     std::unique_ptr<ConsoleContent> console;
 
     juce::StringArray statusSegments;
-    juce::Rectangle<int> headerArea, statusArea, bannerArea;
+    juce::Rectangle<int> headerArea, bannerArea;
+    int transportDividerX = 0;
     bool showBanner = false;
     int ticks = 0;
 

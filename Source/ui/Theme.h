@@ -132,12 +132,18 @@ namespace Theme
         g.drawRoundedRectangle (area.reduced (1.0f), radius, 2.0f);
     }
 
-    // Faceplate behind a strip or bus
+    // Module panel behind a strip, bus or the soundboard. A slight top-to-bottom shade and a
+    // one-pixel top highlight give each module depth against the window (the one gradient
+    // in the UI besides control caps; see DESIGN.md).
     inline void drawFaceplate (juce::Graphics& g, juce::Rectangle<float> area)
     {
-        g.setColour (p().panel);
+        const auto& t = p();
+        const auto top = t.dark ? t.panel.brighter (0.07f) : t.panel.brighter (0.03f);
+        g.setGradientFill (juce::ColourGradient::vertical (top, area.getY(), t.panel, area.getY() + juce::jmin (area.getHeight(), 260.0f)));
         g.fillRoundedRectangle (area, panelRadius);
-        g.setColour (p().line);
+        g.setColour (t.line);
         g.drawRoundedRectangle (area.reduced (0.5f), panelRadius, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (t.dark ? 0.05f : 0.5f));
+        g.fillRect (area.getX() + panelRadius, area.getY() + 1.0f, area.getWidth() - 2.0f * panelRadius, 1.0f);
     }
 }

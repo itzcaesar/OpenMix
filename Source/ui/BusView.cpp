@@ -47,6 +47,10 @@ BusView::BusView (MixerEngine& e, int i)
     inserts.onRowCountChanged = [this] { if (! inLayout && getHeight() > 0) resized(); };
     addAndMakeVisible (inserts);
 
+    spectrum.setTitle ("Bus " + juce::String (kBusNames[i]) + " spectrum. Opens the analyser.");
+    spectrum.onClick = [this] { openAnalyser(); };
+    addChildComponent (spectrum);
+
     refreshFromBus();
 }
 
@@ -113,6 +117,8 @@ void BusView::tick()
     drainAnalysis();
     if (++analysisTicks % 10 == 0)
         repaint (loudnessArea);
+    if (spectrum.isVisible() && analysisTicks % 3 == 0)
+        spectrum.update();
 
     // The safety limiter lamp: lit while it reduces gain by more than 0.5 dB (held 1 s).
     const float g = bus.limiterGain.exchange (1.0f);
@@ -309,35 +315,40 @@ void BusView::paint (juce::Graphics& g)
     const auto& t = Theme::p();
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
 
-    Theme::drawLegend (g, isVirtual() ? "Virtual out" : "Hardware out", kindLegend);
-    Theme::drawLegend (g, "Output", outputLegend);
+    // The output legend says what kind of bus this is (A = hardware, B = virtual).
+    Theme::drawLegend (g, isVirtual() ? "Virtual out" : "Hardware out", outputLegend);
 
-    // Limiter lamp: a real state (the -0.3 dBFS safety limiter is reducing gain right now).
+    // Status lamps on one row. Limiter: the -0.3 dBFS safety limiter is reducing gain right now.
+    // Monitor: this bus plays soloed strips.
+    g.setFont (Theme::ui (11.5f, true));
     auto la = limiterArea;
     OpenMixLookAndFeel::drawLamp (g, la.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat(), limiting, t.mute);
-    la.removeFromLeft (6);
-    g.setFont (Theme::ui (11.5f, true));
+    la.removeFromLeft (5);
     g.setColour (limiting ? t.text : t.textFaint);
-    g.drawText (limiting ? "LIMITING" : "LIMITER", la, juce::Justification::centredLeft);
+    g.drawText (limiting ? "LIMITING" : "LIMIT", la, juce::Justification::centredLeft);
 
-    // Monitor lamp: this is the bus that plays soloed strips.
     auto ma = monitorArea;
     const bool isMonitor = bus.monitor.load();
     OpenMixLookAndFeel::drawLamp (g, ma.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat(), isMonitor, t.accent);
-    ma.removeFromLeft (6);
+    ma.removeFromLeft (5);
     g.setColour (isMonitor ? t.text : t.textFaint);
-    g.drawText (isMonitor ? "MONITOR (SOLO)" : "MONITOR", ma, juce::Justification::centredLeft);
+    g.drawText ("SOLO", ma, juce::Justification::centredLeft);
 
     // Short-term loudness (3 s), the number streaming platforms normalise to.
     auto la2 = loudnessArea;
-    Theme::drawLegend (g, "Loudness", la2.removeFromLeft (70));
+    Theme::drawLegend (g, "LUFS", la2.removeFromLeft (40));
     const double st = analysis->loudness.shortTerm();
-    g.setFont (Theme::mono (11.5f));
+    g.setFont (Theme::mono (12.0f));
     g.setColour (std::isfinite (st) ? t.text : t.textFaint);
-    g.drawText (std::isfinite (st) ? juce::String (st, 1) + " LUFS" : juce::String ("no signal"), la2, juce::Justification::centredRight);
+    g.drawText (std::isfinite (st) ? juce::String (st, 1) : juce::String ("no signal"), la2, juce::Justification::centredRight);
+
+    g.setColour (t.line);
+    g.fillRect (Theme::s3, (bayTop > 0 ? bayTop : getHeight() / 2) - Theme::s3 / 2 - 1, getWidth() - 2 * Theme::s3, 1);
 
     Theme::drawLegend (g, "Processing", processLegend);
     Theme::drawLegend (g, "Inserts", insertsLegend);
+    if (! spectrumLegend.isEmpty())
+        Theme::drawLegend (g, "Spectrum", spectrumLegend);
     if (const int lat = bus.inserts.latencySamples.load(); lat > 0 && engine.getSampleRate() > 0)
     {
         g.setFont (Theme::mono (11.0f));
@@ -350,39 +361,59 @@ void BusView::resized()
 {
     const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);
     auto r = getLocalBounds().reduced (Theme::s3, Theme::s3);
-    const bool compact = getHeight() < 760;
+    const int split = bayTop > 0 ? bayTop : getHeight() / 2;
+    auto top = r.withBottom (split - Theme::s3);
+    auto bay = r.withTop (split);
+    constexpr int legendH = 16, gap = 10;
 
-    auto titleRow = r.removeFromTop (30);
-    menuButton.setBounds (titleRow.removeFromRight (30));
+    auto titleRow = top.removeFromTop (28);
+    menuButton.setBounds (titleRow.removeFromRight (28));
     titleRow.removeFromRight (Theme::s1);
     tape.setBounds (titleRow);
-    r.removeFromTop (Theme::s1);
-    kindLegend = r.removeFromTop (18);
-    r.removeFromTop (Theme::s2);
+    top.removeFromTop (Theme::s2);
 
-    outputLegend = r.removeFromTop (18);
-    targetButton.setBounds (r.removeFromTop (30));
-    r.removeFromTop (Theme::s3);
-    limiterArea = r.removeFromTop (18);
-    monitorArea = r.removeFromTop (18);
-    loudnessArea = r.removeFromTop (18);
-    r.removeFromTop (Theme::s3);
+    outputLegend = top.removeFromTop (legendH);
+    targetButton.setBounds (top.removeFromTop (32));
+    top.removeFromTop (Theme::s2);
 
-    processLegend = r.removeFromTop (18);
+    auto lamps = top.removeFromTop (18);
+    limiterArea = lamps.removeFromLeft (lamps.getWidth() / 2);
+    monitorArea = lamps;
+    loudnessArea = top.removeFromTop (18);
+    kindLegend = {};
+    top.removeFromTop (gap);
+
+    processLegend = top.removeFromTop (legendH);
     {
-        auto row = r.removeFromTop (26);
-        const int kw = (row.getWidth() - 3) / 2;
+        auto row = top.removeFromTop (24);
+        const int kw = (row.getWidth() - 2) / 2;
         eqKey.setBounds (row.removeFromLeft (kw));
-        row.removeFromLeft (3);
+        row.removeFromLeft (2);
         compKey.setBounds (row);
     }
-    r.removeFromTop (Theme::s3);
+    top.removeFromTop (gap);
 
-    insertsLegend = r.removeFromTop (18);
-    inserts.setBounds (r.removeFromTop (InsertRack::heightForRows (juce::jmin (inserts.getVisibleRowCount(), compact ? 1 : 2))));
+    // Inserts take the rows they need (up to what fits, the list scrolls past that); a live
+    // spectrum fills the rest above the bay when there is room for one.
+    insertsLegend = top.removeFromTop (legendH);
+    const int fit = (top.getHeight() + InsertRack::rowGap) / (InsertRack::rowHeight + InsertRack::rowGap);
+    inserts.setBounds (top.removeFromTop (InsertRack::heightForRows (juce::jlimit (1, kNumSlots, juce::jmin (fit, inserts.getVisibleRowCount())))));
+    top.removeFromTop (gap);
 
-    muteButton.setBounds (r.removeFromBottom (30));
-    r.removeFromBottom (Theme::s3);
-    r.removeFromTop (Theme::s3);
-    faderSection.setBounds (r);
+    const bool roomForSpectrum = top.getHeight() >= legendH + 36;
+    spectrum.setVisible (roomForSpectrum);
+    if (roomForSpectrum)
+    {
+        spectrumLegend = top.removeFromTop (legendH);
+        spectrum.setBounds (top.withHeight (juce::jmin (top.getHeight(), 140)));
+    }
+    else
+    {
+        spectrumLegend = {};
+    }
+
+    // Fader bay, aligned with the strips: mute along the bottom, fader + meter above.
+    muteButton.setBounds (bay.removeFromBottom (28));
+    bay.removeFromBottom (Theme::s2);
+    faderSection.setBounds (bay);
 }

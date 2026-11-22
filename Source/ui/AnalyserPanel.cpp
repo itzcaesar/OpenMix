@@ -7,6 +7,84 @@ static juce::String lufsText (double v)
     return std::isfinite (v) ? juce::String (v, 1) + " LUFS" : juce::String ("no signal");
 }
 
+//==============================================================================
+// MiniSpectrum
+
+MiniSpectrum::MiniSpectrum (std::shared_ptr<BusAnalysis> a) : analysis (std::move (a))
+{
+    bands.fill (-100.0f);
+    setWantsKeyboardFocus (true);
+    makeClickable (*this);
+    setTooltip ("Live spectrum of this bus. Click (or Enter) for the full analyser and loudness.");
+}
+
+void MiniSpectrum::update()
+{
+    const auto& h = analysis->history;
+    const int n = (int) h.size();
+    for (int i = 0; i < fftSize; ++i)
+        fftData[(size_t) i] = h[(size_t) ((analysis->historyPos - fftSize + i + n * 2) % n)];
+    std::fill (fftData.begin() + fftSize, fftData.end(), 0.0f);
+    window.multiplyWithWindowingTable (fftData.data(), (size_t) fftSize);
+    fft.performFrequencyOnlyForwardTransform (fftData.data());
+
+    const double sr = analysis->sampleRate > 0.0 ? analysis->sampleRate : 48000.0;
+    for (int b = 0; b < numBands; ++b)
+    {
+        // Log-spaced band edges, 30 Hz .. 18 kHz; each band shows its loudest bin.
+        const double lo = 30.0 * std::pow (600.0, (double) b / numBands);
+        const double hi = 30.0 * std::pow (600.0, (double) (b + 1) / numBands);
+        const int binLo = juce::jlimit (1, fftSize / 2 - 1, (int) (lo * fftSize / sr));
+        const int binHi = juce::jlimit (binLo, fftSize / 2 - 1, (int) (hi * fftSize / sr));
+        float peak = 0.0f;
+        for (int i = binLo; i <= binHi; ++i)
+            peak = juce::jmax (peak, fftData[(size_t) i]);
+        const float db = juce::Decibels::gainToDecibels (peak * 4.0f / (float) fftSize, -100.0f);
+        bands[(size_t) b] = juce::jmax (db, bands[(size_t) b] - 3.0f);
+    }
+    repaint();
+}
+
+void MiniSpectrum::paint (juce::Graphics& g)
+{
+    const auto& t = Theme::p();
+    auto r = getLocalBounds().toFloat();
+    g.setColour (t.meterWell);
+    g.fillRoundedRectangle (r, Theme::controlRadius);
+    r.reduce (3.0f, 3.0f);
+
+    // Bars, -72 .. 0 dB, in the meters' green (it is a level display, like the meters).
+    const float bw = r.getWidth() / numBands;
+    for (int b = 0; b < numBands; ++b)
+    {
+        const float prop = juce::jlimit (0.0f, 1.0f, (bands[(size_t) b] + 72.0f) / 72.0f);
+        const float h = prop * r.getHeight();
+        g.setColour (t.meterLow.withAlpha (0.12f));
+        g.fillRect (r.getX() + b * bw + 0.5f, r.getY(), bw - 1.0f, r.getHeight());
+        if (h > 0.5f)
+        {
+            g.setColour (t.meterLow);
+            g.fillRect (r.getX() + b * bw + 0.5f, r.getBottom() - h, bw - 1.0f, h);
+        }
+    }
+
+    if (hasKeyboardFocus (false))
+        Theme::drawFocusRing (g, getLocalBounds().toFloat());
+}
+
+bool MiniSpectrum::keyPressed (const juce::KeyPress& k)
+{
+    if ((k == juce::KeyPress::returnKey || k == juce::KeyPress::spaceKey) && onClick)
+    {
+        onClick();
+        return true;
+    }
+    return false;
+}
+
+//==============================================================================
+// AnalyserPanel
+
 AnalyserPanel::AnalyserPanel (const juce::String& busName, std::shared_ptr<BusAnalysis> a)
     : title (busName + ": analyser and loudness"), analysis (std::move (a))
 {

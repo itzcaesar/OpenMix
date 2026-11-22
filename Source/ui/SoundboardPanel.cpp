@@ -42,7 +42,8 @@ public:
         auto r = getLocalBounds().toFloat().reduced (0.5f);
         const bool empty = name.isEmpty();
 
-        auto fill = empty ? t.panel : t.raised;
+        // Empty pads are recessed slots (nothing to press yet but "load"); loaded pads are raised keys.
+        auto fill = empty ? t.well : t.raised;
         if (down)             fill = fill.darker (0.12f);
         else if (highlighted) fill = t.dark ? fill.brighter (0.10f) : fill.darker (0.04f);
         g.setColour (fill);
@@ -50,15 +51,15 @@ public:
 
         if (empty)
         {
-            juce::Path outline, dashed;
-            outline.addRoundedRectangle (r, Theme::controlRadius);
-            const float dashes[] { 4.0f, 3.0f };
-            juce::PathStrokeType (1.0f).createDashedStroke (dashed, outline, dashes, 2);
-            g.setColour (t.controlEdge);
-            g.fillPath (dashed);
-            g.setColour (t.textDim);
-            g.setFont (Theme::ui (13.0f));
-            g.drawFittedText (juce::String (index + 1) + "\n+ Load", r.toNearestInt().reduced (4), juce::Justification::centred, 2);
+            g.setColour (highlighted ? t.controlEdge : t.line);
+            g.drawRoundedRectangle (r, Theme::controlRadius, 1.0f);
+            auto inner = getLocalBounds().reduced (8, 6);
+            g.setColour (t.textFaint);
+            g.setFont (Theme::mono (11.0f));
+            g.drawText (juce::String (index + 1), inner.removeFromTop (14), juce::Justification::centredRight);
+            g.setColour (highlighted ? t.text : t.textDim);
+            g.setFont (Theme::ui (12.5f));
+            g.drawText ("+ Load", inner, juce::Justification::centred);
         }
         else
         {
@@ -90,10 +91,15 @@ private:
 
 //==============================================================================
 
-SoundboardPanel::SoundboardPanel (MixerEngine& e) : engine (e), board (e.getSoundboard())
+SoundboardPanel::SoundboardPanel (MixerEngine& e)
+    : engine (e), board (e.getSoundboard()),
+      meter (e.getSoundboard().peakL, e.getSoundboard().peakR)
 {
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
     setWantsKeyboardFocus (true);
+
+    tape.setText ("Soundboard");
+    addAndMakeVisible (tape);
 
     for (int i = 0; i < Soundboard::numPads; ++i)
     {
@@ -113,13 +119,27 @@ SoundboardPanel::SoundboardPanel (MixerEngine& e) : engine (e), board (e.getSoun
     volume.setRange (-60.0, 12.0, 0.1);
     volume.setSkewFactorFromMidPoint (-12.0);
     volume.setDoubleClickReturnValue (true, 0.0);
-    volume.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 72, 18);
-    volume.textFromValueFunction = [] (double v) { return v <= -60.0 ? juce::String ("-inf") : (v > 0 ? "+" : "") + juce::String (v, 1) + " dB"; };
+    volume.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 20);
+    volume.textFromValueFunction = [] (double v) { return v <= -60.0 ? juce::String ("-inf") : (v > 0 ? "+" : "") + juce::String (v, 1); };
+    volume.valueFromTextFunction = [] (const juce::String& s) { return s.trim().startsWithIgnoreCase ("-inf") ? -60.0 : s.getDoubleValue(); };
     volume.setTitle ("Soundboard volume");
+    volume.setTooltip ("Soundboard volume in dB. Double-click or Home for 0 dB.");
     volume.setWantsKeyboardFocus (true);
     makeClickable (volume);
-    volume.onValueChange = [this] { board.volumeDb.store ((float) volume.getValue()); if (onChanged) onChanged(); };
+    volume.onValueChange = [this]
+    {
+        board.volumeDb.store ((float) volume.getValue());
+        if (onChanged) onChanged();
+    };
     addAndMakeVisible (volume);
+
+    meter.setTitle ("Soundboard meter");
+    addAndMakeVisible (meter);
+
+    stopButton.setTooltip ("Stop every pad that's playing.");
+    stopButton.onClick = [this] { board.stopAll(); };
+    makeClickable (stopButton);
+    addAndMakeVisible (stopButton);
 
     for (int b = 0; b < kNumBuses; ++b)
     {
@@ -132,7 +152,7 @@ SoundboardPanel::SoundboardPanel (MixerEngine& e) : engine (e), board (e.getSoun
     }
 
     refresh();
-    startTimerHz (15);
+    startTimerHz (30);
 }
 
 SoundboardPanel::~SoundboardPanel() = default;
@@ -164,6 +184,8 @@ void SoundboardPanel::refresh()
 
 void SoundboardPanel::timerCallback()
 {
+    meter.tick();
+
     for (int i = 0; i < Soundboard::numPads; ++i)
     {
         auto& pad = *pads[(size_t) i];
@@ -246,12 +268,6 @@ void SoundboardPanel::showPadMenu (int index)
 void SoundboardPanel::paint (juce::Graphics& g)
 {
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
-
-    const auto& t = Theme::p();
-    g.setColour (t.text);
-    g.setFont (Theme::ui (14.0f, true));
-    g.drawText ("Soundboard", titleArea, juce::Justification::centredLeft);
-
     Theme::drawLegend (g, "Pads (keys 1-8)", padsLegend);
     Theme::drawLegend (g, "Volume", volumeLegend);
     Theme::drawLegend (g, "Play on", sendsLegend);
@@ -260,38 +276,45 @@ void SoundboardPanel::paint (juce::Graphics& g)
 void SoundboardPanel::resized()
 {
     auto r = getLocalBounds().reduced (Theme::s3);
+    constexpr int rowH = 28;
 
-    titleArea = r.removeFromTop (28);
-    r.removeFromTop (Theme::s2);
+    // Left: name and Stop all.
+    auto left = r.removeFromLeft (148);
+    tape.setBounds (left.removeFromTop (rowH));
+    stopButton.setBounds (left.removeFromBottom (rowH));
+    r.removeFromLeft (Theme::s4);
 
-    // Bottom up: sends, then volume; the pads take the rest.
+    // Right: volume on top, the buses it plays on below.
     int visibleSends = 0;
     for (auto& b : sendButtons)
         visibleSends += b.isVisible() ? 1 : 0;
-    const int sendCols = 3, keyH = 26;
-    const int sendRows = juce::jmax (1, (visibleSends + sendCols - 1) / sendCols);
+    const int keyW = 44;
+    const int rightW = 56 + juce::jmax (180, visibleSends * (keyW + Theme::s1));
+    auto right = r.removeFromRight (rightW);
+    r.removeFromRight (Theme::s3);
 
-    auto sends = r.removeFromBottom (sendRows * keyH + (sendRows - 1) * Theme::s1);
-    sendsLegend = r.removeFromBottom (20);
-    r.removeFromBottom (Theme::s2);
-    volume.setBounds (r.removeFromBottom (48));
-    volumeLegend = r.removeFromBottom (20);
-    r.removeFromBottom (Theme::s3);
-
-    padsLegend = r.removeFromTop (20);
-    const int cols = 2, rows = 4, gap = Theme::s2;
-    const int pw = (r.getWidth() - (cols - 1) * gap) / cols;
-    const int ph = juce::jmin (130, (r.getHeight() - (rows - 1) * gap) / rows);
-    for (int i = 0; i < (int) pads.size(); ++i)
-        pads[(size_t) i]->setBounds (r.getX() + (i % cols) * (pw + gap), r.getY() + (i / cols) * (ph + gap), pw, ph);
-
-    const int kw = (sends.getWidth() - (sendCols - 1) * Theme::s1) / sendCols;
-    int n = 0;
+    auto volumeRow = right.removeFromTop (rowH);
+    volumeLegend = volumeRow.removeFromLeft (56);
+    volume.setBounds (volumeRow);
+    auto sendsRow = right.removeFromBottom (rowH);
+    sendsLegend = sendsRow.removeFromLeft (56);
     for (auto& b : sendButtons)
     {
         if (! b.isVisible())
             continue;
-        b.setBounds (sends.getX() + (n % sendCols) * (kw + Theme::s1), sends.getY() + (n / sendCols) * (keyH + Theme::s1), kw, keyH);
-        ++n;
+        b.setBounds (sendsRow.removeFromLeft (keyW));
+        sendsRow.removeFromLeft (Theme::s1);
     }
+
+    // Meter between the pads and the controls, full height.
+    meter.setBounds (r.removeFromRight (16));
+    r.removeFromRight (Theme::s3);
+
+    // Pads: one row of 8 across the middle.
+    padsLegend = r.removeFromTop (16);
+    r.removeFromTop (Theme::s1);
+    const int n = (int) pads.size(), gap = Theme::s1 + 2;
+    const int pw = (r.getWidth() - (n - 1) * gap) / n;
+    for (int i = 0; i < n; ++i)
+        pads[(size_t) i]->setBounds (r.getX() + i * (pw + gap), r.getY(), pw, r.getHeight());
 }
