@@ -234,8 +234,66 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             addKnob ({ "High", -12, 12, 0.1, " dB", fx.eqHighDb });
             setHelp (onBus ? "Shapes this bus only (for example a brighter stream mix). Low shelf at 120 Hz, "
                              "a sweepable middle band, high shelf at 8 kHz."
-                           : "Low shelf at 120 Hz, a sweepable middle band, high shelf at 8 kHz.");
+                           : "Low shelf at 120 Hz, a sweepable middle band, high shelf at 8 kHz. "
+                             "The high-pass and low-pass filters live here too: switch them on above "
+                             "and drag the cutoff.");
             height = 200;
+            if (! onBus)
+            {
+                // HPF/LPF live here, not in a strip section: an on/off key plus a
+                // cutoff slider each, above the EQ knobs.
+                makeLamp (hpfToggle, "key");
+                hpfToggle.setToggleState (fx.hpfOn.load(), juce::dontSendNotification);
+                hpfToggle.setTitle ("High-pass filter");
+                hpfToggle.setTooltip ("High-pass filter: cut rumble below the cutoff.");
+                hpfToggle.onClick = [this]
+                {
+                    fx.hpfOn.store (hpfToggle.getToggleState());
+                    hpfCutoffSlider.setEnabled (hpfToggle.getToggleState());
+                    if (onChange) onChange();
+                };
+                addAndMakeVisible (hpfToggle);
+
+                hpfCutoffSlider.setRange (20.0, 1000.0, 1.0);
+                hpfCutoffSlider.setSkewFactorFromMidPoint (80.0);
+                hpfCutoffSlider.setDoubleClickReturnValue (true, 80.0);
+                hpfCutoffSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " Hz"; };
+                hpfCutoffSlider.setValue (fx.hpfHz.load(), juce::dontSendNotification);
+                hpfCutoffSlider.setEnabled (fx.hpfOn.load());
+                hpfCutoffSlider.setTitle ("High-pass filter cutoff");
+                hpfCutoffSlider.setTooltip ("High-pass filter cutoff. Double-click for 80 Hz.");
+                hpfCutoffSlider.setWantsKeyboardFocus (true);
+                makeClickable (hpfCutoffSlider);
+                hpfCutoffSlider.onValueChange = [this] { fx.hpfHz.store ((float) hpfCutoffSlider.getValue()); };
+                addAndMakeVisible (hpfCutoffSlider);
+
+                makeLamp (lpfToggle, "key");
+                lpfToggle.setToggleState (fx.lpfOn.load(), juce::dontSendNotification);
+                lpfToggle.setTitle ("Low-pass filter");
+                lpfToggle.setTooltip ("Low-pass filter: cut hiss above the cutoff.");
+                lpfToggle.onClick = [this]
+                {
+                    fx.lpfOn.store (lpfToggle.getToggleState());
+                    lpfCutoffSlider.setEnabled (lpfToggle.getToggleState());
+                    if (onChange) onChange();
+                };
+                addAndMakeVisible (lpfToggle);
+
+                lpfCutoffSlider.setRange (1000.0, 20000.0, 10.0);
+                lpfCutoffSlider.setSkewFactorFromMidPoint (8000.0);
+                lpfCutoffSlider.setDoubleClickReturnValue (true, 18000.0);
+                lpfCutoffSlider.textFromValueFunction = [] (double v) { return juce::String (v / 1000.0, 1) + " kHz"; };
+                lpfCutoffSlider.setValue (fx.lpfHz.load(), juce::dontSendNotification);
+                lpfCutoffSlider.setEnabled (fx.lpfOn.load());
+                lpfCutoffSlider.setTitle ("Low-pass filter cutoff");
+                lpfCutoffSlider.setTooltip ("Low-pass filter cutoff. Double-click for 18 kHz.");
+                lpfCutoffSlider.setWantsKeyboardFocus (true);
+                makeClickable (lpfCutoffSlider);
+                lpfCutoffSlider.onValueChange = [this] { fx.lpfHz.store ((float) lpfCutoffSlider.getValue()); };
+                addAndMakeVisible (lpfCutoffSlider);
+
+                height = 280;
+            }
             break;
 
         case Processor::Comp:
@@ -291,13 +349,29 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
 
 void ProcessorPanel::layoutExtra (juce::Rectangle<int>& r)
 {
-    if (kind != Processor::Duck)
+    if (kind == Processor::Duck)
+    {
+        auto row = r.removeFromTop (30);
+        duckLabel.setBounds (row.removeFromLeft (90));
+        duckSource.setBounds (row);
+        r.removeFromTop (Theme::s3);
         return;
+    }
 
-    auto row = r.removeFromTop (30);
-    duckLabel.setBounds (row.removeFromLeft (90));
-    duckSource.setBounds (row);
-    r.removeFromTop (Theme::s3);
+    // HPF/LPF rows in the EQ panel (strips only): on/off key + cutoff slider each.
+    if (kind == Processor::Eq && stripIndex >= 0)
+    {
+        auto row = r.removeFromTop (28);
+        hpfToggle.setBounds (row.removeFromLeft (56));
+        row.removeFromLeft (6);
+        hpfCutoffSlider.setBounds (row);
+        r.removeFromTop (4);
+        auto row2 = r.removeFromTop (28);
+        lpfToggle.setBounds (row2.removeFromLeft (56));
+        row2.removeFromLeft (6);
+        lpfCutoffSlider.setBounds (row2);
+        r.removeFromTop (Theme::s2);
+    }
 }
 
 void ProcessorPanel::tick()

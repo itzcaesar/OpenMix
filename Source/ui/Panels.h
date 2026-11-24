@@ -77,6 +77,12 @@ private:
     int stripIndex;
     juce::ComboBox duckSource;
     juce::Label duckLabel;
+
+    // High-pass / low-pass filters, shown in the EQ panel on strips only
+    // (there is deliberately no FILTER section on the strip itself).
+    juce::TextButton hpfToggle { "HPF" }, lpfToggle { "LPF" };
+    DbSlider hpfCutoffSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    DbSlider lpfCutoffSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
 };
 
 class SlotMixPanel : public PanelBase

@@ -338,19 +338,21 @@ void VoicePadComponent::paint (juce::Graphics& g)
     {
         g.drawText ("RADIO", legends, juce::Justification::topLeft);
         g.drawText ("CLOSE", legends, juce::Justification::topRight);
-        g.drawText ("WARM", legends.withTrimmedBottom (16), juce::Justification::bottomLeft);
-        g.drawText ("BRIGHT", legends.withTrimmedBottom (16), juce::Justification::bottomRight);
+        g.drawText ("WARM", legends.withTrimmedBottom (20), juce::Justification::bottomLeft);
+        g.drawText ("BRIGHT", legends.withTrimmedBottom (20), juce::Justification::bottomRight);
     }
     else
     {
         const bool space = padMode == VoicePadParams::Space;
         g.drawText (padMode == VoicePadParams::Voice ? "PRESENCE + ECHO" : space ? "FAR" : "WIDE", legends, juce::Justification::centredTop);
-        g.drawText (padMode == VoicePadParams::Voice ? "DARK" : "L", legends.withTrimmedBottom (16), juce::Justification::bottomLeft);
-        g.drawText (padMode == VoicePadParams::Voice ? "BRIGHT" : "R", legends.withTrimmedBottom (16), juce::Justification::bottomRight);
+        g.drawText (padMode == VoicePadParams::Voice ? "DARK" : "L", legends.withTrimmedBottom (20), juce::Justification::bottomLeft);
+        g.drawText (padMode == VoicePadParams::Voice ? "BRIGHT" : "R", legends.withTrimmedBottom (20), juce::Justification::bottomRight);
     }
 
-    // Readout: what the position does, in numbers
-    g.setFont (Theme::mono (11.5f));
+    // Readout: what the position does, in numbers. It sits on its own line at the
+    // very bottom, clear of the corner legends above it (at 94 px pad height the
+    // two rows no longer collide).
+    g.setFont (Theme::mono (10.0f));
     g.setColour (dragging ? t.text : t.textDim);
     g.drawText (readout(), legends, juce::Justification::centredBottom);
 

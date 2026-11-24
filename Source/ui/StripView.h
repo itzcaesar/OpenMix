@@ -8,10 +8,11 @@
 #include "ui/Panels.h"
 #include "ui/InsertRack.h"
 
-// One input channel strip, top to bottom in signal-flow order:
-// INPUT (source, gain slider, polarity/mono), FILTER (HPF/LPF), processing keys,
-// PRESET, inserts (VST3 + built-in), voice pad, then the fader bay: bus sends,
-// FX sends, fader + meter, mute/solo/solo-safe, per-channel latency, name bar.
+// One input channel strip, in the mockup's order: INPUT (source, gain slider,
+// polarity/mono), PROCESSING keys, inserts (VST3 + built-in), voice pad, sends
+// (bus keys + FX sends), then the fader bay: fader + meter, mute/solo, name bar.
+// There is deliberately no PRESET or FILTER section on the strip: presets and
+// solo-safe live in the strip menu, HPF/LPF live in the EQ panel.
 class StripView : public juce::Component
 {
 public:
@@ -46,12 +47,12 @@ private:
     void openProcessorPanel (int index);
     void openSendPanel (int bus);
     void updateKeys();
-    void updateFilter();
     juce::Component* popupParent();
 
-    // Strip presets (MixerEngine::stripPresets, saved in the session file)
-    void refreshPresets();
-    void applySelectedPreset();
+    // Strip presets (MixerEngine::stripPresets, saved in the session file).
+    // Reached from the strip menu, not from a section on the strip.
+    void applyPreset (const juce::String& name);
+    void deletePreset (const juce::String& name);
     void showSavePresetDialog();
 
     juce::String displayName() const;
@@ -63,27 +64,23 @@ private:
     TapeLabel tape { true };
     MenuDotsButton menuButton;
     ChipButton sourceButton;
-    DbSlider gainSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    DbSlider gainSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     StripKey invertButton { juce::String::fromUTF8 ("\xc3\x98") }, monoButton { "MONO" };
-    DbSlider hpfKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
-    DbSlider lpfKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
-    StripKey hpfButton { "HPF" }, lpfButton { "LPF" };
     std::array<StripKey, 6> processKeys;
-    juce::ComboBox presetCombo;
-    juce::TextButton presetSaveButton { "Save" }, presetDeleteButton { "Delete" };
     juce::String selectedPreset;
     InsertRack inserts;
     VoicePadComponent pad;
     std::array<StripKey, kNumBuses> sendButtons;
     std::array<DbSlider, omx::kNumFxSends> fxSendSliders;
-    StripKey muteButton { "Mute" }, soloButton { "Solo" }, safeButton { "SAFE" };
+    StripKey muteButton { "Mute" }, soloButton { "Solo" };
     FaderSection faderSection;
-    juce::Label latencyLabel;
 
-    juce::Rectangle<int> inputLegend, filterLegend, processLegend, presetLegend, insertsLegend,
-                         padLegend, sendsLegend, fxLegend, nameBarArea;
+    juce::Rectangle<int> inputLegend, processLegend, insertsLegend,
+                         padLegend, sendsLegend, fxLegend, nameBarArea,
+                         gainHeadArea, gainScaleArea, iconRowArea;
+    std::vector<int> dividerYs;   // y of each 1 px section divider, in strip coords
     std::array<juce::Rectangle<int>, omx::kNumFxSends> fxSendLabelAreas {};
-    int lastLatency = -1, tickCount = 0, bayTop = 0;
+    int bayTop = 0;
     bool inLayout = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StripView)

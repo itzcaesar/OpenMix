@@ -211,10 +211,11 @@ void ConsoleContent::resized()
     groupDividerTop = inputsLegend.getBottom();
 
     // One fader bay for every column: faders, meters and mute rows line up across the desk,
-    // whatever sits above them. The bay takes about a third of the height: the strip's top
-    // section grew (filter and preset sections), so the bay gives up height to keep at
-    // least a couple of insert rows visible at the default window size.
-    const int bayHeight = juce::jlimit (230, 400, (int) (r.getHeight() * 0.36f));
+    // whatever sits above them. The bay takes about a third of the height; the strip's
+    // top section (input, processing, inserts, voice pad, sends) takes the rest, and the
+    // console's minimum height guarantees the top section never squeezes at the
+    // default window size -- shorter windows scroll instead.
+    const int bayHeight = juce::jlimit (230, 360, (int) (r.getHeight() * 0.34f));
     const int bayTop = r.getHeight() - bayHeight;
 
     for (int s = 0; s < kNumStrips; ++s)

@@ -25,17 +25,20 @@ StripView::StripView (MixerEngine& e, int i)
     sourceButton.onClick = [this] { showSourceMenu(); };
     addAndMakeVisible (sourceButton);
 
-    // Input gain: a horizontal slider directly under the source name, -24..+24 dB
-    // with a value readout; double-click (or Home) resets to 0 dB.
+    // Input gain: a horizontal slider directly under the source name, -24..+24 dB;
+    // the value is printed above it (mockup style), double-click (or Home) resets to 0 dB.
     gainSlider.setRange (-24.0, 24.0, 0.1);
     gainSlider.setDoubleClickReturnValue (true, 0.0);
-    gainSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 20);
     gainSlider.textFromValueFunction = [] (double v) { return (v > 0.05 ? "+" : "") + juce::String (v, 1) + " dB"; };
     gainSlider.valueFromTextFunction = [] (const juce::String& s) { return s.getDoubleValue(); };
     gainSlider.setTooltip ("Input gain. Drag, scroll or use the arrow keys. Double-click or Home for 0 dB.");
     gainSlider.setWantsKeyboardFocus (true);
     makeClickable (gainSlider);
-    gainSlider.onValueChange = [this] { strip.gainDb.store ((float) gainSlider.getValue()); };
+    gainSlider.onValueChange = [this]
+    {
+        strip.gainDb.store ((float) gainSlider.getValue());
+        repaint (gainHeadArea);
+    };
     addAndMakeVisible (gainSlider);
 
     // Polarity invert and mono, below the gain slider (also in the strip menu).
@@ -58,76 +61,6 @@ StripView::StripView (MixerEngine& e, int i)
         refreshFromStrip();
     };
     addAndMakeVisible (monoButton);
-
-    // Filter: HPF/LPF knobs with on/off, before the processing keys.
-    hpfKnob.setRange (20.0, 1000.0, 1.0);
-    hpfKnob.setSkewFactorFromMidPoint (80.0);
-    hpfKnob.setDoubleClickReturnValue (true, 80.0);
-    hpfKnob.setPopupDisplayEnabled (true, true, this);
-    hpfKnob.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " Hz"; };
-    hpfKnob.setTitle ("High-pass filter cutoff");
-    hpfKnob.setWantsKeyboardFocus (true);
-    makeClickable (hpfKnob);
-    hpfKnob.onValueChange = [this] { strip.setHpfCutoff ((float) hpfKnob.getValue()); updateFilter(); };
-    addAndMakeVisible (hpfKnob);
-
-    lpfKnob.setRange (1000.0, 20000.0, 10.0);
-    lpfKnob.setSkewFactorFromMidPoint (8000.0);
-    lpfKnob.setDoubleClickReturnValue (true, 18000.0);
-    lpfKnob.setPopupDisplayEnabled (true, true, this);
-    lpfKnob.textFromValueFunction = [] (double v) { return juce::String (v / 1000.0, 1) + " kHz"; };
-    lpfKnob.setTitle ("Low-pass filter cutoff");
-    lpfKnob.setWantsKeyboardFocus (true);
-    makeClickable (lpfKnob);
-    lpfKnob.onValueChange = [this] { strip.setLpfCutoff ((float) lpfKnob.getValue()); updateFilter(); };
-    addAndMakeVisible (lpfKnob);
-
-    makeLamp (hpfButton, "key");
-    hpfButton.onClick = [this]
-    {
-        strip.setHpfEnabled (! strip.isHpfEnabled());
-        updateFilter();
-    };
-    addAndMakeVisible (hpfButton);
-
-    makeLamp (lpfButton, "key");
-    lpfButton.onClick = [this]
-    {
-        strip.setLpfEnabled (! strip.isLpfEnabled());
-        updateFilter();
-    };
-    addAndMakeVisible (lpfButton);
-
-    // Strip presets: save this strip's sound under a name, recall it here (or on
-    // any other strip). Applying one never renames, re-routes or mutes the strip.
-    presetCombo.setTitle ("Strip preset");
-    presetCombo.setTooltip ("Recall a saved strip preset. Save the current settings with the Save button.");
-    presetCombo.onChange = [this] { applySelectedPreset(); };
-    makeClickable (presetCombo);
-    addAndMakeVisible (presetCombo);
-
-    presetSaveButton.setTitle ("Save the current strip settings as a preset");
-    presetSaveButton.setTooltip ("Save the current strip settings under a name.");
-    presetSaveButton.onClick = [this] { showSavePresetDialog(); };
-    makeClickable (presetSaveButton);
-    addAndMakeVisible (presetSaveButton);
-
-    presetDeleteButton.setTitle ("Delete the selected strip preset");
-    presetDeleteButton.setTooltip ("Delete the preset shown in the list.");
-    presetDeleteButton.onClick = [this]
-    {
-        const auto name = selectedPreset;
-        if (name.isEmpty() || engine.findStripPreset (name) == nullptr)
-            return;
-        if (engine.deleteStripPreset (name))
-        {
-            selectedPreset.clear();
-            refreshPresets();
-            Session::save (engine);
-        }
-    };
-    makeClickable (presetDeleteButton);
-    addAndMakeVisible (presetDeleteButton);
 
     inserts.onRowCountChanged = [this] { if (! inLayout && getHeight() > 0) resized(); };
     addAndMakeVisible (inserts);
@@ -169,18 +102,6 @@ StripView::StripView (MixerEngine& e, int i)
     soloButton.onClick = [this] { strip.solo.store (soloButton.getToggleState()); };
     addAndMakeVisible (soloButton);
 
-    // Solo-safe: while anything is soloed, this strip is never muted by the solo
-    // action on the monitor bus (it still has to be routed to the monitor bus).
-    makeLamp (safeButton, "key");
-    safeButton.setTitle ("Solo-safe");
-    safeButton.setTooltip ("Solo-safe: this strip keeps playing on the monitor bus while another strip is soloed.");
-    safeButton.onClick = [this]
-    {
-        strip.setSoloSafe (! strip.isSoloSafe());
-        updateKeys();
-    };
-    addAndMakeVisible (safeButton);
-
     // FX sends: post-fader sends to the engine's global reverb / delay / chorus.
     static const char* fxNames[] { "Reverb", "Delay", "Chorus" };
     for (int f = 0; f < omx::kNumFxSends; ++f)
@@ -199,12 +120,6 @@ StripView::StripView (MixerEngine& e, int i)
         slider.onValueChange = [this, f] { strip.setFxSendLevel (f, (float) fxSendSliders[(size_t) f].getValue()); };
         addAndMakeVisible (slider);
     }
-
-    latencyLabel.setFont (Theme::mono (11.0f));
-    latencyLabel.setColour (juce::Label::textColourId, Theme::p().textFaint);
-    latencyLabel.setJustificationType (juce::Justification::centredRight);
-    latencyLabel.setTitle ("Total channel latency");
-    addAndMakeVisible (latencyLabel);
 
     faderSection.fader.onValueChange = [this] { strip.faderDb.store ((float) faderSection.fader.getValue()); };
     addAndMakeVisible (faderSection);
@@ -238,17 +153,11 @@ void StripView::refreshFromStrip()
 
     invertButton.setToggleState (strip.invertPolarity.load(), juce::dontSendNotification);
     monoButton.setToggleState (strip.mono.load(), juce::dontSendNotification);
-    updateFilter();
 
     for (int f = 0; f < omx::kNumFxSends; ++f)
         fxSendSliders[(size_t) f].setValue (strip.getFxSendLevel (f), juce::dontSendNotification);
-    refreshPresets();
 
-    latencyLabel.setText ("lat " + juce::String (strip.getTotalLatencyMs(), 1) + " ms", juce::dontSendNotification);
-    latencyLabel.setTooltip ("Total latency of this channel (noise removal + plugins): "
-                             + juce::String (strip.getTotalLatencySamples()) + " samples, "
-                             + juce::String (strip.getTotalLatencyMs(), 1)
-                             + " ms. The other strips are delayed to match it.");
+    repaint (gainHeadArea);
 
     faderSection.fader.setTitle (name + " fader");
     faderSection.fader.setValue (strip.faderDb.load(), juce::dontSendNotification);
@@ -272,20 +181,7 @@ void StripView::refreshDevice()
 void StripView::tick()
 {
     faderSection.tick();
-
     inserts.tick();
-
-    // The strip's total latency (noise removal + plugins) is printed next to "Inserts"
-    // and in the fader bay; it is recomputed live from the current state.
-    if (++tickCount % 15 == 0)
-    {
-        latencyLabel.setText ("lat " + juce::String (strip.getTotalLatencyMs(), 1) + " ms", juce::dontSendNotification);
-        if (const int latency = strip.latencySamples.load(); latency != lastLatency)
-        {
-            lastLatency = latency;
-            repaint (insertsLegend);
-        }
-    }
 }
 
 //==============================================================================
@@ -296,10 +192,6 @@ void StripView::updateKeys()
     const auto name = displayName();
     muteButton.setToggleState (strip.mute.load(), juce::dontSendNotification);
     soloButton.setToggleState (strip.solo.load(), juce::dontSendNotification);
-    safeButton.setToggleState (strip.isSoloSafe(), juce::dontSendNotification);
-    safeButton.setTooltip (strip.isSoloSafe()
-        ? "Solo-safe is on: this strip keeps playing on the monitor bus while another strip is soloed."
-        : "Solo-safe: this strip keeps playing on the monitor bus while another strip is soloed.");
 
     for (int k = 0; k < (int) processKeys.size(); ++k)
     {
@@ -335,50 +227,9 @@ void StripView::updateKeys()
     }
 }
 
-void StripView::updateFilter()
+void StripView::applyPreset (const juce::String& name)
 {
-    const bool hpfOn = strip.isHpfEnabled(), lpfOn = strip.isLpfEnabled();
-
-    hpfKnob.setValue (strip.getHpfCutoff(), juce::dontSendNotification);
-    hpfKnob.updateText();
-    hpfKnob.setEnabled (hpfOn);
-    hpfButton.setToggleState (hpfOn, juce::dontSendNotification);
-    hpfButton.setTitle ("High-pass filter, " + juce::String (hpfOn ? "on" : "off"));
-    hpfButton.setTooltip ("High-pass filter " + juce::String (hpfOn ? "on" : "off") + " at "
-                          + juce::String ((int) strip.getHpfCutoff()) + " Hz. Click to switch it on or off; "
-                          "drag the knob for the cutoff.");
-    hpfKnob.setTooltip ("High-pass filter cutoff: " + juce::String ((int) strip.getHpfCutoff())
-                        + " Hz. Double-click for 80 Hz.");
-
-    lpfKnob.setValue (strip.getLpfCutoff(), juce::dontSendNotification);
-    lpfKnob.updateText();
-    lpfKnob.setEnabled (lpfOn);
-    lpfButton.setToggleState (lpfOn, juce::dontSendNotification);
-    lpfButton.setTitle ("Low-pass filter, " + juce::String (lpfOn ? "on" : "off"));
-    lpfButton.setTooltip ("Low-pass filter " + juce::String (lpfOn ? "on" : "off") + " at "
-                          + juce::String (strip.getLpfCutoff() / 1000.0, 1) + " kHz. Click to switch it on or off; "
-                          "drag the knob for the cutoff.");
-    lpfKnob.setTooltip ("Low-pass filter cutoff: " + juce::String (strip.getLpfCutoff() / 1000.0, 1)
-                        + " kHz. Double-click for 18 kHz.");
-}
-
-void StripView::refreshPresets()
-{
-    const auto names = engine.getStripPresetNames();
-    presetCombo.clear (juce::dontSendNotification);
-    for (int i = 0; i < names.size(); ++i)
-        presetCombo.addItem (names[i], i + 1);
-
-    if (const int id = names.indexOf (selectedPreset); id >= 0)
-        presetCombo.setSelectedId (id + 1, juce::dontSendNotification);
-    else
-        presetCombo.setText ("Preset...", juce::dontSendNotification);
-}
-
-void StripView::applySelectedPreset()
-{
-    const auto name = presetCombo.getText().trim();
-    if (name.isEmpty() || name == "Preset..." || engine.findStripPreset (name) == nullptr)
+    if (name.isEmpty() || engine.findStripPreset (name) == nullptr)
         return;
 
     selectedPreset = name;
@@ -391,6 +242,18 @@ void StripView::applySelectedPreset()
             "Preset \"" + name + "\" was applied, but " + juce::String (missing)
             + (missing == 1 ? " plugin" : " plugins")
             + " could not be found and were skipped. The rest of the settings were applied.");
+}
+
+void StripView::deletePreset (const juce::String& name)
+{
+    if (name.isEmpty() || engine.findStripPreset (name) == nullptr)
+        return;
+    if (engine.deleteStripPreset (name))
+    {
+        if (selectedPreset == name)
+            selectedPreset.clear();
+        Session::save (engine);
+    }
 }
 
 void StripView::showSavePresetDialog()
@@ -415,7 +278,6 @@ void StripView::showSavePresetDialog()
         if (safe->engine.saveStripPreset (name, safe->index))
         {
             safe->selectedPreset = name;
-            safe->refreshPresets();
             Session::save (safe->engine);
         }
     }), true);
@@ -473,6 +335,30 @@ void StripView::showStripMenu()
         strip.invertPolarity.store (! strip.invertPolarity.load());
         refreshFromStrip();
     });
+    menu.addItem ("Solo-safe", true, strip.isSoloSafe(), [this]
+    {
+        strip.setSoloSafe (! strip.isSoloSafe());
+        refreshFromStrip();
+    });
+    menu.addSeparator();
+
+    // Strip presets live here now (no PRESET section on the strip): save the
+    // current settings under a name, or recall / delete a saved one.
+    juce::PopupMenu presets;
+    presets.addItem ("Save preset...", [this] { showSavePresetDialog(); });
+    const auto presetNames = engine.getStripPresetNames();
+    if (! presetNames.isEmpty())
+    {
+        presets.addSeparator();
+        for (const auto& name : presetNames)
+            presets.addItem (name, true, selectedPreset == name, [this, name] { applyPreset (name); });
+        juce::PopupMenu del;
+        for (const auto& name : presetNames)
+            del.addItem (name, true, false, [this, name] { deletePreset (name); });
+        presets.addSubMenu ("Delete preset", del);
+    }
+    menu.addSubMenu ("Strip presets", presets);
+
     menu.addSeparator();
     menu.addItem ("Remove strip...", engine.getNumActiveStrips() > 1, false, [this] { confirmRemove(); });
 
@@ -678,21 +564,38 @@ void StripView::paint (juce::Graphics& g)
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
 
     Theme::drawLegend (g, "Input", inputLegend);
-    Theme::drawLegend (g, "Filter", filterLegend);
     Theme::drawLegend (g, "Processing", processLegend);
-    Theme::drawLegend (g, "Preset", presetLegend);
     Theme::drawLegend (g, "Inserts", insertsLegend);
-    if (const int lat = strip.latencySamples.load(); lat > 0 && engine.getSampleRate() > 0)
-    {
-        g.setFont (Theme::mono (11.0f));
-        g.setColour (Theme::p().textFaint);
-        g.drawText ("latency " + juce::String (1000.0 * lat / engine.getSampleRate(), 1) + " ms",
-                    insertsLegend, juce::Justification::centredRight);
-    }
-
     Theme::drawLegend (g, "Voice pad", padLegend);
     Theme::drawLegend (g, "Sends", sendsLegend);
     Theme::drawLegend (g, "FX sends", fxLegend);
+
+    // 1 px dividers between the sections (mockup style: sections touch, divided
+    // only by a hairline, with generous padding inside each one).
+    g.setColour (Theme::p().line);
+    for (const int y : dividerYs)
+        g.fillRect (7, y, getWidth() - 14, 1);
+
+    // Gain head: "GAIN" left, the value right; scale under the slider.
+    if (! gainHeadArea.isEmpty())
+    {
+        const double v = strip.gainDb.load();
+        g.setFont (Theme::ui (9.0f, true));
+        g.setColour (Theme::p().textFaint);
+        g.drawText ("GAIN", gainHeadArea, juce::Justification::centredLeft);
+        g.setFont (Theme::mono (11.0f));
+        g.setColour (Theme::p().text);
+        g.drawText ((v > 0.05 ? "+" : "") + juce::String (v, 1) + " dB",
+                    gainHeadArea, juce::Justification::centredRight);
+    }
+    if (! gainScaleArea.isEmpty())
+    {
+        g.setFont (Theme::mono (8.0f));
+        g.setColour (Theme::p().textFaint);
+        g.drawText ("-24", gainScaleArea, juce::Justification::centredLeft);
+        g.drawText ("0", gainScaleArea, juce::Justification::centred);
+        g.drawText ("+24", gainScaleArea, juce::Justification::centredRight);
+    }
 
     // FX send labels: REV / DLY / CHO beside their sliders.
     static const char* fxLabels[] { "REV", "DLY", "CHO" };
@@ -702,72 +605,78 @@ void StripView::paint (juce::Graphics& g)
         if (! fxSendLabelAreas[(size_t) f].isEmpty())
             g.drawText (fxLabels[f], fxSendLabelAreas[(size_t) f], juce::Justification::centredLeft);
 
+    // Channel icon row: a small audio mark above the fader bay (the mockup's
+    // per-channel icon row, kept as a quiet divider here).
+    if (! iconRowArea.isEmpty())
+    {
+        const auto cx = iconRowArea.getCentreX();
+        const auto cy = iconRowArea.getCentreY();
+        g.setColour (Theme::p().textFaint);
+        g.fillRect (cx - 9, cy - 4, 3, 8);
+        g.fillRect (cx - 1, cy - 7, 3, 14);
+        g.fillRect (cx + 7, cy - 5, 3, 10);
+    }
+
     // A hairline above the fader bay, the same height on every column.
     g.setColour (Theme::p().line);
-    g.fillRect (Theme::s3, (bayTop > 0 ? bayTop : getHeight() / 2) - Theme::s3 / 2 - 1, getWidth() - 2 * Theme::s3, 1);
+    g.fillRect (7, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth() - 14, 1);
 
     // Bold solid-colour name bar along the bottom of the strip, in the strip's
-    // own colour (dark text on it, as on the tape).
+    // own channel colour with text chosen for contrast (mockup style).
     if (! nameBarArea.isEmpty())
     {
-        g.setColour (Theme::tapeColour (strip.colour));
+        g.setColour (Theme::nameBarColour (strip.colour));
         g.fillRect (nameBarArea);
-        g.setColour (Theme::p().tapeText);
+        g.setColour (Theme::nameBarTextColour (strip.colour));
         g.setFont (Theme::ui (13.0f, true));
-        g.drawText (displayName(), nameBarArea.reduced (Theme::s2, 0), juce::Justification::centredLeft);
+        g.drawText (displayName(), nameBarArea.reduced (Theme::s2, 0), juce::Justification::centred);
     }
 }
 
 void StripView::resized()
 {
     const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);
-    auto r = getLocalBounds().reduced (Theme::s3, Theme::s3);
+    // Mockup proportions: 7 px side padding, sections touching with only a 1 px
+    // divider between them, 14 px legends, 6 px between sections.
+    constexpr int sidePad = 7;
+    auto r = getLocalBounds().reduced (sidePad, sidePad);
     const int split = bayTop > 0 ? bayTop : getHeight() / 2;
-    auto top = r.withBottom (split - Theme::s3);
+    auto top = r.withBottom (split - sidePad);
     auto bay = r.withTop (split);
-    constexpr int legendH = 16, gap = 8;
+    constexpr int legendH = 14, gap = 6;
+    dividerYs.clear();
 
     // Header: name, options.
     auto titleRow = top.removeFromTop (28);
     menuButton.setBounds (titleRow.removeFromRight (28));
     titleRow.removeFromRight (Theme::s1);
     tape.setBounds (titleRow);
-    top.removeFromTop (Theme::s2);
+    dividerYs.push_back (top.getY());
+    top.removeFromTop (gap);
 
-    // INPUT: source selector, gain slider under the source name, Ø / MONO below it.
+    // INPUT: source selector, gain slider under the source name with its value
+    // above it, Ø / MONO below it (two equal toggles, mockup style).
     inputLegend = top.removeFromTop (legendH);
-    sourceButton.setBounds (top.removeFromTop (30));
-    top.removeFromTop (Theme::s1);
+    sourceButton.setBounds (top.removeFromTop (26));
+    top.removeFromTop (gap);
+    gainHeadArea = top.removeFromTop (14);
     gainSlider.setBounds (top.removeFromTop (24));
-    top.removeFromTop (Theme::s1);
+    gainScaleArea = top.removeFromTop (10);
+    top.removeFromTop (gap);
     {
-        auto row = top.removeFromTop (20);
-        invertButton.setBounds (row.removeFromLeft (44));
+        auto row = top.removeFromTop (24);
+        const int bw = (row.getWidth() - Theme::s1) / 2;
+        invertButton.setBounds (row.removeFromLeft (bw));
         row.removeFromLeft (Theme::s1);
         monoButton.setBounds (row);
     }
+    dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
 
-    // FILTER: HPF/LPF on/off keys with a cutoff knob each.
-    filterLegend = top.removeFromTop (legendH);
-    {
-        auto row = top.removeFromTop (40);
-        const int btnW = 38, g = 4;
-        const int knobW = (row.getWidth() - 2 * btnW - 3 * g) / 2;
-        hpfButton.setBounds (row.removeFromLeft (btnW));
-        row.removeFromLeft (g);
-        hpfKnob.setBounds (row.removeFromLeft (knobW));
-        row.removeFromLeft (g);
-        lpfButton.setBounds (row.removeFromLeft (btnW));
-        row.removeFromLeft (g);
-        lpfKnob.setBounds (row);
-    }
-    top.removeFromTop (gap);
-
-    // PROCESSING keys (NR, Gate, EQ, Comp, DS, Duck) as before.
+    // PROCESSING keys (NR, Gate, EQ, Comp, DS, Duck).
     processLegend = top.removeFromTop (legendH);
     {
-        auto row = top.removeFromTop (24);
+        auto row = top.removeFromTop (26);
         const int n = (int) processKeys.size();
         const int kw = (row.getWidth() - (n - 1) * 2) / n;
         for (auto& key : processKeys)
@@ -776,73 +685,76 @@ void StripView::resized()
             row.removeFromLeft (2);
         }
     }
+    dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
 
-    // PRESET: recall list + Save / Delete.
-    presetLegend = top.removeFromTop (legendH);
-    {
-        auto row = top.removeFromTop (26);
-        presetDeleteButton.setBounds (row.removeFromRight (56));
-        row.removeFromRight (Theme::s1);
-        presetSaveButton.setBounds (row.removeFromRight (48));
-        row.removeFromRight (Theme::s1);
-        presetCombo.setBounds (row);
-    }
-    top.removeFromTop (gap);
+    // The voice pad and the sends are fixed heights pinned to the bottom of the
+    // top section; the inserts take whatever is left in the middle (at least one
+    // row -- the list scrolls past that).
+    const int padH = Theme::isCompact() ? 76 : 94;
+    const int padSectionH = legendH + VoicePadComponent::headerHeight + padH;
+    const int activeBuses = engine.getNumActiveBuses();
+    const int sendRows = juce::jmax (1, (activeBuses + 2) / 3);
+    const int gridH = sendRows * 25 + (sendRows - 1) * 3;
+    const int sendsSectionH = legendH + gridH + gap + legendH + 3 * 18 + 2 * 2;
+    constexpr int iconH = 21;
 
-    // Compact pad, pinned to the bottom of the top section: wide and short (it's a gesture
-    // surface, it doesn't need to be square). The inserts get everything between, with
-    // at least two rows reserved for them when the pad is sized.
-    const int rackMin = InsertRack::heightForRows (2);
-    const int padH = juce::jlimit (32, 88, juce::jmin ((int) (top.getWidth() * 0.42f),
-                                                       top.getHeight() - legendH - rackMin - gap - legendH - VoicePadComponent::headerHeight));
-    pad.setBounds (top.removeFromBottom (padH + VoicePadComponent::headerHeight));
-    padLegend = top.removeFromBottom (legendH);
-    top.removeFromBottom (gap);
-
-    // Inserts: as many rows as fit; the list scrolls past that.
     insertsLegend = top.removeFromTop (legendH);
-    const int fit = (top.getHeight() + InsertRack::rowGap()) / (InsertRack::rowHeight() + InsertRack::rowGap());
-    inserts.setBounds (top.removeFromTop (InsertRack::heightForRows (juce::jlimit (1, kNumSlots, juce::jmin (fit, inserts.getVisibleRowCount())))));
+    const int insertsAvail = top.getHeight() - padSectionH - gap - sendsSectionH - gap - iconH;
+    const int rackH = insertsAvail <= 0 ? 0
+        : juce::jlimit (InsertRack::heightForRows (1), InsertRack::heightForRows (kNumSlots), insertsAvail);
+    inserts.setBounds (rackH > 0 ? top.removeFromTop (rackH) : juce::Rectangle<int>());
+    dividerYs.push_back (top.getY());
+    top.removeFromTop (gap);
 
-    // Fader bay: the name bar along the very bottom, then mute / solo / solo-safe,
-    // then the latency readout, then the fader with the send keys beside it.
-    nameBarArea = bay.removeFromBottom (22);
-    auto muteRow = bay.removeFromBottom (28);
+    // VOICE PAD: mode buttons + a pad tall enough to read (94 px, 76 compact).
+    padLegend = top.removeFromTop (legendH);
+    pad.setBounds (top.removeFromTop (VoicePadComponent::headerHeight + padH));
+    dividerYs.push_back (top.getY());
+    top.removeFromTop (gap);
+
+    // SENDS: full-width, one key per bus in a 3-column grid, then the three
+    // FX send sliders underneath.
+    sendsLegend = top.removeFromTop (legendH);
     {
-        const int n = 3, g = Theme::s1;
-        const int bw = (muteRow.getWidth() - (n - 1) * g) / n;
-        muteButton.setBounds (muteRow.removeFromLeft (bw));
-        muteRow.removeFromLeft (g);
-        soloButton.setBounds (muteRow.removeFromLeft (bw));
-        muteRow.removeFromLeft (g);
-        safeButton.setBounds (muteRow);
+        auto grid = top.removeFromTop (gridH);
+        const int cellW = (grid.getWidth() - 2 * 3) / 3;
+        int placed = 0;
+        for (int b = 0; b < kNumBuses; ++b)
+        {
+            if (! engine.getBus (b).active.load())
+                continue;
+            const int col = placed % 3, row = placed / 3;
+            sendButtons[(size_t) b].setBounds (grid.getX() + col * (cellW + 3),
+                                               grid.getY() + row * (25 + 3), cellW, 25);
+            ++placed;
+        }
     }
-    bay.removeFromBottom (Theme::s1);
-    latencyLabel.setBounds (bay.removeFromBottom (16));
-    bay.removeFromBottom (Theme::s2);
-
-    auto sends = bay.removeFromRight (juce::jmax (56, bay.getWidth() - FaderSection::preferredWidth - Theme::s2));
-    bay.removeFromRight (Theme::s2);
-    faderSection.setBounds (bay);
-
-    sendsLegend = sends.removeFromTop (20);
-    for (int b = 0; b < kNumBuses; ++b)
-    {
-        if (! engine.getBus (b).active.load())
-            continue;
-        sendButtons[(size_t) b].setBounds (sends.removeFromTop (26));
-        sends.removeFromTop (Theme::s1);
-    }
-    sends.removeFromTop (Theme::s1);
-
-    // FX sends: three small level sliders under the bus sends.
-    fxLegend = sends.removeFromTop (legendH);
+    top.removeFromTop (gap);
+    fxLegend = top.removeFromTop (legendH);
     for (int f = 0; f < omx::kNumFxSends; ++f)
     {
-        auto row = sends.removeFromTop (18);
+        auto row = top.removeFromTop (18);
         fxSendLabelAreas[(size_t) f] = row.removeFromLeft (30);
         fxSendSliders[(size_t) f].setBounds (row);
-        sends.removeFromTop (2);
+        if (f + 1 < omx::kNumFxSends)
+            top.removeFromTop (2);
     }
+    dividerYs.push_back (top.getY());
+
+    // Icon row, at the bottom of the top section just above the fader bay.
+    iconRowArea = top.removeFromTop (iconH);
+
+    // Fader bay: only the fader + meter, Mute / Solo, and the name bar.
+    nameBarArea = bay.removeFromBottom (28);
+    bay.removeFromBottom (gap);
+    auto muteRow = bay.removeFromBottom (28);
+    {
+        const int bw = (muteRow.getWidth() - Theme::s1) / 2;
+        muteButton.setBounds (muteRow.removeFromLeft (bw));
+        muteRow.removeFromLeft (Theme::s1);
+        soloButton.setBounds (muteRow);
+    }
+    bay.removeFromBottom (gap);
+    faderSection.setBounds (bay);
 }

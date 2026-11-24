@@ -151,6 +151,31 @@ namespace Theme
         return juce::Colour (tapeColours[index].argb);
     }
 
+    // Bold channel-colour name bars (mockup style): the tape colour saturated and
+    // darkened, with text chosen for contrast (dark on light bars, white on dark ones).
+    inline juce::Colour nameBarColour (int index)
+    {
+        const auto c = tapeColour (index);
+        return c.withSaturation (juce::jmin (1.0f, c.getSaturation() * 1.8f))
+                .withBrightness (c.getBrightness() * 0.55f);
+    }
+    inline juce::Colour nameBarTextColour (int index)
+    {
+        return nameBarColour (index).getPerceivedBrightness() > 0.45f
+                 ? juce::Colour (0xff1a1a1a) : juce::Colours::white;
+    }
+
+    // Bus name bars: fixed saturated hues per slot, echoing the mockup
+    // (A1 dark gold, B1 red, B2 green). White text reads on all of them.
+    inline const juce::Colour busColours[] {
+        juce::Colour (0xff7a6c12), juce::Colour (0xff8a6d1f), juce::Colour (0xff5f5610),
+        juce::Colour (0xffc22e2e), juce::Colour (0xff1e7a4c), juce::Colour (0xff1e5f8a),
+    };
+    inline juce::Colour busColour (int index)
+    {
+        return busColours[(size_t) juce::jlimit (0, (int) std::size (busColours) - 1, index)];
+    }
+
     // Spacing scale and shapes
     constexpr int s1 = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24;
     constexpr float controlRadius = 3.0f;

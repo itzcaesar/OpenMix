@@ -8,10 +8,11 @@
 #include "ui/InsertRack.h"
 #include "ui/Panels.h"
 
-// One output bus in the master section: name tape, output device, limiter with
-// gain-reduction meter, loudness, processing (EQ, compressor), inserts, analyser,
-// mute, fader. The monitor bus is shown only by a thin accent outline plus its
-// name bar lit in the accent colour -- no "monitor" text on the strip.
+// One output bus in the master section, in the mockup's order: name tape, output
+// device, processing (EQ, compressor), inserts, analyser, limiter with
+// gain-reduction meter, loudness (short-term LUFS + normalisation), fader bay
+// (mute, fader, name bar). The monitor bus is shown only by a thin accent outline
+// plus its name bar lit in the accent colour -- no "monitor" text on the strip.
 class BusView : public juce::Component
 {
 public:
@@ -40,6 +41,7 @@ private:
     void renameBus();
     void openProcessorPanel (Processor);
     void updateKeys();
+    void refreshNormGainLabel();
     static bool isVirtualCable (const juce::String& deviceName);
     // Slot-based, never name-based: slots 0-2 are Hardware, 3-5 Virtual.
     // A custom bus name must never move a bus between groups.
@@ -61,8 +63,13 @@ private:
     int bayTop = 0;
     FaderSection faderSection;
 
-    juce::Rectangle<int> outputLegend, limiterLegend, limiterArea, loudnessLegend, loudnessArea,
-                         processLegend, insertsLegend;
+    juce::ComboBox normCombo;   // loudness normalisation: Off / -23 / -16 / -14 LUFS
+    juce::Label normGainLabel;  // gain the normaliser is currently applying
+
+    juce::Rectangle<int> outputLegend, limiterLegend, limiterArea, grHeadArea, grTrackArea, grScaleArea,
+                         limiterSectionArea, loudnessLegend, loudnessValueArea,
+                         processLegend, insertsLegend, nameBarArea, iconRowArea;
+    std::vector<int> dividerYs;   // y of each 1 px section divider, in strip coords
     std::shared_ptr<BusAnalysis> analysis = std::make_shared<BusAnalysis>();
     MiniSpectrum spectrum { analysis };
     juce::Rectangle<int> spectrumLegend;
