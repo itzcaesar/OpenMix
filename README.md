@@ -29,11 +29,15 @@ to your headphones, speakers, stream and calls.
 
 Built with C++20 and JUCE 9.0.5. Licensed under the GNU AGPLv3.
 
+**Documentation:** the [OpenMix wiki](https://itzcaesar.github.io/OpenMix/) covers getting started, strips, buses, plugins and built-in effects, remote control, scenes and hotkeys, troubleshooting, the changelog and the roadmap.
+
 ## Download
 
 Every push to `main` is built by GitHub Actions: open the latest run under **Actions** and
-download `OpenMix-windows-x64`. Version tags (for example `v0.2.0`) also publish a GitHub
+download `OpenMix-windows-x64`. Version tags (for example `v0.1.0`) also publish a GitHub
 release with the zip and an installer, `OpenMix-<version>-setup.exe`.
+
+Full user guide: [OpenMix wiki](https://itzcaesar.github.io/OpenMix/).
 
 ## Build it yourself
 
@@ -420,7 +424,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 
 ## Releases
 
-Push a version tag (for example `git tag v0.2.0` then `git push --tags`). CI builds the app,
+Push a version tag (for example `git tag v0.1.0` then `git push --tags`). CI builds the app,
 runs the tests, and attaches the zip and `OpenMix-<version>-setup.exe` to a GitHub release.
 
 ## Known limits
