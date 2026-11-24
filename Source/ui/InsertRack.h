@@ -51,6 +51,7 @@ private:
     void removeSlot (int slot);
     void moveSlot (int from, int to);
     void loadPluginAsync (int slot, const juce::PluginDescription&, std::function<void (juce::AudioPluginInstance&)> then = {});
+    void startAsyncLoad (const juce::PluginDescription&, std::function<void (juce::AudioPluginInstance&)> then);
     void savePreset (int slot);
     void loadPreset (int slot);
     void openEditor (juce::AudioPluginInstance*);

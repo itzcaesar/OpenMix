@@ -27,10 +27,23 @@ public:
     // Message thread
     juce::Array<juce::PluginDescription> getPlugins() const;   // sorted by maker, then name
     juce::StringArray getSkippedFiles() const;
+    bool isBlacklisted (const juce::String& file) const;
+    void blacklistFile (const juce::String& file);   // skip this file until "Retry skipped plugins"
+
+    // Crash-safe loading probe (see below): runs the plugin's own start-up in
+    // a child process and returns true only if it survived. A plugin that
+    // crashes while loading is caught here, in the child, instead of killing
+    // the mixer. Call from a background thread: it blocks for up to 30 s.
+    static bool probePluginFile (const juce::String& file, juce::String& error);
 
     // Entry point for the child process. Returns the process exit code.
     static int runChildScan (const juce::String& fileOrIdentifier, const juce::File& output);
     static constexpr const char* childFlag = "--scan-plugin";
+
+    // Entry point for the probe child process: creates the plugin, prepares it
+    // and runs one silent block. Returns 0 if it survived, 1 if it failed.
+    static int runChildProbe (const juce::String& fileOrIdentifier);
+    static constexpr const char* probeFlag = "--probe-plugin";
 
 private:
     void run() override;

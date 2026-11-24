@@ -60,6 +60,83 @@ juce::StringArray PluginScanner::getSkippedFiles() const
     return known.getBlacklistedFiles();
 }
 
+bool PluginScanner::isBlacklisted (const juce::String& file) const
+{
+    return known.getBlacklistedFiles().contains (file);
+}
+
+void PluginScanner::blacklistFile (const juce::String& file)
+{
+    known.addToBlacklist (file);
+    saveCache();
+}
+
+bool PluginScanner::probePluginFile (const juce::String& file, juce::String& error)
+{
+    const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+
+    juce::ChildProcess child;
+    if (! child.start (juce::StringArray { exe.getFullPathName(), probeFlag, file }, 0))
+    {
+        error = "couldn't start the probe process";
+        return false;
+    }
+
+    for (int waited = 0; child.isRunning(); waited += 100)
+    {
+        if (waited > childTimeoutMs)
+        {
+            child.kill();
+            error = "timed out while loading (over 30 s)";
+            return false;
+        }
+        juce::Thread::sleep (100);
+    }
+
+    const auto exitCode = child.getExitCode();
+    if (exitCode != 0)
+    {
+        error = "crashed or failed to load (exit code " + juce::String ((int) exitCode) + ")";
+        return false;
+    }
+    return true;
+}
+
+int PluginScanner::runChildProbe (const juce::String& fileOrIdentifier)
+{
+    juce::AudioPluginFormatManager fm;
+    juce::addDefaultFormatsToManager (fm);
+
+    for (auto* format : fm.getFormats())
+    {
+        if (format->getName() != "VST3" && format->getName() != "VST")
+            continue;
+
+        juce::OwnedArray<juce::PluginDescription> results;
+        format->findAllTypesForFile (results, fileOrIdentifier);
+        if (results.isEmpty())
+            continue;
+
+        // Actually start the plugin, the way the mixer will: create the
+        // instance, prepare it and run one silent block through it. A crash
+        // anywhere in there kills this child process, not the mixer.
+        juce::String error;
+        auto instance = fm.createPluginInstance (*results[0], 48000.0, 512, error);
+        if (instance == nullptr)
+            return 1;
+
+        instance->prepareToPlay (48000.0, 512);
+        juce::AudioBuffer<float> buffer (2, 512);
+        buffer.clear();
+        juce::MidiBuffer midi;
+        instance->processBlock (buffer, midi);
+        instance->releaseResources();
+        return 0;
+    }
+
+    return 2;   // no enabled format recognised this file
+}
+
 void PluginScanner::run()
 {
     const auto scanFormats = formatsToScan();

@@ -137,6 +137,12 @@ a plugin that crashes while being scanned is skipped instead of taking OpenMix d
   save or load a **preset** (`.omxpreset`), replace, remove.
 - A plugin that outputs invalid audio (NaN/Inf) is stopped automatically and marked, instead
   of breaking the mix. "Try again" in its menu restarts it.
+- **Crash-safe loading** (on by default, Settings): before a plugin is loaded into the mixer,
+  it is started in a separate test process — created, prepared and run through one silent
+  block. A plugin that crashes or hangs while starting is skipped and blacklisted instead of
+  taking OpenMix down (Settings > Retry skipped plugins tries it again). This protects
+  *loading*; a plugin that crashes later, while processing audio, can still take the mixer
+  down — full out-of-process audio hosting is not done yet (see ROADMAP Phase 5).
 
 ### VST2 plugins (opt-in, local build only)
 
@@ -173,8 +179,15 @@ slot will be empty on a default (VST2-off) build.
 - **LIMIT** lights while the safety limiter (-0.3 dBFS ceiling) is reducing gain. **SOLO**
   marks the monitor bus. **LUFS** is the short-term loudness (the number streaming
   platforms normalise to).
+- **Meters** show peak (the LED ladder) and RMS (the solid bar inside it): peak catches
+  transients, RMS shows how loud the bus actually sounds. The same RMS bar is on every
+  strip and on the soundboard.
+- **Loudness normalisation** (a bus's three-dot menu): a slow gain that pulls the bus towards
+  -14 LUFS (streaming), -16 or -23 (broadcast), clamped to ±12 dB and smoothed so it never
+  pumps on a drum hit. It holds its gain in silence instead of turning the noise floor up.
+  It is saved with the session and with scenes.
 - **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip. Bus path: sum,
-  EQ, compressor, inserts, fader, safety limiter.
+  EQ, compressor, inserts, fader, loudness normalisation, safety limiter.
 - **Spectrum:** a live view of the bus. Click it for the full **analyser**: spectrum plus
   momentary, short-term and integrated loudness.
 - The three-dot menu: analyser, monitor bus (where solo plays), remove the bus.
@@ -228,14 +241,35 @@ use (for example with Ctrl+Alt).
 ## Settings
 
 Light or dark theme, hotkeys, start with Windows, start minimized, keep running in the tray when the
-window closes, plugin scanning, presets and VST3 folders, the update check, OSC remote
-control, and the log folder. In the tray, double-click opens the mixer; right-click to quit.
+window closes, plugin scanning and crash-safe loading, presets and VST3 folders, the update check, OSC,
+phone / WebSocket and MIDI remote control, and the log folder. In the tray, double-click opens the mixer; right-click to quit.
 
 The **update check** is off by default. When on, OpenMix asks GitHub once at startup
 whether a newer release exists and, if so, shows an Update button that opens the release
 page. It doesn't download or install anything.
 
-## Remote control (OSC)
+## Remote control (OSC, phone, MIDI, Stream Deck)
+
+All three remotes speak the same paths, so a fader moved from a phone, a MIDI knob or a
+Stream Deck does exactly what the same OSC address does. They are off by default (Settings);
+while one is on, anyone on your network can control the mixer, so only turn them on at home
+or on a network you trust. There is no password: the LAN is the trust boundary.
+
+### Phone / browser remote and WebSocket API
+
+Settings > "Phone / browser remote and WebSocket API" (TCP port 8080 unless you change it).
+Open `http://<this PC>:8080/` on your phone: faders, mutes, soundboard pads and scenes, live
+over the WebSocket, with HTTP polling as a fallback if the WebSocket can't connect.
+
+The same port is the API:
+
+- `GET /api/state` — the mixer's state as JSON (strips, buses, soundboard, scenes, recording).
+- `POST /api/command` with `{"path": "/openmix/strip/1/fader", "value": -6}` — one command.
+- `ws://<this PC>:8080/ws` — send `{"path": ..., "value": ...}`, receive
+  `{"type": "state", "state": {...}}` whenever the mix changes, plus `{"type": "ok"}` or
+  `{"type": "error", ...}` for each command.
+
+### OSC
 
 Off by default (Settings). While it's on, OpenMix listens on a UDP port (9000 unless you
 change it) and anything on your network can control it, so only turn it on at home or on a
@@ -249,10 +283,24 @@ network you trust. Values are dB unless noted; strips and pads count from 1.
 | `/openmix/strip/<n>/sendlevel/<bus>` | dB |
 | `/openmix/bus/<bus>/fader` | dB |
 | `/openmix/bus/<bus>/mute` | 0 or 1 |
+| `/openmix/bus/<bus>/norm` | 0 or 1 (loudness normalisation on/off) |
 | `/openmix/soundboard/<n>/play` | none (plays or stops pad n) |
 | `/openmix/record` | 1 starts, 0 stops |
 | `/openmix/replay/save` | none |
 | `/openmix/scene/<n>` | none (switches to scene n) |
+
+### MIDI controllers
+
+Settings > "MIDI controller": pick a device, then pick a target (a strip fader or mute, a bus
+fader, a soundboard pad, Record), press **Learn...**, and move a knob or press a key on the
+controller. A CC moves a fader across its range; a note toggles a mute, plays a pad or starts
+recording. Mappings are saved in the app settings.
+
+### Stream Deck
+
+There is no native OpenMix Stream Deck plugin. Use the Stream Deck software's OSC plugin
+with the addresses above, or a WebSocket plugin against the phone-remote port — both speak
+the same paths, so a button that sends `/openmix/strip/1/mute` with 1 works either way.
 
 ## Keyboard
 
@@ -281,7 +329,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 |---|---|
 | Session (devices, theme, strips, plugins and their settings, buses, soundboard) | `%APPDATA%\OpenMix\session.xml`, every 10 seconds and on exit |
 | Scenes | inside the session |
-| App settings (startup, tray, OSC, hotkeys, recording options) | `%APPDATA%\OpenMix\settings.xml` |
+| App settings (startup, tray, OSC, phone/WebSocket, MIDI, hotkeys, recording options) | `%APPDATA%\OpenMix\settings.xml` |
 | Log and crash reports | `%APPDATA%\OpenMix\openmix.log`, `crash-<time>.txt` |
 | Recordings and replays | `Documents\OpenMix Recordings` |
 | Plugin presets | `Documents\OpenMix Presets` |
@@ -296,7 +344,8 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 - **Latency compensation:** every strip is delayed to match the slowest one (plugins and
   noise removal), and a bypassed plugin keeps its latency, so strips that meet on a bus stay
   in time.
-- **Crash-safe plugin scanning** in separate processes.
+- **Crash-safe plugin scanning** in separate processes, and **crash-safe plugin loading**:
+  a plugin is started in a test process before it is loaded into the mixer.
 - **Reconnects by itself:** extra devices, app captures and loopbacks come back after
   unplugging, stalls or Windows audio changes (checked every 2 seconds).
 - **Safe start:** if a plugin crashes OpenMix while a session loads, the next start skips
@@ -304,7 +353,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 - **Crash report and log** in `%APPDATA%\OpenMix` (Settings > Open log folder).
 - **Core tests** (`ctest`, no JUCE needed): clock drift and jitter, resampling pitch,
   limiter, NaN detection, DC blocker, filter stability, dynamics, denoiser latency at 44.1
-  and 48 kHz, and the EBU loudness reference. They run in CI on every push.
+  and 48 kHz, the EBU loudness reference, RMS metering and loudness normalisation. They run in CI on every push.
 
 ## Project layout
 
@@ -313,10 +362,10 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 
 | Folder | What's in it |
 |---|---|
-| `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `UpdateChecker` |
-| `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning in child processes) |
+| `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `RemoteCommands` (one remote language for OSC, WebSocket and MIDI), `RemoteServer` (phone page, HTTP and WebSocket API), `MidiControl` (learnable MIDI mappings), `UpdateChecker` |
+| `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes) |
 | `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
-| `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS); plus `Denoiser` (RNNoise at any sample rate) |
+| `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, loudness normaliser); plus `Denoiser` (RNNoise at any sample rate) |
 | `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send and wet/dry pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |
 | `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |
 | `tests/CoreTests.cpp` | Core unit tests |
@@ -336,6 +385,11 @@ runs the tests, and attaches the zip and `OpenMix-<version>-setup.exe` to a GitH
   need a virtual cable (VB-Audio Virtual Cable or similar) on a B bus.
 - VST3 plugins have to start on the UI thread (a VST3 rule), so a slow plugin can pause the
   window briefly while it opens; its slot shows "Loading..." meanwhile.
+- A plugin that crashes while processing audio (after it loaded fine) can still take OpenMix
+  down. The loading probe only catches crashes at start-up; full out-of-process plugin
+  hosting is not done yet.
+- The phone / WebSocket remote has no password: anyone on the same network can control the
+  mixer while it is on. Only enable it on a network you trust.
 - Global hotkeys use a keyboard hook that only listens. A game with strict anti-cheat could
   in principle object to any keyboard hook; Discord and OBS use the same mechanism.
 - "App's own output" uses the same Windows setting as Settings > Sound > Volume mixer. The

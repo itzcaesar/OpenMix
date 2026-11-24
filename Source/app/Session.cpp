@@ -189,6 +189,8 @@ std::unique_ptr<juce::XmlElement> Session::captureScene (MixerEngine& engine)
         x->setAttribute ("index", b);
         x->setAttribute ("fader", bus.faderDb.load());
         x->setAttribute ("mute", bus.mute.load());
+        x->setAttribute ("normOn", bus.normOn.load());
+        x->setAttribute ("normTarget", bus.normTargetLufs.load());
         saveProcessing (*x, bus.fx);
         saveSlots (*x, bus.inserts);
     }
@@ -238,6 +240,8 @@ void Session::applyScene (const juce::XmlElement& root, MixerEngine& engine)
         auto& bus = engine.getBus (b);
         bus.faderDb.store ((float) x->getDoubleAttribute ("fader", bus.faderDb.load()));
         bus.mute.store (x->getBoolAttribute ("mute", bus.mute.load()));
+        bus.normOn.store (x->getBoolAttribute ("normOn", bus.normOn.load()));
+        bus.normTargetLufs.store ((float) x->getDoubleAttribute ("normTarget", bus.normTargetLufs.load()));
         loadProcessing (x->getChildByName ("Processing"), bus.fx);
         loadSlots (*x, bus.inserts);
     }
@@ -312,6 +316,8 @@ void Session::save (MixerEngine& engine)
         xb->setAttribute ("monitor", bus.monitor.load());
         xb->setAttribute ("fader", bus.faderDb.load());
         xb->setAttribute ("mute", bus.mute.load());
+        xb->setAttribute ("normOn", bus.normOn.load());
+        xb->setAttribute ("normTarget", bus.normTargetLufs.load());
         xb->setAttribute ("output", bus.outputPair.load());
         xb->setAttribute ("target", bus.target.load());
         xb->setAttribute ("device", bus.deviceName);
@@ -450,6 +456,8 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
         anyMonitor = anyMonitor || bus.monitor.load();
         bus.faderDb.store ((float) xb->getDoubleAttribute ("fader", 0.0));
         bus.mute.store (xb->getBoolAttribute ("mute", false));
+        bus.normOn.store (xb->getBoolAttribute ("normOn", false));
+        bus.normTargetLufs.store ((float) xb->getDoubleAttribute ("normTarget", -14.0));
         loadProcessing (xb->getChildByName ("Processing"), bus.fx);
         if (loadPlugins)
             loadChain (*xb, bus.inserts, engine);

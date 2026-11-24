@@ -18,6 +18,8 @@ void ChannelStrip::prepare (double newSampleRate, int maxBlockSize)
     dcBlocker.prepare (sampleRate);
 
     denoiser.prepare (sampleRate);
+    rmsMeterL.prepare (sampleRate);
+    rmsMeterR.prepare (sampleRate);
     fx.denoiseUnavailable.store (! denoiser.isAvailable());
     fx.denoiseLatencyMs.store ((int) std::lround (1000.0 * denoiser.getLatency() / sampleRate));
     gate.prepare (sampleRate);
@@ -250,4 +252,6 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
     const float pr = out.getMagnitude (1, 0, numSamples);
     if (pl > peakL.load()) peakL.store (pl);
     if (pr > peakR.load()) peakR.store (pr);
+    rmsL.store (rmsMeterL.push (out.getReadPointer (0), numSamples));
+    rmsR.store (rmsMeterR.push (out.getReadPointer (1), numSamples));
 }

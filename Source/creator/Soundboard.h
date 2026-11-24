@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "engine/ChannelStrip.h"   // kNumBuses
+#include "dsp/Metering.h"
 
 // Eight sound pads. Files are decoded and resampled to the device rate when loaded (message
 // thread) or when the sample rate changes (device thread), never on the audio thread.
@@ -39,6 +40,7 @@ public:
     std::atomic<float> volumeDb { 0.0f };
     std::atomic<bool>  busOn[kNumBuses] {};
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
+    std::atomic<float> rmsL { 0.0f }, rmsR { 0.0f };
 
 private:
     struct Pad
@@ -59,5 +61,6 @@ private:
     mutable juce::CriticalSection lock;         // guards `playable` swaps vs. the audio thread
     juce::AudioFormatManager formats;
     juce::SmoothedValue<float> gain;
+    omx::RmsMeter rmsMeterL, rmsMeterR;
     double rate = 48000.0;
 };

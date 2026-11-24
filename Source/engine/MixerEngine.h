@@ -4,6 +4,7 @@
 #include "engine/ChannelStrip.h"
 #include "engine/ExternalIO.h"
 #include "engine/PluginScanner.h"
+#include "dsp/Metering.h"
 #include "creator/Recorder.h"
 #include "creator/Soundboard.h"
 
@@ -24,7 +25,15 @@ struct Bus
     std::atomic<int>   target { (int) BusTarget::MainPair };
     std::atomic<int>   outputPair { 0 };        // for BusTarget::MainPair (0 = outs 1/2)
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
+    std::atomic<float> rmsL { 0.0f }, rmsR { 0.0f };   // sustained level, for the RMS meter
     std::atomic<float> limiterGain { 1.0f };   // lowest safety-limiter gain since the UI last read it
+
+    // Loudness normalisation (off by default): a slow gain that pulls this bus
+    // towards normTargetLufs (streaming ~-14, broadcast ~-23), clamped to +/-12 dB.
+    // normGain is the gain actually applied, for the UI to show.
+    std::atomic<bool>  normOn { false };
+    std::atomic<float> normTargetLufs { -14.0f };
+    std::atomic<float> normGain { 1.0f };
 
     // Bus processing, in order: EQ -> compressor -> VST3 inserts -> fader -> safety limiter.
     // Only the EQ and compressor fields of `fx` are used on a bus.
@@ -150,6 +159,9 @@ private:
     juce::AudioBuffer<float> stripBuffer, preBuffer, busBuffer, sourceBuffer, soundBuffer;
     std::array<juce::SmoothedValue<float>, kNumBuses> busGain;
     std::array<AudioSafety::SafetyLimiter, kNumBuses> busLimiter;
+    std::array<omx::LoudnessNormaliser, kNumBuses> busNorm;
+    std::array<omx::RmsMeter, kNumBuses> busRmsL;
+    std::array<omx::RmsMeter, kNumBuses> busRmsR;
     std::array<omx::Eq3, kNumBuses> busEq;
     std::array<omx::Compressor, kNumBuses> busComp;
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;

@@ -1,4 +1,5 @@
 #include "engine/MixerEngine.h"
+#include <cmath>
 #include <optional>
 
 static float dbToGain (float db) noexcept
@@ -306,6 +307,9 @@ void MixerEngine::removeBus (int b)
     bus.monitor.store (false);
     bus.faderDb.store (0.0f);
     bus.mute.store (false);
+    bus.normOn.store (false);
+    bus.normTargetLufs.store (-14.0f);
+    bus.normGain.store (1.0f);
     bus.inserts.removeAllPlugins();
     bus.fx.eqOn.store (false);   bus.fx.eqLowDb.store (0.0f); bus.fx.eqMidDb.store (0.0f); bus.fx.eqMidHz.store (1000.0f); bus.fx.eqHighDb.store (0.0f);
     bus.fx.compOn.store (false); bus.fx.compThresholdDb.store (-18.0f); bus.fx.compRatio.store (3.0f);
@@ -548,6 +552,9 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         busGain[(size_t) b].reset (sr, 0.02);
         busGain[(size_t) b].setCurrentAndTargetValue (dbToGain (buses[(size_t) b].faderDb.load()));
         busLimiter[(size_t) b].prepare (sr);
+        busNorm[(size_t) b].prepare (sr);
+        busRmsL[(size_t) b].prepare (sr);
+        busRmsR[(size_t) b].prepare (sr);
         busEq[(size_t) b].prepare (sr);
         busComp[(size_t) b].prepare (sr);
         buses[(size_t) b].inserts.prepare (sr, maxBlock);
@@ -745,6 +752,26 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         const float end = g.getCurrentValue();
         busBuffer.applyGainRamp (b * 2,     0, n, start, end);
         busBuffer.applyGainRamp (b * 2 + 1, 0, n, start, end);
+
+        // RMS meters (sustained level) and loudness normalisation, before the limiter
+        // so the limiter still caps the final output at -0.3 dBFS.
+        const float rmsL = busRmsL[(size_t) b].push (L, n);
+        const float rmsR = busRmsR[(size_t) b].push (R, n);
+        bus.rmsL.store (rmsL);
+        bus.rmsR.store (rmsR);
+        if (bus.normOn.load())
+        {
+            const float rms = std::sqrt (0.5f * (rmsL * rmsL + rmsR * rmsR));
+            const float norm = busNorm[(size_t) b].process (rms, bus.normTargetLufs.load(), n);
+            bus.normGain.store (norm);
+            busBuffer.applyGain (b * 2,     0, n, norm);
+            busBuffer.applyGain (b * 2 + 1, 0, n, norm);
+        }
+        else
+        {
+            busNorm[(size_t) b].reset();
+            bus.normGain.store (1.0f);
+        }
 
         // Safety limiter: nothing leaves a bus above -0.3 dBFS.
         const float lim = busLimiter[(size_t) b].process (busBuffer.getWritePointer (b * 2),

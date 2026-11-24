@@ -5,7 +5,7 @@
 BusView::BusView (MixerEngine& e, int i)
     : engine (e), bus (e.getBus (i)), index (i),
       inserts (e, e.getBus (i).inserts),
-      faderSection (bus.peakL, bus.peakR, "Bus " + juce::String (kBusNames[i]))
+      faderSection (bus.peakL, bus.peakR, bus.rmsL, bus.rmsR, "Bus " + juce::String (kBusNames[i]))
 {
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
     setTitle ("Bus " + juce::String (kBusNames[i]));
@@ -138,6 +138,19 @@ void BusView::showBusMenu()
 {
     juce::PopupMenu menu;
     menu.addItem ("Analyser and loudness...", [this] { openAnalyser(); });
+
+    // Loudness normalisation: a slow gain that pulls this bus towards the target,
+    // so a quiet mic and a loud game end up at the same streaming level.
+    juce::PopupMenu normMenu;
+    normMenu.addItem ("Off", true, ! bus.normOn.load(), [this] { bus.normOn.store (false); });
+    for (const float target : { -23.0f, -16.0f, -14.0f })
+        normMenu.addItem (juce::String ((int) target) + " LUFS", true,
+                          bus.normOn.load() && bus.normTargetLufs.load() == target, [this, target]
+                          {
+                              bus.normTargetLufs.store (target);
+                              bus.normOn.store (true);
+                          });
+    menu.addSubMenu ("Loudness normalisation", normMenu);
     menu.addSeparator();
     menu.addItem ("Monitor bus (solo plays here)", true, bus.monitor.load(), [this]
     {
@@ -335,12 +348,20 @@ void BusView::paint (juce::Graphics& g)
     g.drawText ("SOLO", ma, juce::Justification::centredLeft);
 
     // Short-term loudness (3 s), the number streaming platforms normalise to.
+    // With normalisation on, show the target and the gain being applied.
     auto la2 = loudnessArea;
     Theme::drawLegend (g, "LUFS", la2.removeFromLeft (40));
     const double st = analysis->loudness.shortTerm();
+    juce::String loudText = std::isfinite (st) ? juce::String (st, 1) : juce::String ("no signal");
+    if (bus.normOn.load())
+    {
+        const float normDb = juce::Decibels::gainToDecibels (bus.normGain.load(), -100.0f);
+        loudText += " · NORM " + juce::String ((int) bus.normTargetLufs.load())
+                  + (normDb > 0.05f ? " +" : " ") + juce::String (normDb, 1) + " dB";
+    }
     g.setFont (Theme::mono (12.0f));
     g.setColour (std::isfinite (st) ? t.text : t.textFaint);
-    g.drawText (std::isfinite (st) ? juce::String (st, 1) : juce::String ("no signal"), la2, juce::Justification::centredRight);
+    g.drawText (loudText, la2, juce::Justification::centredRight);
 
     g.setColour (t.line);
     g.fillRect (Theme::s3, (bayTop > 0 ? bayTop : getHeight() / 2) - Theme::s3 / 2 - 1, getWidth() - 2 * Theme::s3, 1);

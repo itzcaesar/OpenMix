@@ -28,6 +28,25 @@ public:
     int oscPort() const                       { return props->getIntValue ("oscPort", 9000); }
     void setOscPort (int p)                   { props->setValue ("oscPort", p); props->saveIfNeeded(); }
 
+    // Phone / browser remote and WebSocket API (RemoteServer). Off by default.
+    bool wsEnabled() const                    { return props->getBoolValue ("wsEnabled", false); }
+    void setWsEnabled (bool b)                { props->setValue ("wsEnabled", b); props->saveIfNeeded(); }
+    int wsPort() const                        { return props->getIntValue ("wsPort", 8080); }
+    void setWsPort (int p)                    { props->setValue ("wsPort", p); props->saveIfNeeded(); }
+
+    // MIDI controller mapping (MidiControl). Off by default.
+    bool midiEnabled() const                  { return props->getBoolValue ("midiEnabled", false); }
+    void setMidiEnabled (bool b)              { props->setValue ("midiEnabled", b); props->saveIfNeeded(); }
+    juce::String midiDevice() const           { return props->getValue ("midiDevice"); }
+    void setMidiDevice (const juce::String& d) { props->setValue ("midiDevice", d); props->saveIfNeeded(); }
+    juce::String midiMappings() const         { return props->getValue ("midiMappings"); }
+    void setMidiMappings (const juce::String& j) { props->setValue ("midiMappings", j); props->saveIfNeeded(); }
+
+    // Crash-safe plugin loading: load a plugin in a child process first, and
+    // only load it in the mixer if the child survived. On by default.
+    bool pluginProbeEnabled() const           { return props->getBoolValue ("pluginProbeEnabled", true); }
+    void setPluginProbeEnabled (bool b)       { props->setValue ("pluginProbeEnabled", b); props->saveIfNeeded(); }
+
     // Recorder: 0 = every bus, 1 = every strip, 2 = buses and strips (one file each)
     int recordWhat() const                    { return props->getIntValue ("recordWhat", 0); }
     void setRecordWhat (int w)                { props->setValue ("recordWhat", w); props->saveIfNeeded(); }

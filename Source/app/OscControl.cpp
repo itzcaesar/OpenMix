@@ -1,4 +1,5 @@
 #include "app/OscControl.h"
+#include "app/RemoteCommands.h"
 
 OscControl::OscControl (MixerEngine& e) : engine (e)
 {
@@ -39,80 +40,11 @@ static float argValue (const juce::OSCMessage& m)
     return 1.0f;
 }
 
-static int busIndexFromName (const juce::String& name)
-{
-    for (int b = 0; b < kNumBuses; ++b)
-        if (name.equalsIgnoreCase (kBusNames[b]))
-            return b;
-    return -1;
-}
-
 void OscControl::oscMessageReceived (const juce::OSCMessage& m)
 {
-    juce::StringArray p;
-    p.addTokens (m.getAddressPattern().toString(), "/", {});
-    p.removeEmptyStrings();
-    if (p.isEmpty() || p[0] != "openmix")
-        return;
-
-    const float v = argValue (m);
-    bool changed = true;
-
-    if (p[1] == "strip" && p.size() >= 4)
-    {
-        const int s = p[2].getIntValue() - 1;
-        if (! juce::isPositiveAndBelow (s, kNumStrips) || ! engine.getStrip (s).active.load())
-            return;
-        auto& strip = engine.getStrip (s);
-
-        if (p[3] == "fader")            strip.faderDb.store (juce::jlimit (-60.0f, 12.0f, v));
-        else if (p[3] == "gain")        strip.gainDb.store (juce::jlimit (-24.0f, 24.0f, v));
-        else if (p[3] == "mute")        strip.mute.store (v > 0.5f);
-        else if (p[3] == "solo")        strip.solo.store (v > 0.5f);
-        else if (p[3] == "send" && p.size() >= 5)
-        {
-            if (const int b = busIndexFromName (p[4]); b >= 0) strip.busOn[b].store (v > 0.5f);
-        }
-        else if (p[3] == "sendlevel" && p.size() >= 5)
-        {
-            if (const int b = busIndexFromName (p[4]); b >= 0) strip.sendDb[b].store (juce::jlimit (-60.0f, 12.0f, v));
-        }
-        else changed = false;
-    }
-    else if (p[1] == "bus" && p.size() >= 4)
-    {
-        const int b = busIndexFromName (p[2]);
-        if (b < 0 || ! engine.getBus (b).active.load())
-            return;
-        auto& bus = engine.getBus (b);
-
-        if (p[3] == "fader")      bus.faderDb.store (juce::jlimit (-60.0f, 12.0f, v));
-        else if (p[3] == "mute")  bus.mute.store (v > 0.5f);
-        else changed = false;
-    }
-    else if (p[1] == "soundboard" && p.size() >= 4 && p[3] == "play")
-    {
-        engine.getSoundboard().trigger (p[2].getIntValue() - 1);
-    }
-    else if (p[1] == "record")
-    {
-        if (onRecord) onRecord (v > 0.5f);
-    }
-    else if (p[1] == "replay" && p[2] == "save")
-    {
-        if (onSaveReplay) onSaveReplay();
-    }
-    else if (p[1] == "scene" && p.size() >= 3)
-    {
-        // /openmix/scene/<n> (counting from 1); the scene sets externalChanges itself
-        if (onRecallScene) onRecallScene (p[2].getIntValue() - 1);
-        return;
-    }
-    else
-    {
-        changed = false;
-    }
-
-    if (changed)
-        engine.externalChanges.fetch_add (1);
+    RemoteCallbacks cb;
+    cb.onRecord = onRecord;
+    cb.onSaveReplay = onSaveReplay;
+    cb.onRecallScene = onRecallScene;
+    applyRemoteCommand (engine, m.getAddressPattern().toString(), argValue (m), cb);
 }

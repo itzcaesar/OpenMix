@@ -9,12 +9,16 @@ void makeClickable (juce::Component&);                    // pointing-hand curso
 
 //==============================================================================
 // Stereo LED-ladder meter with peak hold and a latching clip lamp (click or Enter resets it).
+// The thin bar inside each ladder is the RMS level: peak shows transients, RMS shows how
+// loud the signal actually sounds.
 class LevelMeter : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    LevelMeter (std::atomic<float>& l, std::atomic<float>& r);
+    LevelMeter (std::atomic<float>& l, std::atomic<float>& r,
+                std::atomic<float>& rmsL, std::atomic<float>& rmsR);
     void tick();
     float getPeakHoldDb() const;   // louder channel's held peak, -100 when silent
+    float getRmsDb() const;        // louder channel's RMS, -100 when silent
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override  { resetClip(); }
     bool keyPressed (const juce::KeyPress&) override;
@@ -22,13 +26,15 @@ public:
     void focusLost (FocusChangeType) override        { repaint(); }
 
 private:
-    struct Channel { float level = 0.0f, hold = 0.0f; int holdFrames = 0; };
-    void update (Channel&, float peak);
+    struct Channel { float level = 0.0f, hold = 0.0f, rms = 0.0f; int holdFrames = 0; };
+    void update (Channel&, float peak, float rms);
     void resetClip() { clipped = false; repaint(); }
     void drawLadder (juce::Graphics&, juce::Rectangle<float>, const Channel&);
 
     std::atomic<float>& peakL;
     std::atomic<float>& peakR;
+    std::atomic<float>& rmsL;
+    std::atomic<float>& rmsR;
     Channel left, right;
     bool clipped = false;
 };
@@ -51,7 +57,8 @@ public:
 class FaderSection : public juce::Component
 {
 public:
-    FaderSection (std::atomic<float>& peakL, std::atomic<float>& peakR, const juce::String& ownerName);
+    FaderSection (std::atomic<float>& peakL, std::atomic<float>& peakR,
+                  std::atomic<float>& rmsL, std::atomic<float>& rmsR, const juce::String& ownerName);
     void resized() override;
     void paint (juce::Graphics&) override;
     void tick();

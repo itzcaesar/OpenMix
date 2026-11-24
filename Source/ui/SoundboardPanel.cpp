@@ -93,7 +93,8 @@ private:
 
 SoundboardPanel::SoundboardPanel (MixerEngine& e)
     : engine (e), board (e.getSoundboard()),
-      meter (e.getSoundboard().peakL, e.getSoundboard().peakR)
+      meter (e.getSoundboard().peakL, e.getSoundboard().peakR,
+             e.getSoundboard().rmsL, e.getSoundboard().rmsR)
 {
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
     setWantsKeyboardFocus (true);

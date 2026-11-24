@@ -4,8 +4,8 @@
 #include "ui/Theme.h"
 
 SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std::function<void()> oscFn,
-                              std::function<void()> hotkeysFn)
-    : engine (e), toggleTheme (std::move (themeFn)), oscChanged (std::move (oscFn)), openHotkeys (std::move (hotkeysFn))
+                              std::function<void()> hotkeysFn, MidiControl* midi)
+    : engine (e), midiControl (midi), toggleTheme (std::move (themeFn)), oscChanged (std::move (oscFn)), openHotkeys (std::move (hotkeysFn))
 {
     hotkeysButton.setTooltip ("Global hotkeys for mute, push to talk, the soundboard, recording and scenes.");
     hotkeysButton.onClick = [this] { if (openHotkeys) openHotkeys(); };
@@ -63,6 +63,13 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         addAndMakeVisible (b);
     }
 
+    // Crash-safe plugin loading: a plugin that crashes while loading is caught
+    // in a child process first, so the mixer keeps running. See PluginScanner.
+    pluginProbe.setToggleState (s.pluginProbeEnabled(), juce::dontSendNotification);
+    pluginProbe.onClick = [this] { AppSettings::get().setPluginProbeEnabled (pluginProbe.getToggleState()); };
+    makeClickable (pluginProbe);
+    addAndMakeVisible (pluginProbe);
+
     checkUpdates.setToggleState (s.checkForUpdates(), juce::dontSendNotification);
     checkUpdates.onClick = [this] { AppSettings::get().setCheckForUpdates (checkUpdates.getToggleState()); };
 
@@ -94,25 +101,183 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     oscPort.onReturnKey = commitPort;
     oscPort.onFocusLost = commitPort;
 
+    // Phone / browser remote and WebSocket API: the same port serves the phone
+    // page (GET /), the state (GET /api/state) and the WebSocket (ws://.../ws).
+    wsEnabled.setToggleState (s.wsEnabled(), juce::dontSendNotification);
+    wsEnabled.onClick = [this]
+    {
+        AppSettings::get().setWsEnabled (wsEnabled.getToggleState());
+        if (oscChanged) oscChanged();
+    };
+    wsPort.setText (juce::String (s.wsPort()), false);
+    wsPort.setInputRestrictions (5, "0123456789");
+    wsPort.setTitle ("WebSocket / phone remote port");
+    wsPort.setJustification (juce::Justification::centredLeft);
+    auto commitWsPort = [this]
+    {
+        const int port = wsPort.getText().getIntValue();
+        if (port < 1024 || port > 65535)
+        {
+            wsPort.setText (juce::String (AppSettings::get().wsPort()), false);
+            return;
+        }
+        if (port != AppSettings::get().wsPort())
+        {
+            AppSettings::get().setWsPort (port);
+            if (oscChanged) oscChanged();
+        }
+    };
+    wsPort.onReturnKey = commitWsPort;
+    wsPort.onFocusLost = commitWsPort;
+
+    // MIDI: pick a controller, then learn one knob or key per target.
+    midiEnabled.setToggleState (s.midiEnabled(), juce::dontSendNotification);
+    midiEnabled.onClick = [this]
+    {
+        AppSettings::get().setMidiEnabled (midiEnabled.getToggleState());
+        if (oscChanged) oscChanged();
+    };
+    midiDeviceBox.setTitle ("MIDI device");
+    midiDeviceBox.onChange = [this]
+    {
+        const int id = midiDeviceBox.getSelectedId();
+        if (id > 0)
+        {
+            AppSettings::get().setMidiDevice (midiDeviceBox.getItemText (id - 1));
+            if (oscChanged) oscChanged();
+        }
+    };
+    refreshMidiDevices();
+
+    for (int sIdx = 0; sIdx < kNumStrips; ++sIdx)
+    {
+        const auto n = juce::String (sIdx + 1);
+        midiLearnTarget.addItem ("Strip " + n + " fader", midiLearnTarget.getNumItems() + 1);
+        midiLearnTarget.addItem ("Strip " + n + " mute", midiLearnTarget.getNumItems() + 1);
+    }
+    for (int b = 0; b < kNumBuses; ++b)
+        midiLearnTarget.addItem (juce::String ("Bus ") + kBusNames[b] + " fader", midiLearnTarget.getNumItems() + 1);
+    for (int p = 0; p < Soundboard::numPads; ++p)
+        midiLearnTarget.addItem ("Soundboard pad " + juce::String (p + 1), midiLearnTarget.getNumItems() + 1);
+    midiLearnTarget.addItem ("Record", midiLearnTarget.getNumItems() + 1);
+    midiLearnTarget.setSelectedItemIndex (0);
+    midiLearnButton.onClick = [this]
+    {
+        if (midiControl == nullptr)
+            return;
+        if (midiControl->isLearning())
+        {
+            midiControl->cancelLearn();
+            midiLearnButton.setButtonText ("Learn...");
+            return;
+        }
+        const int index = midiLearnTarget.getSelectedItemIndex();
+        juce::String target;
+        if (index < kNumStrips * 2)
+            target = "strip/" + juce::String (index / 2 + 1) + (index % 2 == 0 ? "/fader" : "/mute");
+        else if (index < kNumStrips * 2 + kNumBuses)
+            target = juce::String ("bus/") + kBusNames[index - kNumStrips * 2] + "/fader";
+        else if (index < kNumStrips * 2 + kNumBuses + Soundboard::numPads)
+            target = "soundboard/" + juce::String (index - kNumStrips * 2 - kNumBuses + 1);
+        else
+            target = "record";
+        if (midiControl->startLearn (target))
+        {
+            midiLearnButton.setButtonText ("Listening... (click to cancel)");
+            midiText = "Move a knob or press a key on the controller for " + target + ".";
+            repaint (midiTextArea);
+        }
+    };
+    midiClearButton.onClick = [this]
+    {
+        if (midiControl == nullptr)
+            return;
+        midiControl->clearMappings();
+        AppSettings::get().setMidiMappings (juce::String());
+        updateMidiText();
+    };
+    for (auto* b : { &midiLearnButton, &midiClearButton })
+    {
+        makeClickable (*b);
+        addAndMakeVisible (*b);
+    }
+    addAndMakeVisible (midiDeviceBox);
+    addAndMakeVisible (midiLearnTarget);
+    updateMidiText();
+
     logsButton.onClick = [] { auto dir = AppSettings::getLogFolder(); dir.createDirectory(); dir.startAsProcess(); };
 
-    for (auto* t : { &checkUpdates, &oscEnabled })
+    for (auto* t : { &checkUpdates, &oscEnabled, &wsEnabled, &midiEnabled })
     {
         makeClickable (*t);
         addAndMakeVisible (t);
     }
     addAndMakeVisible (oscPort);
+    addAndMakeVisible (wsPort);
     makeClickable (logsButton);
     addAndMakeVisible (logsButton);
 
     engine.getScanner().addChangeListener (this);
     updateScanText();
-    setSize (540, 640);
+    startTimerHz (2);   // watches MIDI learn finishing (a knob/key on another thread)
+    setSize (540, 820);
 }
 
 SettingsPanel::~SettingsPanel()
 {
+    stopTimer();
     engine.getScanner().removeChangeListener (this);
+}
+
+void SettingsPanel::timerCallback()
+{
+    if (midiControl == nullptr)
+        return;
+    // A learn that finished (or was cancelled) puts the button back.
+    if (! midiControl->isLearning() && midiLearnButton.getButtonText().startsWith ("Listening"))
+    {
+        midiLearnButton.setButtonText ("Learn...");
+        updateMidiText();
+    }
+}
+
+void SettingsPanel::refreshMidiDevices()
+{
+    midiDeviceBox.clear();
+    const auto devices = MidiControl::getDevices();
+    const auto saved = AppSettings::get().midiDevice();
+    for (int i = 0; i < devices.size(); ++i)
+    {
+        midiDeviceBox.addItem (devices[i].name, i + 1);
+        if (devices[i].identifier == saved)
+            midiDeviceBox.setSelectedId (i + 1, juce::dontSendNotification);
+    }
+    if (devices.isEmpty())
+        midiDeviceBox.addItem ("No MIDI devices found", -1);
+    midiDeviceBox.setTextWhenNothingSelected ("Choose a MIDI controller");
+}
+
+void SettingsPanel::updateMidiText()
+{
+    if (midiControl == nullptr)
+    {
+        midiText = "MIDI is not available.";
+    }
+    else
+    {
+        const auto maps = midiControl->getMappings();
+        if (maps.empty())
+            midiText = "No MIDI mappings yet. Pick a target, press Learn, then move a knob or press a key.";
+        else
+        {
+            juce::StringArray lines;
+            for (auto& m : maps)
+                lines.add ((m.isNote ? "Note " : "CC ") + juce::String (m.number) + " -> " + m.target);
+            midiText = lines.joinIntoString ("\n");
+        }
+        AppSettings::get().setMidiMappings (MidiControl::mappingsToJson (maps));
+    }
+    repaint (midiTextArea);
 }
 
 void SettingsPanel::updateScanText()
@@ -150,6 +315,15 @@ void SettingsPanel::paint (juce::Graphics& g)
     g.drawFittedText ("While OSC is on, any device on your network can move faders and start recordings. "
                       "Addresses start with /openmix (see the README).", oscNoteArea, juce::Justification::topLeft, 2);
 
+    g.drawFittedText ("Phone remote: open http://<this PC>:" + juce::String (AppSettings::get().wsPort())
+                        + "/ on your phone while the WebSocket remote is on. Stream Deck: use its OSC plugin "
+                          "with the /openmix addresses, or a WebSocket plugin against this port.",
+                      wsNoteArea, juce::Justification::topLeft, 3);
+
+    g.setFont (Theme::ui (13.0f));
+    g.setColour (t.textDim);
+    g.drawFittedText (midiText, midiTextArea, juce::Justification::topLeft, 4);
+
     g.drawFittedText ("OpenMix " + juce::JUCEApplication::getInstance()->getApplicationVersion()
                         + ". Licensed under the GNU AGPLv3. Built with JUCE (AGPLv3) and RNNoise (BSD).",
                       aboutArea, juce::Justification::topLeft, 3);
@@ -184,6 +358,7 @@ void SettingsPanel::resized()
     presetsButton.setBounds (row.removeFromLeft (190));
     row.removeFromLeft (Theme::s2);
     pluginsButton.setBounds (row.removeFromLeft (190));
+    pluginProbe.setBounds (r.removeFromTop (28));
     r.removeFromTop (Theme::s4);
 
     networkLegend = r.removeFromTop (20);
@@ -192,6 +367,20 @@ void SettingsPanel::resized()
     oscEnabled.setBounds (row.removeFromLeft (270));
     oscPort.setBounds (row.removeFromLeft (72).reduced (0, 2));
     oscNoteArea = r.removeFromTop (36);
+    row = r.removeFromTop (28);
+    wsEnabled.setBounds (row.removeFromLeft (270));
+    wsPort.setBounds (row.removeFromLeft (72).reduced (0, 2));
+    wsNoteArea = r.removeFromTop (48);
+    midiEnabled.setBounds (r.removeFromTop (28));
+    midiDeviceBox.setBounds (r.removeFromTop (30));
+    r.removeFromTop (Theme::s1);
+    row = r.removeFromTop (30);
+    midiLearnTarget.setBounds (row.removeFromLeft (240));
+    row.removeFromLeft (Theme::s2);
+    midiLearnButton.setBounds (row.removeFromLeft (110));
+    row.removeFromLeft (Theme::s2);
+    midiClearButton.setBounds (row);
+    midiTextArea = r.removeFromTop (64);
     logsButton.setBounds (r.removeFromTop (30).withWidth (190));
     r.removeFromTop (Theme::s4);
 

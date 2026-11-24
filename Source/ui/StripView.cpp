@@ -6,7 +6,7 @@ StripView::StripView (MixerEngine& e, int i)
     : engine (e), strip (e.getStrip (i)), index (i),
       inserts (e, strip.inserts),
       pad (strip.pad, "Input " + juce::String (i + 1)),
-      faderSection (strip.peakL, strip.peakR, "Input " + juce::String (i + 1))
+      faderSection (strip.peakL, strip.peakR, strip.rmsL, strip.rmsR, "Input " + juce::String (i + 1))
 {
     // Tab moves through this strip top to bottom before moving to the next strip.
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);

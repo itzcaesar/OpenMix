@@ -366,7 +366,14 @@ MainComponent::MainComponent()
     osc.onRecord = [this] (bool on) { if (on != engine.getRecorder().isRecording()) toggleRecording(); };
     osc.onSaveReplay = [this] { saveReplay(); };
     osc.onRecallScene = [this] (int index) { recallScene (index); };
-    applyOsc();
+    remoteServer.onRecord = osc.onRecord;
+    remoteServer.onSaveReplay = osc.onSaveReplay;
+    remoteServer.onRecallScene = osc.onRecallScene;
+    midiControl.onRecord = osc.onRecord;
+    midiControl.onSaveReplay = osc.onSaveReplay;
+    midiControl.onRecallScene = osc.onRecallScene;
+    midiControl.setMappings (MidiControl::mappingsFromJson (AppSettings::get().midiMappings()));
+    applyRemote();
 
     // Scenes and global hotkeys
     sceneButton.setTooltip ("Scenes: saved mixes (levels, mutes, sends, processing) you can switch between.");
@@ -440,7 +447,7 @@ void MainComponent::showAudioSettings()
 void MainComponent::showSettings()
 {
     juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyOsc(); }, [this] { showHotkeys(); }));
+    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyRemote(); }, [this] { showHotkeys(); }, &midiControl));
     o.dialogTitle = "Settings";
     o.dialogBackgroundColour = Theme::p().panel;
     o.escapeKeyTriggersCloseButton = true;
@@ -522,6 +529,9 @@ void MainComponent::timerCallback()
         console->soundboard.refresh();
         updateSceneButton();
     }
+
+    // Push the new state to phone / WebSocket clients.
+    remoteServer.broadcastStateIfChanged();
 
     if (ticks % 60 == 0)
     {
@@ -787,16 +797,45 @@ void MainComponent::setSoundboardShown (bool shown)
 
 void MainComponent::applyOsc()
 {
+    applyRemote();
+}
+
+void MainComponent::applyRemote()
+{
     auto& settings = AppSettings::get();
+
     if (! settings.oscEnabled())
     {
         osc.stop();
-        return;
+    }
+    else
+    {
+        juce::String error;
+        if (! osc.start (settings.oscPort(), error))
+            showNote ("OSC remote control is off: " + error);
     }
 
-    juce::String error;
-    if (! osc.start (settings.oscPort(), error))
-        showNote ("OSC remote control is off: " + error);
+    if (! settings.wsEnabled())
+    {
+        remoteServer.stop();
+    }
+    else
+    {
+        juce::String error;
+        if (! remoteServer.start (settings.wsPort(), error))
+            showNote ("Phone / WebSocket remote is off: " + error);
+    }
+
+    if (! settings.midiEnabled() || settings.midiDevice().isEmpty())
+    {
+        midiControl.stop();
+    }
+    else
+    {
+        juce::String error;
+        if (! midiControl.start (settings.midiDevice(), error))
+            showNote ("MIDI remote is off: " + error);
+    }
 }
 
 //==============================================================================

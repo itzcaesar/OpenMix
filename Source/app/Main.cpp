@@ -11,6 +11,11 @@ static bool isScanChild()
     return juce::JUCEApplicationBase::getCommandLineParameters().contains (PluginScanner::childFlag);
 }
 
+static bool isProbeChild()
+{
+    return juce::JUCEApplicationBase::getCommandLineParameters().contains (PluginScanner::probeFlag);
+}
+
 // If OpenMix crashes, leave a stack trace next to the session so the cause can be found.
 static void writeCrashReport (void*)
 {
@@ -28,10 +33,20 @@ public:
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
 
     // The plugin-scan child runs next to the main app, so it must not be single-instance.
-    bool moreThanOneInstanceAllowed() override          { return isScanChild(); }
+    bool moreThanOneInstanceAllowed() override          { return isScanChild() || isProbeChild(); }
 
     void initialise (const juce::String& commandLine) override
     {
+        if (isProbeChild())
+        {
+            // OpenMix.exe --probe-plugin "<plugin file>"
+            const auto args = juce::StringArray::fromTokens (commandLine, true);
+            const int i = args.indexOf (PluginScanner::probeFlag);
+            setApplicationReturnValue (PluginScanner::runChildProbe (args[i + 1].unquoted()));
+            quit();
+            return;
+        }
+
         if (isScanChild())
         {
             // OpenMix.exe --scan-plugin "<plugin file>" "<output xml>"

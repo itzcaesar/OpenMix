@@ -7,6 +7,8 @@
 #include "ui/SoundboardPanel.h"
 #include "ui/Theme.h"
 #include "app/OscControl.h"
+#include "app/RemoteServer.h"
+#include "app/MidiControl.h"
 #include "app/UpdateChecker.h"
 #include "app/GlobalHotkeys.h"
 
@@ -81,6 +83,7 @@ private:
     void applyReplaySettings();
     void setSoundboardShown (bool);
     void applyOsc();
+    void applyRemote();   // OSC + WebSocket/phone remote + MIDI, from AppSettings
     void showNote (const juce::String&);
     void updateRecordButton();
 
@@ -111,6 +114,8 @@ private:
     juce::TextButton updateButton;
     GlobalHotkeys hotkeys;
     OscControl osc { engine };
+    RemoteServer remoteServer { engine };
+    MidiControl midiControl { engine };
     UpdateChecker updater;
     juce::URL updatePage;
     juce::String note;

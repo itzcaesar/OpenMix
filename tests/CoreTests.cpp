@@ -7,6 +7,7 @@
 #include "dsp/Dynamics.h"
 #include "dsp/Denoiser.h"
 #include "dsp/Loudness.h"
+#include "dsp/Metering.h"
 
 #include <cmath>
 #include <cstdio>
@@ -448,6 +449,54 @@ int main()
         const double lufs = m.integrated();
         CHECK (std::abs (lufs - (-23.0)) < 0.1, "integrated %.2f LUFS", lufs);
         CHECK (std::abs (m.shortTerm() - (-23.0)) < 0.1, "short-term %.2f LUFS", m.shortTerm());
+    });
+
+    run ("RMS meter: sine reads -3 dB below its peak, silence reads 0", [&]
+    {
+        // A 0.5 peak sine has RMS 0.5/sqrt(2) = -9.03 dBFS; a 1.0 peak sine has RMS -3.01 dBFS.
+        auto tone = sine (1.0f, 1000.0, 48000);
+        omx::RmsMeter m;
+        m.prepare (48000.0);
+        float level = 0.0f;
+        for (size_t i = 0; i < tone.size(); i += 480)
+            level = m.push (tone.data() + i, 480);
+        CHECK (std::abs (20.0 * std::log10 (level) - (-3.01)) < 0.5, "sine RMS %.2f dBFS", 20.0 * std::log10 (level));
+        CHECK (std::abs (omx::blockRms (tone.data(), (int) tone.size()) - 0.7071f) < 0.01f, "block RMS %f", omx::blockRms (tone.data(), (int) tone.size()));
+
+        omx::RmsMeter quiet;
+        quiet.prepare (48000.0);
+        std::vector<float> silence (4800, 0.0f);
+        CHECK (quiet.push (silence.data(), (int) silence.size()) == 0.0f, "silence should read 0");
+    });
+
+    run ("Loudness normaliser: quiet bus is turned up, loud bus down, clamped to +/-12 dB", []
+    {
+        // A -26 LUFS bus (RMS ~0.05) normalised to -14 LUFS wants +12 dB, clamped there.
+        omx::LoudnessNormaliser norm;
+        norm.prepare (48000.0);
+        float gain = 1.0f;
+        for (int i = 0; i < 200; ++i)   // ~2 s of blocks, let the 0.5 s smoothing settle
+            gain = norm.process (0.05f, -14.0f, 480);
+        CHECK (std::abs (20.0 * std::log10 (gain) - 12.0) < 0.5, "quiet bus gain %+.2f dB", 20.0 * std::log10 (gain));
+
+        // A -2 LUFS bus (RMS ~0.9) normalised to -14 wants -12 dB, clamped there.
+        omx::LoudnessNormaliser loud;
+        loud.prepare (48000.0);
+        for (int i = 0; i < 200; ++i)
+            gain = loud.process (0.9f, -14.0f, 480);
+        CHECK (std::abs (20.0 * std::log10 (gain) - (-12.0)) < 0.5, "loud bus gain %+.2f dB", 20.0 * std::log10 (gain));
+
+        // Silence holds the last gain instead of turning the noise floor up.
+        const float held = loud.process (0.0f, -14.0f, 480);
+        CHECK (std::abs (held - gain) < 0.01f, "silence changed the gain to %f", held);
+
+        // A bus already at target stays at unity.
+        omx::LoudnessNormaliser flat;
+        flat.prepare (48000.0);
+        const float rmsAtMinus14 = (float) std::pow (10.0, (-14.0 + 0.691) / 20.0);
+        for (int i = 0; i < 200; ++i)
+            gain = flat.process (rmsAtMinus14, -14.0f, 480);
+        CHECK (std::abs (gain - 1.0f) < 0.05f, "on-target bus gain %f", gain);
     });
 
     std::printf (failures == 0 ? "\nAll tests passed\n" : "\n%d check(s) failed\n", failures);

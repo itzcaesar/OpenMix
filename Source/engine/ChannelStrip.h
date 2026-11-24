@@ -8,6 +8,7 @@
 #include "dsp/DelayLine.h"
 #include "dsp/Dynamics.h"
 #include "dsp/Denoiser.h"
+#include "dsp/Metering.h"
 
 // Capacity. Strips and buses are allocated up front (real-time safe) and switched on/off by the
 // user; only active ones are processed and shown.
@@ -134,6 +135,7 @@ public:
 
     // Metering (written by audio thread)
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
+    std::atomic<float> rmsL { 0.0f }, rmsR { 0.0f };   // sustained level, for the RMS meter
     std::atomic<float> sidechainLevel { 0.0f };   // pre-fader peak of the last block, for ducking
 
 private:
@@ -149,6 +151,7 @@ private:
     VoicePadProcessor padProcessor { pad };
     AudioSafety::DcBlocker dcBlocker;
     omx::Denoiser denoiser;
+    omx::RmsMeter rmsMeterL, rmsMeterR;
     omx::Gate gate;
     omx::Eq3 eq;
     omx::Compressor comp;

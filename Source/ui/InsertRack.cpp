@@ -1,6 +1,8 @@
 #include "ui/InsertRack.h"
 #include "ui/Panels.h"
 #include "ui/Theme.h"
+#include "app/AppSettings.h"
+#include <thread>
 
 //==============================================================================
 // PluginWindow
@@ -370,6 +372,49 @@ void InsertRack::loadPluginAsync (int slot, const juce::PluginDescription& desc,
     loadingName = desc.name;
     updateRows();
 
+    // Crash-safe loading (on by default): a plugin that crashes while starting
+    // is caught in a child process first, in a background thread so the UI
+    // stays responsive. Only if the child survived does the mixer load it
+    // in-process. A plugin that fails the probe is blacklisted, like a plugin
+    // that crashed while scanning, until "Retry skipped plugins".
+    // This protects loading, not the audio thread: a plugin that crashes
+    // while processing audio can still take the mixer down. Full
+    // out-of-process audio hosting is still open (ROADMAP Phase 5).
+    if (AppSettings::get().pluginProbeEnabled())
+    {
+        juce::Component::SafePointer<InsertRack> safe (this);
+        std::thread ([safe, desc, then]
+        {
+            juce::String error;
+            const bool ok = PluginScanner::probePluginFile (desc.fileOrIdentifier, error);
+            juce::MessageManager::callAsync ([safe, desc, then, ok, error]
+            {
+                if (safe == nullptr)
+                    return;
+                if (! ok)
+                {
+                    safe->loadingSlot = -1;
+                    safe->updateRows();
+                    safe->engine.getScanner().blacklistFile (desc.fileOrIdentifier);
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                            "Couldn't load " + desc.name,
+                                                            "The plugin " + error + " in a test process, so it was "
+                                                            "skipped instead of loading it into the mixer. "
+                                                            "Use Settings > Retry skipped plugins to try it again.");
+                    return;
+                }
+                safe->startAsyncLoad (desc, then);
+            });
+        }).detach();
+        return;
+    }
+
+    startAsyncLoad (desc, then);
+}
+
+void InsertRack::startAsyncLoad (const juce::PluginDescription& desc,
+                                 std::function<void (juce::AudioPluginInstance&)> then)
+{
     // Let the "Loading..." row paint before the plugin's own (message-thread) start-up runs.
     juce::Component::SafePointer<InsertRack> safe (this);
     juce::Timer::callAfterDelay (30, [safe, desc, then]

@@ -71,6 +71,9 @@ target_sources(OpenMix PRIVATE
     Source/app/AppSettings.cpp
     Source/app/Session.cpp
     Source/app/OscControl.cpp
+    Source/app/RemoteCommands.cpp
+    Source/app/RemoteServer.cpp
+    Source/app/MidiControl.cpp
     Source/app/GlobalHotkeys.cpp
 
     # audio engine and device I/O

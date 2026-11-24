@@ -113,6 +113,8 @@ void Soundboard::stopAll()
 void Soundboard::prepare (double sampleRate)
 {
     gain.reset (sampleRate, 0.02);
+    rmsMeterL.prepare (sampleRate);
+    rmsMeterR.prepare (sampleRate);
     if (std::abs (sampleRate - rate) > 0.5)
     {
         rate = sampleRate;
@@ -175,5 +177,7 @@ bool Soundboard::render (float* left, float* right, int numSamples) noexcept
     const float pr = juce::jmax (-rangeR.getStart(), rangeR.getEnd());
     if (pl > peakL.load()) peakL.store (pl);
     if (pr > peakR.load()) peakR.store (pr);
+    rmsL.store (rmsMeterL.push (left, numSamples));
+    rmsR.store (rmsMeterR.push (right, numSamples));
     return any;
 }

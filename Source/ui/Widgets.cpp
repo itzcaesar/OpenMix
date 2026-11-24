@@ -20,12 +20,14 @@ void makeClickable (juce::Component& c)
 //==============================================================================
 // LevelMeter
 
-LevelMeter::LevelMeter (std::atomic<float>& l, std::atomic<float>& r) : peakL (l), peakR (r)
+LevelMeter::LevelMeter (std::atomic<float>& l, std::atomic<float>& r,
+                        std::atomic<float>& rmsL_, std::atomic<float>& rmsR_)
+    : peakL (l), peakR (r), rmsL (rmsL_), rmsR (rmsR_)
 {
     setWantsKeyboardFocus (true);
     makeClickable (*this);
     setTitle ("Level meter");
-    setTooltip ("Peak meter. The top lamp latches red when the signal clips; click it or press Enter to reset.");
+    setTooltip ("Peak meter with RMS inside it. The top lamp latches red when the signal clips; click it or press Enter to reset.");
 }
 
 static float meterProportion (float db) noexcept
@@ -33,9 +35,10 @@ static float meterProportion (float db) noexcept
     return std::pow (juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 66.0f), 1.6f);   // -60 .. +6 dB
 }
 
-void LevelMeter::update (Channel& c, float peak)
+void LevelMeter::update (Channel& c, float peak, float rms)
 {
     c.level = juce::jmax (peak, c.level * 0.82f);
+    c.rms = juce::jmax (rms, c.rms * 0.92f);   // RMS decays slower than peak: it reads sustained level
     if (peak >= c.hold)
     {
         c.hold = peak;
@@ -52,14 +55,19 @@ void LevelMeter::update (Channel& c, float peak)
 
 void LevelMeter::tick()
 {
-    update (left, peakL.exchange (0.0f));
-    update (right, peakR.exchange (0.0f));
+    update (left, peakL.exchange (0.0f), rmsL.load());
+    update (right, peakR.exchange (0.0f), rmsR.load());
     repaint();
 }
 
 float LevelMeter::getPeakHoldDb() const
 {
     return juce::Decibels::gainToDecibels (juce::jmax (left.hold, right.hold), -100.0f);
+}
+
+float LevelMeter::getRmsDb() const
+{
+    return juce::Decibels::gainToDecibels (juce::jmax (left.rms, right.rms), -100.0f);
 }
 
 bool LevelMeter::keyPressed (const juce::KeyPress& k)
@@ -91,6 +99,17 @@ void LevelMeter::drawLadder (juce::Graphics& g, juce::Rectangle<float> r, const 
         const float y = r.getBottom() - (float) (i + 1) * (segH + gap) + gap;
         g.setColour (lit ? colour : colour.withAlpha (0.12f));
         g.fillRect (r.getX(), y, r.getWidth(), segH);
+    }
+
+    // RMS: a solid bar down the middle of the ladder, so peak (segments) and
+    // RMS (bar) read at a glance. It sits below the peak, as it should.
+    if (c.rms > 0.001f)
+    {
+        const float rmsProp = meterProportion (juce::Decibels::gainToDecibels (c.rms, -60.0f));
+        const float h = rmsProp * r.getHeight();
+        const float barW = juce::jmin (5.0f, r.getWidth() * 0.4f);
+        g.setColour (t.meterLow);
+        g.fillRect (r.getCentreX() - barW * 0.5f, r.getBottom() - h, barW, h);
     }
 }
 
@@ -145,8 +164,9 @@ bool DbSlider::keyPressed (const juce::KeyPress& k)
 //==============================================================================
 // FaderSection
 
-FaderSection::FaderSection (std::atomic<float>& peakL, std::atomic<float>& peakR, const juce::String& ownerName)
-    : meter (peakL, peakR)
+FaderSection::FaderSection (std::atomic<float>& peakL, std::atomic<float>& peakR,
+                            std::atomic<float>& rmsL, std::atomic<float>& rmsR, const juce::String& ownerName)
+    : meter (peakL, peakR, rmsL, rmsR)
 {
     fader.setRange (-60.0, 12.0, 0.1);
     fader.setSkewFactorFromMidPoint (-12.0);

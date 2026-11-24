@@ -17,7 +17,7 @@ stands:
 |---|---|---|
 | Strips and buses added and removed at runtime (up to 8 and 6) instead of fixed layouts | 3 | Done |
 | VST3 chains on every strip **and** every bus, drag to reorder, wet/dry, per-slot bypass | 1, 5 | Done |
-| Crash-safe plugin scanning: one bad plugin doesn't kill your audio | 5 | Done (sandboxing open) |
+| Crash-safe plugin scanning: one bad plugin doesn't kill your audio | 5 | Done (loading probe done; full audio sandbox open) |
 | Built-in neural-network denoise, no plugin needed | 4 | RNNoise done, DeepFilterNet open |
 | Built-in pitch correction and voice changer (formant shift, robot, radio) | 4 | Open |
 | **Per-app routing**: Spotify, a game or Discord on its own strip without changing the Windows default device | 3 | Done |
@@ -27,10 +27,10 @@ stands:
 | Multitrack recording plus a **replay buffer** ("save the last 60 s") | 4 | Done |
 | Scenes: snapshot the whole mixer and switch with a hotkey | 6 | Done |
 | Per-send levels and pre-fader sends instead of on/off bus buttons | 4 | Done |
-| Spectrum analyser and LUFS loudness per bus | 4 | Done (loudness normalization open) |
+| Spectrum analyser and LUFS loudness per bus | 4 | Done (RMS meters and loudness normalization done) |
 | Latency compensation for plugin chains | 5 | Done |
 | OSC remote control | 8 | Done |
-| Phone/browser remote, WebSocket/MIDI API, Stream Deck | 8 | Open |
+| Phone/browser remote, WebSocket/MIDI API, Stream Deck | 8 | Done (Stream Deck via OSC/WebSocket plugins) |
 | Resizable UI with light and dark themes, channel colours and names | 8 | Done |
 
 ---
@@ -100,7 +100,8 @@ Built-in so the basics work without third-party plugins:
 - [x] Ducking: lower music when the mic talks (sidechain from one strip to another)
 - [x] Recorder: every bus and/or strip to WAV (`juce::AudioFormatWriter::ThreadedWriter`)
 - [x] Meter improvements: peak hold with a held-peak readout, latching clip lamp, LUFS on buses
-- [ ] RMS alongside peak on the meters
+- [x] RMS alongside peak on the meters (solid bar inside the peak ladder, on strips, buses and the soundboard)
+- [x] Loudness normalisation per bus: slow gain towards -14 / -16 / -23 LUFS, clamped to +/-12 dB, saved with the session and scenes
 - [x] Built-in neural-network denoise: RNNoise (light, 10 ms frames, any sample rate)
 - [ ] DeepFilterNet as a "high quality" option (more CPU, adds latency)
 - [ ] Built-in pitch correction (YIN/McLeod pitch detection + PSOLA shift, key/scale, speed)
@@ -119,7 +120,15 @@ Built-in so the basics work without third-party plugins:
       sends that reach the same bus stay aligned
 - [x] Plugin presets: save and load per slot, A/B compare
 - [x] Optional VST2 hosting, opt-in only (`-DOPENMIX_ENABLE_VST2=ON -DVST2_SDK_DIR=...`): JUCE_PLUGINHOST_VST on, PluginScanner scans VST + VST3, same slots/presets/latency handling. OFF by default and off in CI; the SDK is never in the repo. Only usable if you already own the old SDK / licence — Steinberg stopped issuing new VST2 licences in Oct 2018, so this cannot be shipped in a release build for new developers.
+- [x] **Crash-safe plugin loading**: before a plugin is loaded into the mixer, it is started
+      in a child process (`OpenMix.exe --probe-plugin <file>`, create + prepare + one silent
+      block). A plugin that crashes or hangs while starting is blacklisted instead of taking
+      the mixer down. On by default (Settings), and a failed probe is retried from
+      "Retry skipped plugins".
 - [ ] Stretch: sandboxed plugin process so a crashing plugin can't take down the mixer
+      *while processing audio*. The probe above only catches crashes at load time; full
+      out-of-process audio hosting (shared-memory audio, parameter and GUI forwarding) is
+      still open and is the real sandbox.
 
 ## Phase 6 - XY pad extensions  *(~1-2 weeks)*
 
@@ -154,7 +163,7 @@ This removes the need for VB-Cable. Two parts:
 - [x] OSC remote control (faders, mutes, sends, soundboard, record, replay)
 - [x] Global hotkeys: mute, push to talk, soundboard pads, recording, replay, scenes
 - [x] Scenes: save and recall the mix (levels, mutes, sends, processing), OSC recall
-- [ ] MIDI controller mapping, WebSocket API (Stream Deck plugins, a phone remote)
+- [x] MIDI controller mapping (learnable CC/note to fader, mute, soundboard, record), WebSocket API + phone remote (built-in page at `http://<PC>:8080/`, `GET /api/state`, `POST /api/command`, `ws://.../ws`), Stream Deck via its OSC plugin or a WebSocket plugin against the same paths
 - [x] Dark/light themes, resizable UI (laptop to desktop), channel names and colours, settings window
 - [x] Crash handler + log file; "safe mode" start that skips plugins
 - [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)

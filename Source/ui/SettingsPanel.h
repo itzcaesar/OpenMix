@@ -2,13 +2,14 @@
 
 #include <JuceHeader.h>
 #include "engine/MixerEngine.h"
+#include "app/MidiControl.h"
 
-// Contents of the Settings window: startup, tray, theme, plugins, about.
-class SettingsPanel : public juce::Component, private juce::ChangeListener
+// Contents of the Settings window: startup, tray, theme, plugins, remote control, about.
+class SettingsPanel : public juce::Component, private juce::ChangeListener, private juce::Timer
 {
 public:
     SettingsPanel (MixerEngine&, std::function<void()> toggleTheme, std::function<void()> oscChanged = {},
-                   std::function<void()> openHotkeys = {});
+                   std::function<void()> openHotkeys = {}, MidiControl* midi = nullptr);
     ~SettingsPanel() override;
 
     void paint (juce::Graphics&) override;
@@ -16,9 +17,13 @@ public:
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override { updateScanText(); }
+    void timerCallback() override;
     void updateScanText();
+    void updateMidiText();
+    void refreshMidiDevices();
 
     MixerEngine& engine;
+    MidiControl* midiControl;
     std::function<void()> toggleTheme, oscChanged, openHotkeys;
     juce::TextButton hotkeysButton { "Hotkeys..." };
 
@@ -30,11 +35,20 @@ private:
     juce::TextButton retryButton  { "Retry skipped plugins" };
     juce::TextButton presetsButton { "Open presets folder" };
     juce::TextButton pluginsButton { "Open plugin folders" };
+    juce::ToggleButton pluginProbe { "Probe plugins in a separate process before loading them" };
     juce::ToggleButton checkUpdates { "Check GitHub for new versions at startup" };
     juce::ToggleButton oscEnabled { "Remote control over OSC, UDP port" };
     juce::TextEditor oscPort;
+    juce::ToggleButton wsEnabled { "Phone / browser remote and WebSocket API, TCP port" };
+    juce::TextEditor wsPort;
+    juce::ToggleButton midiEnabled { "MIDI controller" };
+    juce::ComboBox midiDeviceBox;
+    juce::ComboBox midiLearnTarget;
+    juce::TextButton midiLearnButton { "Learn..." };
+    juce::TextButton midiClearButton { "Clear mappings" };
     juce::TextButton logsButton { "Open log folder" };
 
-    juce::String scanText;
-    juce::Rectangle<int> startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend, oscNoteArea, scanTextArea, aboutArea;
+    juce::String scanText, midiText;
+    juce::Rectangle<int> startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend,
+                         oscNoteArea, scanTextArea, aboutArea, wsNoteArea, midiTextArea;
 };
