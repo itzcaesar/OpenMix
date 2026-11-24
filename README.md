@@ -138,6 +138,32 @@ a plugin that crashes while being scanned is skipped instead of taking OpenMix d
 - A plugin that outputs invalid audio (NaN/Inf) is stopped automatically and marked, instead
   of breaking the mix. "Try again" in its menu restarts it.
 
+### VST2 plugins (opt-in, local build only)
+
+VST2 hosting is **off by default** and is not in the released builds. JUCE 9 still
+contains the VST2 host code, but it needs `aeffect.h` / `aeffectx.h` from the VST2 SDK,
+which JUCE no longer bundles — and Steinberg stopped issuing new VST2 licences in
+October 2018, so a new developer cannot legally distribute a VST2 host. Only enable
+this if you already hold a VST2 licence and SDK. The SDK is never committed to this
+repo, never fetched by CMake, and CI builds with VST2 off.
+
+To build with it, from a Developer PowerShell for VS 2026:
+
+```powershell
+cmake --preset vs2026 -DOPENMIX_ENABLE_VST2=ON -DVST2_SDK_DIR="C:/SDKs/vstsdk2.4"
+cmake --build --preset release
+```
+
+`VST2_SDK_DIR` must be the SDK folder containing `pluginterfaces/vst2.x/aeffect.h`
+(from `vstsdk3610_11_06_2018_build_37` or older). With it on, OpenMix also scans
+the usual VST2 locations (`C:\Program Files\Steinberg\VstPlugins`,
+`C:\Program Files\VstPlugins`, and the `VST_PATH` environment variable) for `.dll`
+plugins, in the same crash-safe child process as VST3. VST2 plugins then appear in
+"+ Add plugin" alongside VST3 ones and use the same slots, bypass, wet/dry, presets
+and latency compensation. Session files already store the plugin's format, so a
+session saved with a VST2 plugin loads it back when built with VST2 on — and that
+slot will be empty on a default (VST2-off) build.
+
 ## Buses
 
 - **Output:** an output pair of the main device, or any Windows output device. Each bus can

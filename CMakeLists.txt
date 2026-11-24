@@ -5,6 +5,27 @@ project(OpenMix VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# VST2 hosting is opt-in only, and OFF by default.
+# Why: JUCE 9 still ships the VST2 host code (juce_VSTPluginFormat, gated by
+# JUCE_PLUGINHOST_VST), but it needs aeffect.h / aeffectx.h from the VST2 SDK,
+# which JUCE no longer bundles. Steinberg stopped issuing new VST2 licences in
+# October 2018, so a new developer cannot legally distribute a VST2 host.
+# Only enable this if you already hold a VST2 licence / SDK: pass
+#   cmake --preset vs2026 -DOPENMIX_ENABLE_VST2=ON -DVST2_SDK_DIR="C:/SDKs/vstsdk2.4"
+# The SDK itself is never committed to this repo and is not fetched by CMake.
+# CI keeps this OFF, so the default build needs no SDK.
+# Checked here, before JUCE is fetched, so a missing SDK fails fast.
+option(OPENMIX_ENABLE_VST2 "Enable VST2 plugin hosting (requires a licensed VST2 SDK supplied via VST2_SDK_DIR)" OFF)
+set(VST2_SDK_DIR "" CACHE PATH "Path to a licensed VST2 SDK (folder containing pluginterfaces/vst2.x/aeffect.h)")
+if(OPENMIX_ENABLE_VST2)
+    if(NOT VST2_SDK_DIR OR NOT EXISTS "${VST2_SDK_DIR}/pluginterfaces/vst2.x/aeffect.h")
+        message(FATAL_ERROR "OPENMIX_ENABLE_VST2=ON requires -DVST2_SDK_DIR=<path> pointing at a VST2 SDK containing pluginterfaces/vst2.x/aeffect.h (from vstsdk3610_11_06_2018_build_37 or older). The SDK is not included in this repo and Steinberg no longer issues new VST2 licences.")
+    endif()
+    set(OPENMIX_VST2_HOST 1)
+else()
+    set(OPENMIX_VST2_HOST 0)
+endif()
+
 # JUCE lives in external/JUCE (pinned to 9.0.5). If it's missing, fetch it.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/JUCE/CMakeLists.txt")
     add_subdirectory(external/JUCE)
@@ -83,6 +104,10 @@ target_sources(OpenMix PRIVATE
     Source/ui/HotkeysPanel.cpp)
 
 target_include_directories(OpenMix PRIVATE Source)
+if(OPENMIX_ENABLE_VST2)
+    # JUCE's VST2 host code includes <pluginterfaces/vst2.x/aeffect.h> from here.
+    target_include_directories(OpenMix PRIVATE ${VST2_SDK_DIR})
+endif()
 
 target_compile_definitions(OpenMix PRIVATE
     JUCE_WEB_BROWSER=0
@@ -91,7 +116,8 @@ target_compile_definitions(OpenMix PRIVATE
     JUCE_WASAPI=1
     JUCE_DIRECTSOUND=1
     JUCE_PLUGINHOST_VST3=1
-    JUCE_PLUGINHOST_VST=0
+    JUCE_PLUGINHOST_VST=${OPENMIX_VST2_HOST}
+    OPENMIX_VST2_ENABLED=${OPENMIX_VST2_HOST}
     JUCE_PLUGINHOST_LADSPA=0
     JUCE_PLUGINHOST_LV2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0

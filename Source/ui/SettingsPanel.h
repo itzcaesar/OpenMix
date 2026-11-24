@@ -29,7 +29,7 @@ private:
     juce::TextButton scanButton   { "Scan for new plugins" };
     juce::TextButton retryButton  { "Retry skipped plugins" };
     juce::TextButton presetsButton { "Open presets folder" };
-    juce::TextButton pluginsButton { "Open VST3 folder" };
+    juce::TextButton pluginsButton { "Open plugin folders" };
     juce::ToggleButton checkUpdates { "Check GitHub for new versions at startup" };
     juce::ToggleButton oscEnabled { "Remote control over OSC, UDP port" };
     juce::TextEditor oscPort;

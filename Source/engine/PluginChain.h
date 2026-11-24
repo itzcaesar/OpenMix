@@ -6,7 +6,8 @@
 
 constexpr int kNumSlots = 6;   // insert slots per strip or bus
 
-// A chain of up to kNumSlots VST3 inserts, used by strips and buses.
+// A chain of up to kNumSlots plugin inserts (VST3, plus VST2 when the build
+// enables it with OPENMIX_ENABLE_VST2), used by strips and buses.
 // Loaded plugins are always packed into slots 0..n-1 (no gaps), so the UI can show them as a
 // simple ordered list. Per slot: bypass (click-free crossfade, latency kept), wet/dry mix
 // (dry delayed by the plugin's latency), and a NaN/Inf guard that stops a broken plugin.

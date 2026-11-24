@@ -461,7 +461,7 @@ void PluginSlotRow::setState (State newState, const juce::String& newName, bool 
     {
         case State::Empty:
             setTitle ("Add plugin");
-            setTooltip ("Add a VST3 plugin to this strip (Enter).");
+            setTooltip ("Add a plugin to this strip (Enter).");
             break;
         case State::Loading:
             setTitle ("Loading " + name);

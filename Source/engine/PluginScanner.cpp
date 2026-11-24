@@ -17,12 +17,13 @@ PluginScanner::~PluginScanner()
     stopThread (childTimeoutMs + 2000);
 }
 
-juce::AudioPluginFormat* PluginScanner::vst3() const
+juce::Array<juce::AudioPluginFormat*> PluginScanner::formatsToScan() const
 {
+    juce::Array<juce::AudioPluginFormat*> result;
     for (auto* f : formats.getFormats())
-        if (f->getName() == "VST3")
-            return f;
-    return nullptr;
+        if (f->getName() == "VST3" || f->getName() == "VST")   // "VST" is JUCE's VST2 format
+            result.add (f);
+    return result;
 }
 
 void PluginScanner::startScan (bool retrySkipped)
@@ -61,25 +62,43 @@ juce::StringArray PluginScanner::getSkippedFiles() const
 
 void PluginScanner::run()
 {
-    auto* format = vst3();
-    if (format == nullptr)
+    const auto scanFormats = formatsToScan();
+    if (scanFormats.isEmpty())
         return;
 
     if (retry.load())
         known.clearBlacklistedFiles();
 
-    const auto files = format->searchPathsForPlugins (format->getDefaultLocationsToSearch(), true);
+    // Collect candidate files from every enabled format (VST3 .vst3 files,
+    // VST2 .dll files when enabled). A file is only scanned once even if two
+    // formats list it.
+    juce::StringArray allFiles;
+    for (auto* format : scanFormats)
+        for (const auto& file : format->searchPathsForPlugins (format->getDefaultLocationsToSearch(), true))
+            allFiles.addIfNotAlreadyThere (file);
 
     // Forget plugins whose files are gone.
     for (const auto& type : known.getTypes())
-        if (! files.contains (type.fileOrIdentifier))
+        if (! allFiles.contains (type.fileOrIdentifier))
             known.removeType (type);
 
     juce::StringArray toScan;
     const auto skipped = known.getBlacklistedFiles();
-    for (const auto& file : files)
-        if (! skipped.contains (file) && ! known.isListingUpToDate (file, *format))
-            toScan.add (file);
+    for (const auto& file : allFiles)
+    {
+        if (skipped.contains (file))
+            continue;
+        // Only scan if some format thinks this file is out of date. A VST2 .dll
+        // is not a VST3 file (and vice versa), so check each format in turn.
+        for (auto* format : scanFormats)
+        {
+            if (! known.isListingUpToDate (file, *format))
+            {
+                toScan.add (file);
+                break;
+            }
+        }
+    }
 
     numToScan = toScan.size();
     sendChangeMessage();
@@ -175,15 +194,18 @@ int PluginScanner::runChildScan (const juce::String& fileOrIdentifier, const juc
     juce::AudioPluginFormatManager fm;
     juce::addDefaultFormatsToManager (fm);
 
+    // Try every registered format in turn. A .vst3 file yields nothing from the
+    // VST2 format (and a .dll nothing from VST3), so the first format that
+    // recognises the file wins. With the default build only VST3 is registered.
     for (auto* format : fm.getFormats())
     {
-        if (format->getName() != "VST3")
+        if (format->getName() != "VST3" && format->getName() != "VST")
             continue;
 
         juce::OwnedArray<juce::PluginDescription> results;
         format->findAllTypesForFile (results, fileOrIdentifier);
         if (results.isEmpty())
-            return 2;
+            continue;
 
         juce::XmlElement root ("SCAN");
         for (auto* desc : results)
@@ -192,5 +214,5 @@ int PluginScanner::runChildScan (const juce::String& fileOrIdentifier, const juc
         return root.writeTo (output) ? 0 : 3;
     }
 
-    return 4;
+    return 2;   // no enabled format recognised this file
 }

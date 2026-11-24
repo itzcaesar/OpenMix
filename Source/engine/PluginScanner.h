@@ -2,7 +2,8 @@
 
 #include <JuceHeader.h>
 
-// Finds VST3 plugins without risking the mixer: every plugin file is opened in a separate
+// Finds VST3 plugins (and, when the build enables it with OPENMIX_ENABLE_VST2,
+// VST2 plugins too) without risking the mixer: every plugin file is opened in a separate
 // OpenMix process ("OpenMix.exe --scan-plugin <file> <out.xml>"). If that process crashes or
 // hangs, the file is put on a skip list and the mixer keeps running.
 //
@@ -35,7 +36,9 @@ private:
     void run() override;
     bool scanOneInChildProcess (const juce::String& file, juce::String& error);
     void saveCache();
-    juce::AudioPluginFormat* vst3() const;
+    // Formats to scan: always VST3, plus VST (VST2) when JUCE_PLUGINHOST_VST is on.
+    // With the default build the VST format is not registered, so this returns VST3 only.
+    juce::Array<juce::AudioPluginFormat*> formatsToScan() const;
 
     juce::AudioPluginFormatManager& formats;
     juce::KnownPluginList known;

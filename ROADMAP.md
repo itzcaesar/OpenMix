@@ -118,7 +118,7 @@ Built-in so the basics work without third-party plugins:
 - [x] **Latency compensation**: read `getLatencySamples()` and delay the other strips so
       sends that reach the same bus stay aligned
 - [x] Plugin presets: save and load per slot, A/B compare
-- [ ] Optional VST2 hosting (only if you own the old SDK; not available to new developers)
+- [x] Optional VST2 hosting, opt-in only (`-DOPENMIX_ENABLE_VST2=ON -DVST2_SDK_DIR=...`): JUCE_PLUGINHOST_VST on, PluginScanner scans VST + VST3, same slots/presets/latency handling. OFF by default and off in CI; the SDK is never in the repo. Only usable if you already own the old SDK / licence — Steinberg stopped issuing new VST2 licences in Oct 2018, so this cannot be shipped in a release build for new developers.
 - [ ] Stretch: sandboxed plugin process so a crashing plugin can't take down the mixer
 
 ## Phase 6 - XY pad extensions  *(~1-2 weeks)*

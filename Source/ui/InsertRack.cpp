@@ -307,7 +307,11 @@ void InsertRack::showPluginMenu (int slot)
     }
 
     if (plugins.isEmpty() && ! scanner.isScanning())
+#if OPENMIX_VST2_ENABLED
+        menu.addItem ("No plugins found in the VST3 folder or the VST2 folders", false, false, nullptr);
+#else
         menu.addItem ("No VST3 plugins found in C:\\Program Files\\Common Files\\VST3", false, false, nullptr);
+#endif
 
     auto addPlugin = [this, slot] (juce::PopupMenu& m, const juce::PluginDescription& d, const juce::String& label)
     {

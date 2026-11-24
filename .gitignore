@@ -2,3 +2,7 @@ build/
 out/
 .vs/
 CMakeUserPresets.json
+# A locally supplied VST2 SDK must never be committed (proprietary, licensed).
+vstsdk*/
+VST2_SDK/
+external/vst2sdk/

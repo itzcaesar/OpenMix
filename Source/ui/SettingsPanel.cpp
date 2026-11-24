@@ -47,7 +47,15 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         dir.createDirectory();
         dir.startAsProcess();
     };
-    pluginsButton.onClick = [] { juce::File ("C:\\Program Files\\Common Files\\VST3").startAsProcess(); };
+    pluginsButton.onClick = []
+    {
+        juce::File ("C:\\Program Files\\Common Files\\VST3").startAsProcess();
+#if OPENMIX_VST2_ENABLED
+        // JUCE's VST2 default locations on Windows.
+        juce::File ("C:\\Program Files\\Steinberg\\VstPlugins").startAsProcess();
+        juce::File ("C:\\Program Files\\VstPlugins").startAsProcess();
+#endif
+    };
 
     for (auto* b : { &themeButton, &scanButton, &retryButton, &presetsButton, &pluginsButton })
     {
