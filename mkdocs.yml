@@ -49,14 +49,14 @@ markdown_extensions:
       permalink: true
 
 nav:
-  - Home: index.md
-  - Getting started: getting-started.md
-  - Strips & voice processing: strips.md
-  - Buses & outputs: buses.md
-  - Plugins & built-in effects: plugins.md
-  - Remote control: remote.md
-  - Scenes, hotkeys & creator tools: creator.md
-  - Interface & themes: interface.md
-  - Troubleshooting & known limits: troubleshooting.md
-  - Changelog: changelog.md
-  - Roadmap: roadmap.md
+  - Home: docs/index.md
+  - Getting started: docs/getting-started.md
+  - Strips & voice processing: docs/strips.md
+  - Buses & outputs: docs/buses.md
+  - Plugins & built-in effects: docs/plugins.md
+  - Remote control: docs/remote.md
+  - Scenes, hotkeys & creator tools: docs/creator.md
+  - Interface & themes: docs/interface.md
+  - Troubleshooting & known limits: docs/troubleshooting.md
+  - Changelog: docs/changelog.md
+  - Roadmap: docs/roadmap.md

@@ -29,7 +29,7 @@ to your headphones, speakers, stream and calls.
 
 Built with C++20 and JUCE 9.0.5. Licensed under the GNU AGPLv3.
 
-**Documentation:** the [OpenMix wiki](https://itzcaesar.github.io/OpenMix/) covers getting started, strips, buses, plugins and built-in effects, remote control, scenes and hotkeys, troubleshooting, the changelog and the roadmap.
+**Documentation:** the [OpenMix wiki](https://itzcaesar.github.io/OpenMix/docs/) covers getting started, strips, buses, plugins and built-in effects, remote control, scenes and hotkeys, troubleshooting, the changelog and the roadmap.
 
 ## Download
 
@@ -37,7 +37,7 @@ Every push to `main` is built by GitHub Actions: open the latest run under **Act
 download `OpenMix-windows-x64`. Version tags (for example `v0.1.0`) also publish a GitHub
 release with the zip and an installer, `OpenMix-<version>-setup.exe`.
 
-Full user guide: [OpenMix wiki](https://itzcaesar.github.io/OpenMix/).
+Full user guide: [OpenMix wiki](https://itzcaesar.github.io/OpenMix/docs/).
 
 ## Build it yourself
 

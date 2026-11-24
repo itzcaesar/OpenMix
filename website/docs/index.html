@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="data:," />
+<title>OpenMix: Virtual Audio Mixer for Windows</title>
+<meta name="description" content="OpenMix is a free, open-source virtual audio mixer for Windows, built for streamers. Route mics, apps and games, process your voice, host VST3 plugins, and send separate mixes to headphones, stream and calls." />
+<style>
+  /* OpenMix app palette, Source/ui/Theme.h dark theme, flat only */
+  :root{
+    --bg:#141414;
+    --panel:#202020;
+    --well:#0f0f0f;
+    --meter-well:#0b0b0b;
+    --raised:#2c2c2c;
+    --line:#333333;
+    --edge:#7a7a7a;
+    --ink:#ededed;
+    --ink-2:#b0b0b0;
+    --ink-3:#8f8f8f;
+    --tape:#e6dfcc;
+    --tape-ink:#1e1e1e;
+    --accent:#f0a23b;
+    --accent-ink:#1a1a1a;
+    --mute:#d93a40;
+    --m-green:#3ec46d;
+    --m-amber:#f0a23b;
+    --m-red:#e5484d;
+    --font:"Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono:ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  :root[data-accent="sky"]{ --accent:#5b9ef0; }
+  :root[data-accent="green"]{ --accent:#3ec46d; }
+  :root[data-accent="violet"]{ --accent:#a78bfa; }
+  :root[data-accent="cyan"]{ --accent:#39c2d7; }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;overflow-x:clip;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:clip}
+  img,svg,video{max-width:100%}
+  .wrap{max-width:1020px;margin:0 auto;padding:0 16px;min-width:0;width:100%}
+  @media(min-width:768px){.wrap{padding:0 24px}}
+  a{color:var(--accent)}
+  button{min-height:44px}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* Header */
+  header{border-bottom:1px solid var(--line);background:var(--bg)}
+  .nav{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:56px;padding:4px 0}
+  .brand{font-weight:700;font-size:17px;color:var(--ink);text-decoration:none;letter-spacing:-.01em;display:inline-flex;align-items:center;min-height:44px;padding:0 4px;flex:none}
+  .brand span{color:var(--accent)}
+  .nav-links{display:flex;align-items:center;gap:0;flex-wrap:nowrap;min-width:0}
+  .nav-links a{color:var(--ink-2);text-decoration:none;font-size:14px;padding:10px 9px;min-height:44px;display:inline-flex;align-items:center;white-space:nowrap}
+  .nav-links a:hover{color:var(--ink)}
+  @media(max-width:560px){.nav-links a.hide-sm{display:none}.nav-links a{padding:10px 7px;font-size:13.5px}}
+
+  /* Buttons */
+  .btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;font-size:14.5px;font-weight:600;padding:10px 16px;min-height:44px;border:1px solid var(--edge);border-radius:4px;background:var(--raised);color:var(--ink);cursor:pointer;text-align:center}
+  .btn:hover{border-color:var(--ink-2)}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .btn-primary:hover{background:var(--accent);border-color:var(--ink-2)}
+
+  /* Intro */
+  .intro{padding:28px 0 24px}
+  @media(min-width:768px){.intro{padding:36px 0 28px}}
+  h1{font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.15;margin:0 0 8px}
+  @media(min-width:768px){h1{font-size:30px}}
+  .intro p.lede{font-size:16.5px;color:var(--ink);margin:0;max-width:640px}
+  @media(min-width:768px){.intro p.lede{font-size:17px}}
+  .meta{font-family:var(--mono);font-size:12.5px;color:var(--ink-3);margin:10px 0 0;overflow-wrap:anywhere;line-height:1.6}
+  .ctas{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  @media(max-width:480px){.ctas{flex-direction:column;align-items:stretch}.ctas .btn{width:100%}}
+
+  section{padding:24px 0}
+  @media(min-width:768px){section{padding:28px 0}}
+  h2{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
+  .sub{color:var(--ink-2);margin:0 0 16px;max-width:640px}
+
+  /* Desk */
+  .desk-controls{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;margin-bottom:10px}
+  .swatches{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .swatches>span{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-3);margin-right:2px}
+  .swatch{width:44px;height:44px;min-height:44px;border-radius:4px;border:1px solid var(--line);background:var(--panel);padding:9px;cursor:pointer}
+  @media(min-width:768px){.swatch{width:36px;height:36px;min-height:36px;padding:6px}}
+  .swatch i{display:block;width:100%;height:100%;border-radius:2px}
+  .swatch[aria-pressed="true"]{border-color:var(--accent)}
+  .toggle{display:inline-flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--ink-2);min-height:44px;padding:6px 0}
+  .toggle input{width:20px;height:20px;accent-color:var(--accent);flex:none}
+
+  .desk{background:var(--panel);border:1px solid var(--line);border-radius:6px;min-width:0;max-width:100%;overflow:hidden}
+  .desk-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .desk-top-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto}
+  .live{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--m-red);flex:none}
+  .desk-device{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .desk-cpu{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);white-space:nowrap;flex:none}
+  .desk-cpu b{color:var(--ink);font-weight:600}
+  @media(max-width:640px){.desk-device{display:none}}
+
+  .strips{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+  .strip{padding:12px 8px 10px;border-right:1px solid var(--line);min-width:0}
+  .strip:last-child{border-right:0}
+  @media(max-width:640px){
+    .strips{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .strip{padding:12px 6px 12px}
+    .strip:nth-child(2){border-right:0}
+    .strip:nth-child(1),.strip:nth-child(2){border-bottom:1px solid var(--line)}
+  }
+  .strip-name{font-weight:700;font-size:12.5px;text-align:center;padding:5px 2px;border-radius:3px;color:var(--tape-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .strip-src{font-family:var(--mono);font-size:10px;color:var(--ink-3);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:5px}
+  .chips{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin-top:9px;min-height:19px}
+  .chip{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.04em;padding:3px 5px;border-radius:3px;background:var(--accent);color:var(--accent-ink)}
+  .fader-area{display:flex;gap:6px;justify-content:center;margin-top:12px;height:124px}
+  .meter{width:10px;border-radius:2px;background:var(--meter-well);border:1px solid var(--line);position:relative;overflow:hidden;flex:none}
+  .meter-fill{position:absolute;left:0;right:0;bottom:0;background:var(--m-green)}
+  .meter-rms{position:absolute;left:0;right:0;background:var(--ink);height:2px;bottom:40%}
+  .fader-track{width:48px;position:relative;flex:none;cursor:ns-resize;touch-action:none;-webkit-tap-highlight-color:transparent}
+  .fader-track::before{content:"";position:absolute;left:50%;top:3px;bottom:3px;width:3px;transform:translateX(-50%);background:var(--well);border:1px solid var(--line)}
+  .fader-track::after{content:"";position:absolute;left:8px;right:8px;top:50%;height:1px;background:var(--line)}
+  .fader-thumb{position:absolute;left:50%;transform:translate(-50%,50%);width:38px;height:24px;border-radius:3px;background:var(--tape);border:1px solid var(--well);z-index:2;pointer-events:none}
+  .fader-thumb::after{content:"";position:absolute;left:3px;right:3px;top:50%;height:2px;transform:translateY(-50%);background:var(--accent)}
+  .fader-val{font-family:var(--mono);font-size:11px;text-align:center;margin-top:7px;color:var(--ink)}
+  .ms-row{display:flex;gap:6px;justify-content:center;margin-top:8px}
+  .ms-btn{flex:1;max-width:56px;height:44px;min-height:44px;border-radius:3px;border:1px solid var(--edge);background:var(--raised);color:var(--ink-2);font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer}
+  @media(min-width:768px){.ms-btn{height:36px;min-height:36px;max-width:46px;font-size:11px}}
+  .ms-btn.mute-on{background:var(--mute);color:#fff;border-color:var(--mute)}
+  .ms-btn.solo-on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .desk.compact .strip{padding:9px 5px 10px}
+  .desk.compact .fader-area{height:100px;margin-top:9px}
+  .desk.compact .chips{display:none}
+  .desk-bottom{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:10px 12px;border-top:1px solid var(--line)}
+  .bus-pills{display:flex;gap:5px;flex-wrap:wrap;min-width:0}
+  .bus-pill{font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:3px;border:1px solid var(--line);color:var(--ink-3)}
+  .bus-pill.active{color:var(--ink);border-color:var(--accent)}
+  .tempo{display:flex;align-items:center;gap:10px}
+  .bpm{font-family:var(--mono);font-size:13px;color:var(--ink);min-width:86px}
+  .bpm small{color:var(--ink-3);display:block;font-size:9.5px;letter-spacing:.08em}
+  .tap-btn{height:44px;min-height:44px;padding:0 20px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:13px;cursor:pointer;min-width:72px}
+  @media(max-width:640px){
+    .desk-bottom{flex-direction:column;align-items:stretch}
+    .tempo{justify-content:space-between;width:100%}
+    .bus-pills{width:100%}
+    .bus-pill{flex:1 1 auto;text-align:center}
+  }
+  .note{font-size:13.5px;color:var(--ink-3);margin:10px 0 0;overflow-wrap:break-word}
+
+  /* Feature list */
+  .features{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+  .features li{display:grid;gap:3px;padding:12px 0;border-bottom:1px solid var(--line);min-width:0}
+  @media(min-width:700px){.features li{grid-template-columns:210px minmax(0,1fr);gap:16px}}
+  .features b{font-size:15px;font-weight:600}
+  .features p{margin:0;color:var(--ink-2);font-size:14.5px;overflow-wrap:break-word;min-width:0}
+  .features code{font-family:var(--mono);font-size:12.5px;color:var(--ink);overflow-wrap:anywhere;word-break:break-word}
+  .sub a,.features a{padding:2px 0}
+
+  /* Download */
+  .download{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:16px}
+  @media(min-width:768px){.download{padding:20px}}
+  .download p{color:var(--ink-2);margin:0;max-width:620px;overflow-wrap:break-word}
+  .download code{font-family:var(--mono);font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+
+  footer{border-top:1px solid var(--line);padding:20px 0 32px;margin-top:8px}
+  .foot{display:flex;flex-wrap:wrap;gap:10px 20px;justify-content:space-between;align-items:flex-start;font-size:13.5px;color:var(--ink-2)}
+  @media(min-width:640px){.foot{align-items:center}}
+  .foot>span{flex:1 1 220px;line-height:1.5}
+  .foot-links{display:flex;flex-wrap:wrap;gap:2px}
+  .foot-links a{color:var(--ink-2);text-decoration:none;padding:10px 8px;min-height:44px;display:inline-flex;align-items:center}
+  .foot-links a:hover{color:var(--accent)}
+  .foot-note{font-size:12.5px;color:var(--ink-3);margin:10px 0 0;line-height:1.6}
+
+  @media(prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top">Open<span>Mix</span></a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#desk">Desk</a>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a class="hide-sm" href="https://itzcaesar.github.io/OpenMix/docs/" target="_blank" rel="noopener">Wiki</a>
+      <a class="hide-sm" href="https://github.com/itzcaesar/OpenMix" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap intro">
+    <h1>OpenMix</h1>
+    <p class="lede">OpenMix is a free, open-source virtual audio mixer for Windows, built for streamers. Route your mic, apps and games, process your voice, and send a separate mix to your headphones, stream and calls.</p>
+    <p class="meta">v0.1.0 · Windows 10 / 11 · C++20 / JUCE 9 · AGPL-3.0 · by itzcaesar</p>
+    <div class="ctas">
+      <a class="btn btn-primary" href="#download">Download</a>
+      <a class="btn" href="https://itzcaesar.github.io/OpenMix/docs/" target="_blank" rel="noopener">Documentation / wiki</a>
+      <a class="btn" href="https://github.com/itzcaesar/OpenMix" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+
+  <!-- DESK -->
+  <section id="desk" style="padding-top:8px">
+    <div class="wrap">
+      <div class="desk-controls">
+        <div class="swatches" role="group" aria-label="Accent colour">
+          <span>ACCENT</span>
+          <button class="swatch" type="button" data-accent-btn="amber" aria-pressed="true" aria-label="Amber accent"><i style="background:#f0a23b"></i></button>
+          <button class="swatch" type="button" data-accent-btn="sky" aria-pressed="false" aria-label="Sky accent"><i style="background:#5b9ef0"></i></button>
+          <button class="swatch" type="button" data-accent-btn="green" aria-pressed="false" aria-label="Green accent"><i style="background:#3ec46d"></i></button>
+          <button class="swatch" type="button" data-accent-btn="violet" aria-pressed="false" aria-label="Violet accent"><i style="background:#a78bfa"></i></button>
+          <button class="swatch" type="button" data-accent-btn="cyan" aria-pressed="false" aria-label="Cyan accent"><i style="background:#39c2d7"></i></button>
+        </div>
+        <label class="toggle"><input type="checkbox" id="compactToggle"> Compact mode</label>
+      </div>
+
+      <div class="desk" id="mainDesk">
+        <div class="desk-top">
+          <div class="desk-top-left">
+            <span class="live">● LIVE</span>
+            <span class="desk-device">Focusrite USB ASIO · 48 kHz · Buffer 128 · Scene: Streaming</span>
+          </div>
+          <span class="desk-cpu">CPU <b id="cpuVal">2.8%</b></span>
+        </div>
+        <div class="strips" id="mainStrips"></div>
+        <div class="desk-bottom">
+          <div class="bus-pills">
+            <span class="bus-pill active">A1 · Headphones</span>
+            <span class="bus-pill">A2 · Speakers</span>
+            <span class="bus-pill active">B1 · Stream</span>
+            <span class="bus-pill">B2 · Discord</span>
+          </div>
+          <div class="tempo">
+            <span class="bpm"><span class="bpm-val">120.0</span> BPM<small>TAP TEMPO</small></span>
+            <button class="tap-btn" type="button" data-tap>TAP</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">Preview of the interface, an interactive mockup, not a screenshot. Drag the faders, use M / S, tap tempo, or change the accent, as in the app's Settings.</p>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="wrap">
+      <h2>Features</h2>
+      <p class="sub">What v0.1.0 does. Full setup guides are in the <a href="https://itzcaesar.github.io/OpenMix/docs/" target="_blank" rel="noopener">wiki</a>.</p>
+      <ul class="features">
+        <li><b>Inputs</b><p>Up to 8 strips: a main device (ASIO / WASAPI / DirectSound), other Windows inputs, per-app capture, and output loopback. Devices and apps reconnect on their own when they come back.</p></li>
+        <li><b>Voice chain</b><p>Per strip: gain, phase / mono, RNNoise noise removal, gate, HPF / LPF, 3-band EQ, compressor, de-esser, ducking, and a VoicePad XY pad for tone, pan, colour and space. Latency is compensated across strips.</p></li>
+        <li><b>Plugins &amp; effects</b><p>6 VST3 insert slots per strip and bus, scanned and loaded in separate processes so a crashing plugin is skipped. Built-in reverb, tempo-synced delay and chorus, with post-fader FX sends.</p></li>
+        <li><b>Buses</b><p>6 buses, A1–A3 hardware and B1–B3 virtual, each with EQ, compression, a limiter at −0.3 dBFS, peak / RMS meters, spectrum, and LUFS metering with normalisation to −14 / −16 / −23 LUFS.</p></li>
+        <li><b>Record &amp; play</b><p>Multitrack WAV recorder (per bus, per strip, or both), a replay buffer for the last 30 / 60 / 120 seconds, and an 8-pad soundboard on keys 1–8.</p></li>
+        <li><b>Scenes &amp; control</b><p>Scenes snapshot the whole desk. Global hotkeys work while a game has focus. Remote control from a phone browser, OSC (<code>/openmix/strip/1/fader</code>), MIDI learn, and Stream Deck. It is off by default with no password, so only enable remotes on a network you trust.</p></li>
+      </ul>
+      <p class="note">Limits in v0.1.0: there is no built-in virtual driver yet, so a B bus feeding Discord or OBS needs a virtual cable (e.g. VB-Audio). Crash-safe loading catches crashes at start-up; a plugin crashing while processing can still take the mixer down.</p>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section id="download" style="padding-top:4px">
+    <div class="wrap">
+      <div class="download">
+        <h2>Download</h2>
+        <p>Windows builds are produced by GitHub Actions on every push to <code>main</code>. The v0.1.0 release is not tagged yet; when it is, it will also appear under Releases with an installer. To build it yourself: VS 2026 with the Desktop C++ workload, clone with submodules, open the <code>vs2026</code> preset. Details are in the README.</p>
+        <div class="ctas">
+          <a class="btn btn-primary" href="https://github.com/itzcaesar/OpenMix/actions" target="_blank" rel="noopener">Latest build (Actions)</a>
+          <a class="btn" href="https://github.com/itzcaesar/OpenMix/releases" target="_blank" rel="noopener">Releases</a>
+          <a class="btn" href="https://itzcaesar.github.io/OpenMix/docs/" target="_blank" rel="noopener">Documentation / wiki</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <span>OpenMix, a virtual audio mixer for Windows, by Muhammad Caesar Rifqi (itzcaesar)</span>
+      <nav class="foot-links" aria-label="Footer">
+        <a href="https://github.com/itzcaesar/OpenMix" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://itzcaesar.github.io/OpenMix/docs/" target="_blank" rel="noopener">Wiki</a>
+        <a href="https://github.com/itzcaesar/OpenMix/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="#top">Back to top</a>
+      </nav>
+    </div>
+    <p class="foot-note">Licensed under the GNU AGPLv3. Built on JUCE and RNNoise. This page describes v0.1.0, the upcoming first release.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var CHANNELS = [
+    { name:"MIC", src:"USB Mic · Ch 1", color:"#f0a23b", chips:["NR","GATE","EQ","COMP"], level:0.72 },
+    { name:"GAME", src:"App · Game", color:"#5b9ef0", chips:["HPF","DUCK"], level:0.55 },
+    { name:"MUSIC", src:"App · Spotify", color:"#3ec46d", chips:["EQ"], level:0.62 },
+    { name:"DISCORD", src:"Loopback · Headset", color:"#a78bfa", chips:["NR","GATE"], level:0.38 }
+  ];
+  var GREEN = "#3ec46d", AMBER = "#f0a23b", RED = "#e5484d";
+
+  function buildStrips(containerId){
+    var el = document.getElementById(containerId);
+    if(!el) return [];
+    var strips = [];
+    CHANNELS.forEach(function(ch){
+      var strip = document.createElement("div");
+      strip.className = "strip";
+      var chipsHtml = ch.chips.map(function(c){ return '<span class="chip">'+c+'</span>'; }).join("");
+      strip.innerHTML =
+        '<div class="strip-name" style="background:'+ch.color+'">'+ch.name+'</div>'+
+        '<div class="strip-src">'+ch.src+'</div>'+
+        '<div class="chips">'+chipsHtml+'</div>'+
+        '<div class="fader-area">'+
+          '<div class="meter"><div class="meter-fill"></div><div class="meter-rms"></div></div>'+
+          '<div class="fader-track" role="slider" tabindex="0" aria-label="'+ch.name+' fader" aria-valuemin="-60" aria-valuemax="6" aria-valuenow="0"><div class="fader-thumb"></div></div>'+
+        '</div>'+
+        '<div class="fader-val">0.0 dB</div>'+
+        '<div class="ms-row"><button type="button" class="ms-btn mute-btn" aria-pressed="false">M</button><button type="button" class="ms-btn solo-btn" aria-pressed="false">S</button></div>';
+      el.appendChild(strip);
+
+      var state = { level: ch.level, muted:false, solo:false, phase: Math.random()*Math.PI*2, speed: 0.6 + Math.random()*0.9 };
+      var fill = strip.querySelector(".meter-fill");
+      var rms = strip.querySelector(".meter-rms");
+      var thumb = strip.querySelector(".fader-thumb");
+      var track = strip.querySelector(".fader-track");
+      var val = strip.querySelector(".fader-val");
+      var muteBtn = strip.querySelector(".mute-btn");
+      var soloBtn = strip.querySelector(".solo-btn");
+
+      function renderFader(){
+        thumb.style.bottom = (state.level * 100) + "%";
+        var db = state.level <= 0.01 ? "-inf" : (Math.round(((state.level*66)-60)*10)/10).toFixed(1);
+        val.textContent = (db === "-inf" ? "-∞" : db) + " dB";
+        track.setAttribute("aria-valuenow", db === "-inf" ? -60 : db);
+      }
+      renderFader();
+
+      function setFromEvent(e){
+        var r = track.getBoundingClientRect();
+        var p = 1 - ((e.clientY - r.top) / r.height);
+        state.level = Math.max(0, Math.min(1, p));
+        renderFader();
+      }
+      var dragging = false;
+      track.addEventListener("pointerdown", function(e){ dragging = true; try{ track.setPointerCapture(e.pointerId); }catch(_){} setFromEvent(e); e.preventDefault(); });
+      track.addEventListener("pointermove", function(e){ if(dragging) setFromEvent(e); });
+      track.addEventListener("pointerup", function(){ dragging = false; });
+      track.addEventListener("pointercancel", function(){ dragging = false; });
+      track.addEventListener("keydown", function(e){
+        if(e.key === "ArrowUp"){ state.level = Math.min(1, state.level + 0.03); renderFader(); e.preventDefault(); }
+        if(e.key === "ArrowDown"){ state.level = Math.max(0, state.level - 0.03); renderFader(); e.preventDefault(); }
+        if(e.key === "Home"){ state.level = 0.76; renderFader(); e.preventDefault(); }
+      });
+      muteBtn.addEventListener("click", function(){
+        state.muted = !state.muted;
+        muteBtn.classList.toggle("mute-on", state.muted);
+        muteBtn.setAttribute("aria-pressed", String(state.muted));
+      });
+      soloBtn.addEventListener("click", function(){
+        state.solo = !state.solo;
+        soloBtn.classList.toggle("solo-on", state.solo);
+        soloBtn.setAttribute("aria-pressed", String(state.solo));
+      });
+
+      strips.push({ state: state, fill: fill, rms: rms });
+    });
+    return strips;
+  }
+
+  var allStrips = buildStrips("mainStrips");
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var t0 = performance.now();
+  function meterColor(peak){
+    if(peak > 0.88) return RED;
+    if(peak > 0.68) return AMBER;
+    return GREEN;
+  }
+  function animate(now){
+    var t = (now - t0) / 1000;
+    allStrips.forEach(function(s){
+      if(s.state.muted){ s.fill.style.height = "2%"; s.rms.style.bottom = "2%"; return; }
+      var wobble = 0.5 + 0.5 * Math.sin(t * 2.2 * s.state.speed + s.state.phase) * Math.sin(t * 0.7 + s.state.phase * 2);
+      var peak = Math.max(0.04, Math.min(0.98, s.state.level * (0.35 + wobble * 0.75)));
+      s.fill.style.height = (peak * 100) + "%";
+      s.fill.style.background = meterColor(peak);
+      s.rms.style.bottom = (Math.max(0.03, peak * 0.72) * 100) + "%";
+    });
+    if(!reduceMotion) requestAnimationFrame(animate);
+  }
+  if(reduceMotion){
+    allStrips.forEach(function(s){
+      s.fill.style.height = (s.state.level*70)+"%";
+      s.fill.style.background = meterColor(s.state.level*0.7);
+    });
+  } else {
+    requestAnimationFrame(animate);
+  }
+
+  /* Tap tempo */
+  var taps = [];
+  var bpmEls = document.querySelectorAll(".bpm-val");
+  document.querySelectorAll("[data-tap]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var now = performance.now();
+      taps = taps.filter(function(x){ return now - x < 2500; });
+      taps.push(now);
+      if(taps.length > 1){
+        var total = 0;
+        for(var i=1;i<taps.length;i++) total += taps[i]-taps[i-1];
+        var bpm = Math.max(40, Math.min(240, Math.round(60000/(total/(taps.length-1))*10)/10));
+        bpmEls.forEach(function(el){ el.textContent = bpm.toFixed(1); });
+      }
+    });
+  });
+
+  /* Accent picker */
+  var accentBtns = document.querySelectorAll("[data-accent-btn]");
+  accentBtns.forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var name = btn.getAttribute("data-accent-btn");
+      if(name === "amber") document.documentElement.removeAttribute("data-accent");
+      else document.documentElement.setAttribute("data-accent", name);
+      accentBtns.forEach(function(b){ b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
+    });
+  });
+
+  /* Compact mode */
+  var compactToggle = document.getElementById("compactToggle");
+  var mainDesk = document.getElementById("mainDesk");
+  if(compactToggle && mainDesk){
+    compactToggle.addEventListener("change", function(){
+      mainDesk.classList.toggle("compact", compactToggle.checked);
+    });
+  }
+
+  /* CPU readout drift */
+  var cpuEl = document.getElementById("cpuVal");
+  if(cpuEl && !reduceMotion){
+    setInterval(function(){ cpuEl.textContent = (2.4 + Math.random()*1.4).toFixed(1) + "%"; }, 1800);
+  }
+})();
+</script>
+</body>
+</html>
