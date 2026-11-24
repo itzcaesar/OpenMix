@@ -39,7 +39,7 @@ jobs:
       - name: Install MkDocs Material
         run: pip install mkdocs mkdocs-material
 
-      - name: Build site (strict: warnings are errors)
+      - name: "Build site (strict: warnings are errors)"
         run: mkdocs build --strict
 
       - name: Configure Pages
