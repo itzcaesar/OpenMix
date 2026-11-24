@@ -61,7 +61,7 @@ public:
         for (int i = 0; i < kNumSlots; ++i)
         {
             rows[(size_t) i].setVisible (i < visible);
-            rows[(size_t) i].setBounds (0, i * (rowHeight + rowGap), getWidth(), rowHeight);
+            rows[(size_t) i].setBounds (0, i * (rowHeight() + rowGap()), getWidth(), rowHeight());
         }
     }
 
@@ -95,7 +95,7 @@ InsertRack::InsertRack (MixerEngine& e, PluginChain& c)
         {
             dragFrom = s;
             const int localY = screenY - list->getScreenY();
-            dropIndex = juce::jlimit (0, juce::jmax (0, chain.getNumPlugins() - 1), localY / (rowHeight + rowGap));
+            dropIndex = juce::jlimit (0, juce::jmax (0, chain.getNumPlugins() - 1), localY / (rowHeight() + rowGap()));
             list->dropIndex = dropIndex == s ? -1 : dropIndex;
             list->repaint();
         };

@@ -4,8 +4,8 @@
 #include "ui/Theme.h"
 
 SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std::function<void()> oscFn,
-                              std::function<void()> hotkeysFn, MidiControl* midi)
-    : engine (e), midiControl (midi), toggleTheme (std::move (themeFn)), oscChanged (std::move (oscFn)), openHotkeys (std::move (hotkeysFn))
+                              std::function<void()> hotkeysFn, MidiControl* midi, std::function<void()> appearanceFn)
+    : engine (e), midiControl (midi), toggleTheme (std::move (themeFn)), oscChanged (std::move (oscFn)), openHotkeys (std::move (hotkeysFn)), appearanceChanged (std::move (appearanceFn))
 {
     hotkeysButton.setTooltip ("Global hotkeys for mute, push to talk, the soundboard, recording and scenes.");
     hotkeysButton.onClick = [this] { if (openHotkeys) openHotkeys(); };
@@ -38,6 +38,33 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         themeButton.setButtonText (themeLabel());
         repaint();
     };
+
+    // Accent colour: the lamp colour for "on" sends, the voice-pad puck and toggle lamps.
+    // Amber is the default; the choice is saved and applied on startup.
+    for (int i = 0; i < Theme::numAccentColours; ++i)
+    {
+        auto sw = std::make_unique<AccentSwatch> (juce::Colour (Theme::accentColours[i].argb), [this, i]
+        {
+            AppSettings::get().setAccentIndex (i);
+            Theme::setAccent (i);
+            updateAccentSwatches();
+            if (appearanceChanged) appearanceChanged();
+        });
+        sw->setTitle (juce::String ("Accent colour: ") + Theme::accentColours[i].name);
+        addAndMakeVisible (*sw);
+        accentSwatches.push_back (std::move (sw));
+    }
+    updateAccentSwatches();
+
+    compactMode.setToggleState (s.compactMode(), juce::dontSendNotification);
+    compactMode.onClick = [this]
+    {
+        AppSettings::get().setCompactMode (compactMode.getToggleState());
+        Theme::setCompact (compactMode.getToggleState());
+        if (appearanceChanged) appearanceChanged();
+    };
+    makeClickable (compactMode);
+    addAndMakeVisible (compactMode);
 
     scanButton.onClick    = [this] { engine.getScanner().startScan (false); updateScanText(); };
     retryButton.onClick   = [this] { engine.getScanner().startScan (true);  updateScanText(); };
@@ -220,7 +247,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     engine.getScanner().addChangeListener (this);
     updateScanText();
     startTimerHz (2);   // watches MIDI learn finishing (a knob/key on another thread)
-    setSize (540, 820);
+    setSize (540, 890);
 }
 
 SettingsPanel::~SettingsPanel()
@@ -280,6 +307,35 @@ void SettingsPanel::updateMidiText()
     repaint (midiTextArea);
 }
 
+SettingsPanel::AccentSwatch::AccentSwatch (juce::Colour c, std::function<void()> onClickFn)
+    : colour (c), onClick (std::move (onClickFn))
+{
+}
+
+void SettingsPanel::AccentSwatch::paint (juce::Graphics& g)
+{
+    const auto area = getLocalBounds().toFloat();
+    g.setColour (colour);
+    g.fillRoundedRectangle (area, Theme::controlRadius);
+    if (selected)
+    {
+        g.setColour (Theme::p().text);
+        g.drawRoundedRectangle (area.reduced (1.0f), Theme::controlRadius, 2.0f);
+    }
+}
+
+void SettingsPanel::AccentSwatch::mouseUp (const juce::MouseEvent& e)
+{
+    if (e.mouseWasClicked() && onClick)
+        onClick();
+}
+
+void SettingsPanel::updateAccentSwatches()
+{
+    for (int i = 0; i < (int) accentSwatches.size(); ++i)
+        accentSwatches[(size_t) i]->setSelected (i == Theme::accentIndex());
+}
+
 void SettingsPanel::updateScanText()
 {
     auto& scanner = engine.getScanner();
@@ -307,6 +363,10 @@ void SettingsPanel::paint (juce::Graphics& g)
     Theme::drawLegend (g, "Plugins", pluginsLegend);
     Theme::drawLegend (g, "Network and logs", networkLegend);
     Theme::drawLegend (g, "About", aboutLegend);
+
+    g.setFont (Theme::ui (13.0f));
+    g.setColour (t.textDim);
+    g.drawText ("Accent colour", accentLabelArea, juce::Justification::centredLeft);
 
     g.setFont (Theme::ui (13.0f));
     g.setColour (t.textDim);
@@ -345,6 +405,17 @@ void SettingsPanel::resized()
         row.removeFromLeft (Theme::s2);
         hotkeysButton.setBounds (row.removeFromLeft (190));
     }
+    r.removeFromTop (Theme::s1);
+    {
+        auto row = r.removeFromTop (28);
+        accentLabelArea = row.removeFromLeft (110);
+        for (auto& sw : accentSwatches)
+        {
+            sw->setBounds (row.removeFromLeft (28));
+            row.removeFromLeft (Theme::s1);
+        }
+    }
+    compactMode.setBounds (r.removeFromTop (28));
     r.removeFromTop (Theme::s4);
 
     pluginsLegend = r.removeFromTop (20);

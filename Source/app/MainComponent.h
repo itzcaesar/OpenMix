@@ -26,7 +26,7 @@ public:
     std::function<void()> onSizeChanged;   // the minimum width changed (MainComponent resizes)
 
     int minimumWidth() const;
-    int minimumHeight() const { return 560 + (soundboard.isVisible() ? SoundboardPanel::barHeight + Theme::s3 : 0); }
+    int minimumHeight() const { return 560 + (soundboard.isVisible() ? SoundboardPanel::barHeight() + Theme::s3 : 0); }
 
     std::array<std::unique_ptr<StripView>, kNumStrips> strips;
     std::array<std::unique_ptr<BusView>, kNumBuses> buses;

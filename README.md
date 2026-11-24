@@ -240,7 +240,7 @@ use (for example with Ctrl+Alt).
 
 ## Settings
 
-Light or dark theme, hotkeys, start with Windows, start minimized, keep running in the tray when the
+Light or dark theme, an accent colour for the lamps, compact mode, hotkeys, start with Windows, start minimized, keep running in the tray when the
 window closes, plugin scanning and crash-safe loading, presets and VST3 folders, the update check, OSC,
 phone / WebSocket and MIDI remote control, and the log folder. In the tray, double-click opens the mixer; right-click to quit.
 

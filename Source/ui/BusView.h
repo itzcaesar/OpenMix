@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "engine/MixerEngine.h"
+#include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "ui/AnalyserPanel.h"
 #include "ui/InsertRack.h"
@@ -25,7 +26,10 @@ public:
 
     void setBayTop (int y) { bayTop = y; }   // same fader-bay line as every other column
 
-    static constexpr int minWidth = 156, maxWidth = 300;
+    // Column width limits; compact mode narrows them (Theme::isCompact()).
+    // A bus gets about 3/4 of a strip's width (see ConsoleContent::resized).
+    static int minWidth() { return Theme::isCompact() ? 128 : 156; }
+    static int maxWidth() { return Theme::isCompact() ? 240 : 300; }
 
 private:
     void showTargetMenu();

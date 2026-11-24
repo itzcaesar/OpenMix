@@ -47,6 +47,14 @@ public:
     bool pluginProbeEnabled() const           { return props->getBoolValue ("pluginProbeEnabled", true); }
     void setPluginProbeEnabled (bool b)       { props->setValue ("pluginProbeEnabled", b); props->saveIfNeeded(); }
 
+    // Accent colour for lamps, the voice-pad puck and "on" keys (Theme::accentColours index, 0 = amber).
+    int accentIndex() const                   { return props->getIntValue ("accentIndex", 0); }
+    void setAccentIndex (int i)               { props->setValue ("accentIndex", i); props->saveIfNeeded(); }
+
+    // Compact mode: narrower strips and buses, tighter gaps, shorter plugin rows.
+    bool compactMode() const                  { return props->getBoolValue ("compactMode", false); }
+    void setCompactMode (bool b)              { props->setValue ("compactMode", b); props->saveIfNeeded(); }
+
     // Recorder: 0 = every bus, 1 = every strip, 2 = buses and strips (one file each)
     int recordWhat() const                    { return props->getIntValue ("recordWhat", 0); }
     void setRecordWhat (int w)                { props->setValue ("recordWhat", w); props->saveIfNeeded(); }

@@ -497,7 +497,7 @@ void StripView::resized()
 
     // Compact pad, pinned to the bottom of the top section: wide and short (it's a gesture
     // surface, it doesn't need to be square). The inserts get everything between.
-    constexpr int rackMin = InsertRack::rowHeight;
+    const int rackMin = InsertRack::rowHeight();
     const int padH = juce::jlimit (32, 88, juce::jmin ((int) (top.getWidth() * 0.42f),
                                                        top.getHeight() - legendH - rackMin - gap - legendH - VoicePadComponent::headerHeight));
     pad.setBounds (top.removeFromBottom (padH + VoicePadComponent::headerHeight));
@@ -506,7 +506,7 @@ void StripView::resized()
 
     // Inserts: as many rows as fit; the list scrolls past that.
     insertsLegend = top.removeFromTop (legendH);
-    const int fit = (top.getHeight() + InsertRack::rowGap) / (InsertRack::rowHeight + InsertRack::rowGap);
+    const int fit = (top.getHeight() + InsertRack::rowGap()) / (InsertRack::rowHeight() + InsertRack::rowGap());
     inserts.setBounds (top.removeFromTop (InsertRack::heightForRows (juce::jlimit (1, kNumSlots, juce::jmin (fit, inserts.getVisibleRowCount())))));
 
     // Fader bay: mute and solo along the bottom, the fader with the send keys beside it.

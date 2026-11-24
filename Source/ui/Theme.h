@@ -7,7 +7,8 @@
 //
 // Contrast (WCAG, checked with the antislop contrast script):
 //   dark:  text/panel 13.9, textDim/panel 7.5, textFaint/panel 5.0, textFaint/window 5.7,
-//          onAccent/accent 8.2, tapeText/tape 12.5, white/mute 4.5, controlEdge/panel 3.8 (3:1 bar)
+//          onAccent/accent 8.2 (amber; the other accents are 6.3-8.2), tapeText/tape 12.5,
+//          white/mute 4.5, controlEdge/panel 3.8 (3:1 bar)
 //   light: text/panel 14.3, textDim/panel 8.1, textFaint/panel 5.7, textFaint/window 4.7,
 //          onAccent/accent 8.2, tapeText/tape 15.4, white/mute 4.5, controlEdge/panel 3.6 (3:1 bar)
 namespace Theme
@@ -70,15 +71,65 @@ namespace Theme
         return p;
     }
 
-    inline const Palette*& currentPalette()
+    // Accent colours a user can pick (Settings > Accent colour). The accent is the lamp
+    // colour: "on" sends, the voice-pad puck, the active pad mode, toggle lamps. All five
+    // are light enough that dark text on them stays above 4.5:1 (amber 8.2, sky ~6.3,
+    // green ~7.7, violet ~6.4, cyan ~8.2), so onAccent is always the dark text.
+    struct AccentColour { const char* name; juce::uint32 argb; };
+    inline const AccentColour accentColours[] {
+        { "Amber",  0xfff0a23b },   // the default lamp amber
+        { "Sky",    0xff5b9ef0 },
+        { "Green",  0xff3ec46d },
+        { "Violet", 0xffa78bfa },
+        { "Cyan",   0xff39c2d7 },
+    };
+    constexpr int numAccentColours = (int) std::size (accentColours);
+
+    // The live palette is a copy of the dark or light template, with the chosen accent
+    // applied. Components read p() at paint time, so changing the accent or theme is
+    // setDark()/setAccent() + repaint, with no per-component state.
+    inline Palette& current()
     {
-        static const Palette* current = &darkPalette();
-        return current;
+        static Palette cur = darkPalette();
+        return cur;
     }
 
-    inline const Palette& p()                { return *currentPalette(); }
+    inline const Palette& p()                { return current(); }
     inline bool isDark()                     { return p().dark; }
-    inline void setDark (bool shouldBeDark)  { currentPalette() = shouldBeDark ? &darkPalette() : &lightPalette(); }
+
+    inline int& accentIndexStorage()         { static int i = 0; return i; }
+    inline int accentIndex()                 { return accentIndexStorage(); }
+
+    inline void applyAccent()
+    {
+        auto& c = current();
+        const auto accent = juce::Colour (accentColours[accentIndex()].argb);
+        c.accent = accent;
+        c.onAccent = accent.getPerceivedBrightness() > 0.45f ? juce::Colour (0xff1a1a1a)
+                                                             : juce::Colours::white;
+        // In the light theme an accent is low-contrast on the panel, so "on" states
+        // also get a dark edge (the same reason the amber edge is dark there).
+        c.accentEdge = c.dark ? accent : juce::Colour (0xff1b1b1b);
+    }
+
+    inline void setDark (bool shouldBeDark)
+    {
+        current() = shouldBeDark ? darkPalette() : lightPalette();
+        applyAccent();
+    }
+
+    inline void setAccent (int index)
+    {
+        accentIndexStorage() = juce::jlimit (0, numAccentColours - 1, index);
+        applyAccent();
+    }
+
+    // Compact density: narrower strips and buses, tighter gaps, shorter plugin rows.
+    // Layout code reads the widths and gaps from here at layout time, so toggling it
+    // is setCompact() + a relayout.
+    inline bool& compactStorage()            { static bool c = false; return c; }
+    inline bool isCompact()                  { return compactStorage(); }
+    inline void setCompact (bool compact)    { compactStorage() = compact; }
 
     // Scribble-strip tape colours a user can pick per channel (identification, see DESIGN.md).
     // All are light, so the dark marker text stays above 9:1 on every one of them.

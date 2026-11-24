@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "engine/MixerEngine.h"
+#include "ui/Theme.h"
 #include "ui/Widgets.h"
 
 // The soundboard: a bar along the bottom of the console. Name and Stop all on the left, the
@@ -18,7 +19,7 @@ public:
     void refresh();
     std::function<void()> onChanged;   // something worth saving changed
 
-    static constexpr int barHeight = 104;
+    static int barHeight() { return Theme::isCompact() ? 88 : 104; }
     static constexpr int minWidth = 640;
 
 private:

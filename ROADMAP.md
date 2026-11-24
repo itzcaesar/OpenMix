@@ -165,6 +165,7 @@ This removes the need for VB-Cable. Two parts:
 - [x] Scenes: save and recall the mix (levels, mutes, sends, processing), OSC recall
 - [x] MIDI controller mapping (learnable CC/note to fader, mute, soundboard, record), WebSocket API + phone remote (built-in page at `http://<PC>:8080/`, `GET /api/state`, `POST /api/command`, `ws://.../ws`), Stream Deck via its OSC plugin or a WebSocket plugin against the same paths
 - [x] Dark/light themes, resizable UI (laptop to desktop), channel names and colours, settings window
+- [x] Accent colour (amber default, plus sky, green, violet, cyan) and a compact mode with narrower strips and buses
 - [x] Crash handler + log file; "safe mode" start that skips plugins
 - [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)
 - [x] Update check (opt-in, GitHub releases)

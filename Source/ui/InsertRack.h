@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "engine/MixerEngine.h"
+#include "ui/Theme.h"
 #include "ui/Widgets.h"
 
 // A plugin's own editor in its own window.
@@ -29,7 +30,7 @@ public:
 
     // Rows to show: the plugins, a "Loading..." row, and one empty "+ Add plugin" row.
     int getVisibleRowCount() const;
-    static int heightForRows (int rows) { return juce::jmax (rows, 1) * (rowHeight + rowGap) - rowGap; }
+    static int heightForRows (int rows) { return juce::jmax (rows, 1) * (rowHeight() + rowGap()) - rowGap(); }
 
     void refresh();     // re-read the chain (after a session load, OSC, etc.)
     void tick();        // ~30 Hz: notices auto-stopped plugins and latency changes
@@ -38,7 +39,8 @@ public:
     // The number of visible rows changed: the owner should re-run its layout.
     std::function<void()> onRowCountChanged;
 
-    static constexpr int rowHeight = 26, rowGap = 3;
+    static int rowHeight() { return Theme::isCompact() ? 22 : 26; }
+    static int rowGap()    { return Theme::isCompact() ? 2 : 3; }
 
 private:
     class List;

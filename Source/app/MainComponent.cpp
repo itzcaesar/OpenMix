@@ -7,9 +7,10 @@
 #include "ui/TrayIcon.h"
 #include "ui/HotkeysPanel.h"
 
-static constexpr int stripGap = Theme::s2;
-static constexpr int sectionGap = 32;   // space between inputs and the master section
-static constexpr int consolePad = Theme::s4;
+// Console gaps; compact mode tightens them (Theme::isCompact()).
+static int stripGap()   { return Theme::isCompact() ? Theme::s1 : Theme::s2; }
+static int sectionGap() { return Theme::isCompact() ? 20 : 32; }   // space between inputs and the master section
+static int consolePad() { return Theme::isCompact() ? Theme::s2 : Theme::s4; }
 
 //==============================================================================
 // ConsoleContent
@@ -101,10 +102,10 @@ int ConsoleContent::minimumWidth() const
 {
     const int ns = juce::jmax (1, engine.getNumActiveStrips());
     const int nb = juce::jmax (1, engine.getNumActiveBuses());
-    const int desk = ns * StripView::minWidth + (ns - 1) * stripGap
-                   + sectionGap
-                   + juce::jmax (nb * BusView::minWidth + (nb - 1) * stripGap, 150);
-    return consolePad * 2 + (soundboard.isVisible() ? juce::jmax (desk, SoundboardPanel::minWidth) : desk);
+    const int desk = ns * StripView::minWidth() + (ns - 1) * stripGap()
+                   + sectionGap()
+                   + juce::jmax (nb * BusView::minWidth() + (nb - 1) * stripGap(), 150);
+    return consolePad() * 2 + (soundboard.isVisible() ? juce::jmax (desk, SoundboardPanel::minWidth) : desk);
 }
 
 void ConsoleContent::paint (juce::Graphics& g)
@@ -119,7 +120,7 @@ void ConsoleContent::paint (juce::Graphics& g)
 
 void ConsoleContent::resized()
 {
-    auto r = getLocalBounds().reduced (consolePad, 0).withTrimmedBottom (consolePad);
+    auto r = getLocalBounds().reduced (consolePad(), 0).withTrimmedBottom (consolePad());
 
     const int ns = juce::jmax (1, engine.getNumActiveStrips());
     const int nb = juce::jmax (1, engine.getNumActiveBuses());
@@ -127,21 +128,21 @@ void ConsoleContent::resized()
 
     // Fill the window: strips and buses share the width, a bus getting about 3/4 of a strip,
     // within each one's limits. Only past those limits is the desk centred with margins.
-    const int avail = r.getWidth() - sectionGap - soundW - (ns - 1) * stripGap - (nb - 1) * stripGap;
+    const int avail = r.getWidth() - sectionGap() - soundW - (ns - 1) * stripGap() - (nb - 1) * stripGap();
     const int unit = (int) (avail / (ns + nb * 0.75f));
-    const int stripW = juce::jlimit (StripView::minWidth, StripView::maxWidth, unit);
-    const int busW = juce::jlimit (BusView::minWidth, BusView::maxWidth, (avail - ns * stripW) / nb);
+    const int stripW = juce::jlimit (StripView::minWidth(), StripView::maxWidth(), unit);
+    const int busW = juce::jlimit (BusView::minWidth(), BusView::maxWidth(), (avail - ns * stripW) / nb);
 
-    const int inputsW = ns * stripW + (ns - 1) * stripGap;
-    const int outputsW = juce::jmax (nb * busW + (nb - 1) * stripGap, 150);
-    const int deskW = inputsW + sectionGap + soundW + outputsW;
+    const int inputsW = ns * stripW + (ns - 1) * stripGap();
+    const int outputsW = juce::jmax (nb * busW + (nb - 1) * stripGap(), 150);
+    const int deskW = inputsW + sectionGap() + soundW + outputsW;
     r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), juce::jmax (deskW, soundboard.isVisible() ? SoundboardPanel::minWidth : 0)),
                                  r.getHeight());
 
     // Soundboard: a bar under the whole desk, so the strips and buses keep one fader line.
     if (soundboard.isVisible())
     {
-        soundboard.setBounds (r.removeFromBottom (SoundboardPanel::barHeight));
+        soundboard.setBounds (r.removeFromBottom (SoundboardPanel::barHeight()));
         r.removeFromBottom (Theme::s3);
     }
     deskBottom = r.getBottom();
@@ -150,7 +151,7 @@ void ConsoleContent::resized()
     // Section legends, with the add buttons at their right end.
     auto legends = r.removeFromTop (36);
     inputsLegend = legends.removeFromLeft (inputsW);
-    legends.removeFromLeft (sectionGap);
+    legends.removeFromLeft (sectionGap());
     outputsLegend = legends;
     addStripButton.setBounds (inputsLegend.withTrimmedLeft (inputsLegend.getWidth() - 72).withSizeKeepingCentre (72, 24));
     addBusButton.setBounds (outputsLegend.withTrimmedLeft (outputsLegend.getWidth() - 64).withSizeKeepingCentre (64, 24));
@@ -166,11 +167,11 @@ void ConsoleContent::resized()
             continue;
         strips[(size_t) s]->setBayTop (bayTop);
         strips[(size_t) s]->setBounds (r.removeFromLeft (stripW));
-        r.removeFromLeft (stripGap);
+        r.removeFromLeft (stripGap());
     }
 
-    r.removeFromLeft (sectionGap - stripGap);
-    dividerX = r.getX() - sectionGap / 2;
+    r.removeFromLeft (sectionGap() - stripGap());
+    dividerX = r.getX() - sectionGap() / 2;
 
     for (int b = 0; b < kNumBuses; ++b)
     {
@@ -178,7 +179,7 @@ void ConsoleContent::resized()
             continue;
         buses[(size_t) b]->setBayTop (bayTop);
         buses[(size_t) b]->setBounds (r.removeFromLeft (busW));
-        r.removeFromLeft (stripGap);
+        r.removeFromLeft (stripGap());
     }
 }
 
@@ -252,6 +253,10 @@ MainComponent::MainComponent()
 
     if (session != nullptr)
         Theme::setDark (session->getStringAttribute ("theme", "dark") != "light");
+
+    // Appearance preferences (AppSettings): accent colour and compact density.
+    Theme::setAccent (AppSettings::get().accentIndex());
+    Theme::setCompact (AppSettings::get().compactMode());
     applyTheme();
 
     engine.start (session != nullptr ? session->getChildByName ("DEVICESETUP") : nullptr);
@@ -447,7 +452,9 @@ void MainComponent::showAudioSettings()
 void MainComponent::showSettings()
 {
     juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyRemote(); }, [this] { showHotkeys(); }, &midiControl));
+    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyRemote(); }, [this] { showHotkeys(); }, &midiControl,
+                                            // Accent or compact changed: repaint everything and re-run the layout.
+                                            [this] { applyTheme(); resized(); }));
     o.dialogTitle = "Settings";
     o.dialogBackgroundColour = Theme::p().panel;
     o.escapeKeyTriggersCloseButton = true;
@@ -558,7 +565,7 @@ void MainComponent::paint (juce::Graphics& g)
     g.fillRect (headerArea.withTop (headerArea.getBottom() - 1));
 
     // App icon + name
-    auto brand = headerArea.reduced (consolePad, 0).removeFromLeft (110);
+    auto brand = headerArea.reduced (consolePad(), 0).removeFromLeft (110);
     static const auto icon = TrayIcon::makeIcon (48);
     g.drawImage (icon, brand.removeFromLeft (24).withSizeKeepingCentre (24, 24).toFloat(), juce::RectanglePlacement::centred);
     brand.removeFromLeft (Theme::s2);
@@ -1076,7 +1083,7 @@ void MainComponent::resized()
     // Header, left to right: name | status readout (opens Audio settings) | scene picker |
     // transport (record, its options, replay) | window tools (soundboard, update, settings).
     headerArea = r.removeFromTop (48);
-    auto header = headerArea.reduced (consolePad, 0);
+    auto header = headerArea.reduced (consolePad(), 0);
     constexpr int h = 28;
     header.removeFromLeft (120);
 
@@ -1112,7 +1119,7 @@ void MainComponent::resized()
 
     if (showBanner)
     {
-        bannerArea = r.removeFromTop (52).reduced (consolePad, 0);
+        bannerArea = r.removeFromTop (52).reduced (consolePad(), 0);
         fixButton.setBounds (bannerArea.withTrimmedLeft (bannerArea.getWidth() - 176).reduced (Theme::s3, 11));
         r.removeFromTop (Theme::s3);
     }

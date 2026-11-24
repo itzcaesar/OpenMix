@@ -35,6 +35,8 @@ The colour helps find a channel on a full desk; the name is editable in place.
 | Compact, wide voice pad at the bottom of the strip's top section | It is a gesture surface, not a square display; the inserts list gets the height it frees. |
 | Add buttons ("+ Strip", "+ Bus") in the section legends | They belong to the section they add to and no longer take a column of width. |
 | Dark and light themes, switchable | Dark for dim rooms next to games and DAWs; light for daylight desks. Both are first-class. |
+| One accent colour, amber by default, with four more lamp colours to pick from | One accent keeps the meters as the only colour; which lamp colour it is is personal. Every accent is light enough for dark text on it, so "on" states stay readable. |
+| Compact density: narrower strips and buses, tighter gaps, shorter plugin rows | More channels fit on a laptop screen. The fader bay stays aligned; only the widths and spacing shrink. |
 | One accent: lamp amber | Indicator lamps on real desks are amber. Used only for "on" sends, the pad puck and the active pad mode. |
 | Red only for mute and clipping, green/amber/red only in meters | These are signal-state colours every audio user already reads; they are not decoration. |
 | Lamp buttons carry an LED square that fills when on | State is shown by shape as well as colour, so it reads without colour vision. |

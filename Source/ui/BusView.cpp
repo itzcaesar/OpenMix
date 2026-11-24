@@ -417,7 +417,7 @@ void BusView::resized()
     // Inserts take the rows they need (up to what fits, the list scrolls past that); a live
     // spectrum fills the rest above the bay when there is room for one.
     insertsLegend = top.removeFromTop (legendH);
-    const int fit = (top.getHeight() + InsertRack::rowGap) / (InsertRack::rowHeight + InsertRack::rowGap);
+    const int fit = (top.getHeight() + InsertRack::rowGap()) / (InsertRack::rowHeight() + InsertRack::rowGap());
     inserts.setBounds (top.removeFromTop (InsertRack::heightForRows (juce::jlimit (1, kNumSlots, juce::jmin (fit, inserts.getVisibleRowCount())))));
     top.removeFromTop (gap);
 

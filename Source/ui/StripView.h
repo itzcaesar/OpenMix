@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "engine/MixerEngine.h"
 #include "engine/VoicePad.h"
+#include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "ui/Panels.h"
 #include "ui/InsertRack.h"
@@ -28,7 +29,9 @@ public:
     // on every column so faders line up.
     void setBayTop (int y) { bayTop = y; }
 
-    static constexpr int minWidth = 210, maxWidth = 400;
+    // Column width limits; compact mode narrows them (Theme::isCompact()).
+    static int minWidth() { return Theme::isCompact() ? 176 : 210; }
+    static int maxWidth() { return Theme::isCompact() ? 320 : 400; }
 
 private:
     // Source + strip menu
