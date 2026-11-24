@@ -1,0 +1,64 @@
+# OpenMix documentation site — built with MkDocs Material (free, open source)
+# and published free on GitHub Pages (see .github/workflows/docs.yml).
+# Site URL once Pages is enabled: https://itzcaesar.github.io/OpenMix/
+
+site_name: OpenMix
+site_url: https://itzcaesar.github.io/OpenMix/
+site_description: A virtual audio mixer for Windows — documentation for OpenMix 0.1.0.
+site_author: Muhammad Caesar Rifqi
+repo_url: https://github.com/itzcaesar/OpenMix
+repo_name: itzcaesar/OpenMix
+edit_uri: edit/main/website/docs/
+
+docs_dir: website/docs
+site_dir: site
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Light / dark toggle: light by default, dark on toggle.
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: amber
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: amber
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Strips & voice processing: strips.md
+  - Buses & outputs: buses.md
+  - Plugins & built-in effects: plugins.md
+  - Remote control: remote.md
+  - Scenes, hotkeys & creator tools: creator.md
+  - Interface & themes: interface.md
+  - Troubleshooting & known limits: troubleshooting.md
+  - Changelog: changelog.md
+  - Roadmap: roadmap.md

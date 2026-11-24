@@ -6,3 +6,6 @@ CMakeUserPresets.json
 vstsdk*/
 VST2_SDK/
 external/vst2sdk/
+
+# MkDocs Material build output (GitHub Pages site) — never committed.
+site/
