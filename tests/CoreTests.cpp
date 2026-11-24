@@ -3,6 +3,9 @@
 #include "dsp/AudioSafety.h"
 #include "dsp/Biquad.h"
 #include "engine/ClockBridge.h"
+#include "engine/CpuMeter.h"
+#include "engine/StripLogic.h"
+#include "engine/TapTempo.h"
 #include "dsp/DelayLine.h"
 #include "dsp/Dynamics.h"
 #include "dsp/Denoiser.h"
@@ -335,6 +338,238 @@ int main()
         for (size_t i = from; i < v.size(); ++i) p = std::max (p, std::abs (v[i]));
         return p;
     };
+
+    run ("Biquad HPF: 50 Hz cut by a 200 Hz high-pass, 1 kHz passes, DC blocked", [&]
+    {
+        Biquad hp;
+        hp.setHighPass (48000.0, 200.0);
+        auto lo = sine (0.5f, 50.0, 48000);
+        for (auto& v : lo) v = hp.process (v, 0);
+        CHECK (omx::toDb (peakOf (lo, 24000) / 0.5f) < -20.0f, "50 Hz through 200 Hz HPF: %+.2f dB", omx::toDb (peakOf (lo, 24000) / 0.5f));
+
+        hp.reset();
+        auto hi = sine (0.5f, 1000.0, 48000);
+        for (auto& v : hi) v = hp.process (v, 0);
+        CHECK (std::abs (omx::toDb (peakOf (hi, 24000) / 0.5f)) < 0.5f, "1 kHz through 200 Hz HPF: %+.2f dB", omx::toDb (peakOf (hi, 24000) / 0.5f));
+
+        hp.reset();
+        std::vector<float> dc (48000, 1.0f);
+        for (auto& v : dc) v = hp.process (v, 0);
+        CHECK (std::abs (dc.back()) < 1e-3f, "DC leaked through HPF: %g", dc.back());
+    });
+
+    run ("Biquad LPF: 100 Hz passes a 5 kHz low-pass, 10/20 kHz are cut", [&]
+    {
+        Biquad lp;
+        lp.setLowPass (48000.0, 5000.0);
+        auto lo = sine (0.5f, 100.0, 48000);
+        for (auto& v : lo) v = lp.process (v, 0);
+        CHECK (std::abs (omx::toDb (peakOf (lo, 24000) / 0.5f)) < 0.5f, "100 Hz through 5 kHz LPF: %+.2f dB", omx::toDb (peakOf (lo, 24000) / 0.5f));
+
+        // 2nd-order Butterworth: ~-12 dB one octave above the cutoff, ~-24 dB two octaves up.
+        lp.reset();
+        auto hi = sine (0.5f, 10000.0, 48000);
+        for (auto& v : hi) v = lp.process (v, 0);
+        CHECK (omx::toDb (peakOf (hi, 24000) / 0.5f) < -12.0f, "10 kHz through 5 kHz LPF: %+.2f dB", omx::toDb (peakOf (hi, 24000) / 0.5f));
+
+        lp.reset();
+        auto top = sine (0.5f, 20000.0, 48000);
+        for (auto& v : top) v = lp.process (v, 0);
+        CHECK (omx::toDb (peakOf (top, 24000) / 0.5f) < -20.0f, "20 kHz through 5 kHz LPF: %+.2f dB", omx::toDb (peakOf (top, 24000) / 0.5f));
+    });
+
+    run ("Biquad HPF/LPF: stable at cutoff extremes, 44.1/48/96 kHz", []
+    {
+        Lcg rng;
+        for (double fs : { 44100.0, 48000.0, 96000.0 })
+            for (double fc : { 20.0, 1000.0, 20000.0 })
+            {
+                Biquad hp, lp;
+                hp.setHighPass (fs, fc);
+                lp.setLowPass (fs, fc);
+                float peak = 0.0f;
+                for (int i = 0; i < (int) fs; ++i)
+                {
+                    const float y = lp.process (hp.process ((float) rng.next(), 0), 0);
+                    peak = std::max (peak, std::abs (y));
+                }
+                CHECK (std::isfinite (peak) && peak < 8.0f, "fs %.0f fc %.0f peak %f", fs, fc, peak);
+            }
+    });
+
+    run ("Solo-safe: soloed or solo-safe-and-routed is audible on the monitor bus", []
+    {
+        using omx::stripAudibleOnMonitorBus;
+        CHECK (stripAudibleOnMonitorBus (true, false, false), "soloed strip must be audible even if not routed");
+        CHECK (stripAudibleOnMonitorBus (false, true, true), "solo-safe strip routed to the monitor bus must stay audible");
+        CHECK (! stripAudibleOnMonitorBus (false, true, false), "solo-safe strip not routed to the monitor bus stays silent");
+        CHECK (! stripAudibleOnMonitorBus (false, false, true), "plain strip is muted by someone else's solo");
+        CHECK (! stripAudibleOnMonitorBus (false, false, false), "plain unrouted strip is silent");
+    });
+
+    run ("Latency: strip total is denoiser + inserts, negatives treated as 0", []
+    {
+        using omx::stripTotalLatencySamples;
+        CHECK (stripTotalLatencySamples (960, 128) == 1088, "960 + 128 should be 1088");
+        CHECK (stripTotalLatencySamples (0, 0) == 0, "no latency should be 0");
+        CHECK (stripTotalLatencySamples (-5, 10) == 10, "negative denoiser latency should clamp to 0");
+        CHECK (stripTotalLatencySamples (960, -3) == 960, "negative plugin latency should clamp to 0");
+    });
+
+    run ("StripPreset: defaults and copy round-trip keep every field", []
+    {
+        omx::StripPreset p;
+        CHECK (omx::kPresetNumBuses == 6 && omx::kPresetNumSlots == 6, "preset capacity must match the engine");
+        CHECK (! p.hpfOn && p.hpfHz == 80.0f && ! p.lpfOn && p.lpfHz == 18000.0f, "filter defaults wrong");
+        CHECK (p.numSlots == 0 && p.duckSource == -1 && p.padY == -1.0f, "preset defaults wrong");
+        CHECK (p.busOn[0] && ! p.busOn[1], "preset default routing should be A1 only");
+
+        p.gainDb = 6.0f; p.faderDb = -3.0f; p.soloSafe = true;
+        p.hpfOn = true; p.hpfHz = 120.0f; p.lpfOn = true; p.lpfHz = 12000.0f;
+        p.eqOn = true; p.eqLowDb = 3.0f; p.eqMidHz = 800.0f;
+        p.compThresholdDb = -24.0f; p.duckOn = true; p.duckSource = 2;
+        p.padX = 0.5f; p.padY = 0.25f; p.padMode = 1;
+        p.busOn[3] = true; p.sendDb[3] = -6.0f; p.sendPre[3] = true;
+        p.numSlots = 2;
+        p.slots[0] = { "C:\\Plugins\\Comp.vst3", "Comp", "VST3", false, 0.8f };
+        p.slots[1] = { "C:\\Plugins\\Verb.vst3", "Verb", "VST3", true, 1.0f };
+
+        const omx::StripPreset q = p;   // copy, as Session save/load and the engine store do
+        CHECK (q.gainDb == 6.0f && q.faderDb == -3.0f && q.soloSafe, "level/solo-safe lost in copy");
+        CHECK (q.hpfOn && q.hpfHz == 120.0f && q.lpfOn && q.lpfHz == 12000.0f, "filter settings lost in copy");
+        CHECK (q.eqOn && q.eqLowDb == 3.0f && q.eqMidHz == 800.0f, "EQ lost in copy");
+        CHECK (q.compThresholdDb == -24.0f && q.duckOn && q.duckSource == 2, "comp/duck lost in copy");
+        CHECK (q.padX == 0.5f && q.padY == 0.25f && q.padMode == 1, "VoicePad lost in copy");
+        CHECK (q.busOn[3] && q.sendDb[3] == -6.0f && q.sendPre[3], "send lost in copy");
+        CHECK (q.numSlots == 2 && q.slots[0].identifier == "C:\\Plugins\\Comp.vst3" && q.slots[0].mix == 0.8f
+               && q.slots[1].name == "Verb" && q.slots[1].bypass, "insert slots lost in copy");
+    });
+
+    run ("TapTempo: steady taps give the right BPM, clamped to 40..240", []
+    {
+        omx::TapTempo t;
+        CHECK (t.getBpm() == 120.0, "default BPM should be 120, got %f", t.getBpm());
+        CHECK (t.getTapCount() == 0, "no taps yet");
+
+        t.tapAt (10.0);
+        CHECK (t.getBpm() == 120.0, "one tap must not change the BPM");
+        CHECK (t.getTapCount() == 1, "tap count should be 1");
+
+        for (int i = 1; i <= 4; ++i)   // 0.5 s intervals -> 120 BPM
+            t.tapAt (10.0 + 0.5 * i);
+        CHECK (std::abs (t.getBpm() - 120.0) < 0.01, "0.5 s taps should be 120 BPM, got %f", t.getBpm());
+
+        omx::TapTempo fast;
+        fast.tapAt (0.0);
+        for (int i = 1; i <= 4; ++i)
+            fast.tapAt (0.25 * i);   // 0.25 s intervals -> 240 BPM (the clamp)
+        CHECK (std::abs (fast.getBpm() - 240.0) < 0.01, "0.25 s taps should be 240 BPM, got %f", fast.getBpm());
+
+        omx::TapTempo slow;
+        slow.tapAt (0.0);
+        for (int i = 1; i <= 4; ++i)
+            slow.tapAt (2.0 * i);   // 2 s intervals -> 30 BPM, clamped to 40
+        CHECK (std::abs (slow.getBpm() - 40.0) < 0.01, "2 s taps should clamp to 40 BPM, got %f", slow.getBpm());
+
+        // A pause over 2 s restarts the sequence: the old slow taps must not
+        // drag the new fast tempo down. The reset tap itself leaves the BPM
+        // alone; the next tap (0.5 s later) sets it to 120.
+        slow.tapAt (10.5);   // 2.5 s after the last tap: resets the history
+        CHECK (slow.getTapCount() == 1 && std::abs (slow.getBpm() - 40.0) < 0.01,
+               "the reset tap should start a fresh sequence without changing the BPM yet");
+        slow.tapAt (11.0);
+        CHECK (std::abs (slow.getBpm() - 120.0) < 0.01, "after a long pause the BPM should restart at 120, got %f", slow.getBpm());
+
+        // Duplicate / out-of-order timestamps are ignored, never fatal.
+        omx::TapTempo dup;
+        dup.tapAt (5.0);
+        dup.tapAt (5.0);
+        dup.tapAt (4.0);
+        CHECK (dup.getTapCount() == 1 && dup.getBpm() == 120.0, "duplicate taps changed the state");
+
+        // setBpm clamps and clears the tap history.
+        omx::TapTempo set;
+        set.tapAt (0.0); set.tapAt (0.5);
+        set.setBpm (300.0);
+        CHECK (set.getBpm() == 240.0 && set.getTapCount() == 0, "setBpm(300) should clamp to 240 and clear taps");
+        set.setBpm (10.0);
+        CHECK (set.getBpm() == 40.0, "setBpm(10) should clamp to 40");
+
+        CHECK (std::abs (omx::TapTempo::bpmFromInterval (0.5) - 120.0) < 0.01, "bpmFromInterval(0.5 s)");
+        CHECK (omx::TapTempo::bpmFromInterval (0.0) == 120.0, "zero interval should give the default");
+    });
+
+    run ("CpuMeter: EMA smoothing converges, bad samples are ignored", []
+    {
+        CHECK (std::abs (omx::CpuMeter::smooth (0.0f, 50.0f) - 5.0f) < 1e-6f, "one EMA step from 0 at 50%% should be 5");
+        CHECK (std::abs (omx::CpuMeter::smooth (50.0f, 50.0f) - 50.0f) < 1e-6f, "EMA at the target should stay there");
+
+        omx::CpuMeter m;
+        CHECK (m.getPercent() == 0.0f, "fresh meter should read 0");
+        for (int i = 0; i < 200; ++i)
+            m.addSample (0.005, 0.010);   // half of real time -> 50%
+        CHECK (std::abs (m.getPercent() - 50.0f) < 0.5f, "meter should converge to 50%%, got %f", m.getPercent());
+
+        // Overload reads over 100%, so it stays visible.
+        omx::CpuMeter over;
+        for (int i = 0; i < 200; ++i)
+            over.addSample (0.020, 0.010);
+        CHECK (std::abs (over.getPercent() - 200.0f) < 1.0f, "2x real time should read ~200%%, got %f", over.getPercent());
+
+        // A zero buffer duration (or negative time) is not a sample.
+        omx::CpuMeter bad;
+        bad.addSample (0.005, 0.0);
+        bad.addSample (-0.001, 0.010);
+        CHECK (bad.getPercent() == 0.0f, "bad samples changed the meter");
+
+        bad.addSample (0.001, 0.010);
+        bad.reset();
+        CHECK (bad.getPercent() == 0.0f, "reset should return to 0");
+    });
+
+    run ("Bus groups: slot-based, never name-based (custom names cannot move a bus)", []
+    {
+        using omx::isVirtualBusSlot;
+        using omx::firstSlotInGroup;
+        for (int b = 0; b < 3; ++b)
+            CHECK (! isVirtualBusSlot (b), "slot %d should be Hardware", b);
+        for (int b = 3; b < 6; ++b)
+            CHECK (isVirtualBusSlot (b), "slot %d should be Virtual", b);
+        CHECK (! isVirtualBusSlot (-1) && isVirtualBusSlot (99), "out-of-range slots classify by index, not by name");
+        CHECK (firstSlotInGroup (false) == 0 && firstSlotInGroup (true) == 3, "group starts should be 0 and 3");
+    });
+
+    run ("StripPreset: built-in FX slot and FX sends survive a copy round-trip", []
+    {
+        CHECK (omx::kNumFxSends == 3 && omx::kFxReverb == 0 && omx::kFxDelay == 1 && omx::kFxChorus == 2,
+               "FX send indices must be Reverb 0 / Delay 1 / Chorus 2");
+
+        omx::StripPreset p;
+        p.fxSend[omx::kFxReverb] = 0.5f;
+        p.fxSend[omx::kFxDelay] = 0.25f;
+        p.fxSend[omx::kFxChorus] = 0.0f;
+
+        p.numSlots = 2;
+        p.slots[0] = { "C:\\Plugins\\Comp.vst3", "Comp", "VST3", false, 0.8f };
+        p.slots[1].isBuiltIn = true;
+        p.slots[1].fxType = "Delay";
+        p.slots[1].name = "Delay";
+        p.slots[1].fxTempoSync = true;
+        p.slots[1].fxParams = { 0.0f, 0.35f, 0.3f, 8000.0f, 0.5f, 132.0f };   // time unused when synced
+        p.slots[1].bypass = true;
+        p.slots[1].mix = 0.9f;
+
+        const omx::StripPreset q = p;
+        CHECK (q.fxSend[omx::kFxReverb] == 0.5f && q.fxSend[omx::kFxDelay] == 0.25f && q.fxSend[omx::kFxChorus] == 0.0f,
+               "FX sends lost in copy");
+        CHECK (q.numSlots == 2 && ! q.slots[0].isBuiltIn && q.slots[0].identifier == "C:\\Plugins\\Comp.vst3",
+               "VST slot lost in copy");
+        CHECK (q.slots[1].isBuiltIn && q.slots[1].fxType == "Delay" && q.slots[1].fxTempoSync,
+               "built-in slot lost its type / tempo sync in copy");
+        CHECK (q.slots[1].fxParams[1] == 0.35f && q.slots[1].fxParams[4] == 0.5f && q.slots[1].fxParams[5] == 132.0f,
+               "built-in delay params lost in copy");
+        CHECK (q.slots[1].bypass && q.slots[1].mix == 0.9f, "built-in slot bypass/mix lost in copy");
+    });
 
     run ("Gate: open on signal, closes to the range on room noise", [&]
     {

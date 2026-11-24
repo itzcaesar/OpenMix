@@ -23,6 +23,12 @@ void ChannelStrip::prepare (double newSampleRate, int maxBlockSize)
     fx.denoiseUnavailable.store (! denoiser.isAvailable());
     fx.denoiseLatencyMs.store ((int) std::lround (1000.0 * denoiser.getLatency() / sampleRate));
     gate.prepare (sampleRate);
+    hpf.reset(); lpf.reset();
+    lastHpfHz = -1.0f; lastLpfHz = -1.0f;
+    hpfMix.reset (sampleRate, 0.02);
+    lpfMix.reset (sampleRate, 0.02);
+    hpfMix.setCurrentAndTargetValue (fx.hpfOn.load() ? 1.0f : 0.0f);
+    lpfMix.setCurrentAndTargetValue (fx.lpfOn.load() ? 1.0f : 0.0f);
     eq.prepare (sampleRate);
     comp.prepare (sampleRate);
     deesser.prepare (sampleRate);
@@ -67,6 +73,7 @@ void ChannelStrip::resetToDefaults()
     faderDb.store (0.0f);
     mute.store (false);
     solo.store (false);
+    soloSafe.store (false);
     mono.store (false);
     invertPolarity.store (false);
     for (int b = 0; b < kNumBuses; ++b)
@@ -75,16 +82,170 @@ void ChannelStrip::resetToDefaults()
         sendDb[b].store (0.0f);
         sendPre[b].store (false);
     }
+    for (int fx = 0; fx < omx::kNumFxSends; ++fx)
+        fxSendLevel[(size_t) fx].store (0.0f);
     pad.x.store (0.0f);
     pad.y.store (-1.0f);
     pad.mode.store (VoicePadParams::Voice);
 
     fx.denoiseOn.store (false);  fx.denoiseAmount.store (1.0f);
     fx.gateOn.store (false);     fx.gateThresholdDb.store (-50.0f); fx.gateRangeDb.store (-40.0f);
+    fx.hpfOn.store (false);      fx.hpfHz.store (80.0f);
+    fx.lpfOn.store (false);      fx.lpfHz.store (18000.0f);
     fx.eqOn.store (false);       fx.eqLowDb.store (0.0f); fx.eqMidDb.store (0.0f); fx.eqMidHz.store (1000.0f); fx.eqHighDb.store (0.0f);
     fx.compOn.store (false);     fx.compThresholdDb.store (-18.0f); fx.compRatio.store (3.0f);
     fx.deessOn.store (false);    fx.deessThresholdDb.store (-30.0f); fx.deessMaxDb.store (10.0f);
     fx.duckOn.store (false);     fx.duckSource.store (-1); fx.duckDepthDb.store (-12.0f); fx.duckThresholdDb.store (-40.0f);
+}
+
+//==============================================================================
+// Strip presets (message thread)
+
+omx::StripPreset ChannelStrip::savePreset() const
+{
+    static_assert (omx::kPresetNumBuses == kNumBuses, "preset bus count must match the engine");
+    static_assert (omx::kPresetNumSlots == kNumSlots, "preset slot count must match the chain");
+
+    omx::StripPreset p;
+    p.gainDb = gainDb.load();   p.faderDb = faderDb.load();
+    p.mono = mono.load();       p.invertPolarity = invertPolarity.load();
+    p.soloSafe = soloSafe.load();
+
+    p.denoiseOn = fx.denoiseOn.load();       p.denoiseAmount = fx.denoiseAmount.load();
+    p.gateOn = fx.gateOn.load();             p.gateThresholdDb = fx.gateThresholdDb.load(); p.gateRangeDb = fx.gateRangeDb.load();
+    p.hpfOn = fx.hpfOn.load();               p.hpfHz = fx.hpfHz.load();
+    p.lpfOn = fx.lpfOn.load();               p.lpfHz = fx.lpfHz.load();
+    p.eqOn = fx.eqOn.load();                 p.eqLowDb = fx.eqLowDb.load(); p.eqMidDb = fx.eqMidDb.load();
+    p.eqMidHz = fx.eqMidHz.load();           p.eqHighDb = fx.eqHighDb.load();
+    p.compOn = fx.compOn.load();             p.compThresholdDb = fx.compThresholdDb.load(); p.compRatio = fx.compRatio.load();
+    p.deessOn = fx.deessOn.load();           p.deessThresholdDb = fx.deessThresholdDb.load(); p.deessMaxDb = fx.deessMaxDb.load();
+    p.duckOn = fx.duckOn.load();             p.duckSource = fx.duckSource.load();
+    p.duckDepthDb = fx.duckDepthDb.load();   p.duckThresholdDb = fx.duckThresholdDb.load();
+
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        p.busOn[(size_t) b] = busOn[b].load();
+        p.sendDb[(size_t) b] = sendDb[b].load();
+        p.sendPre[(size_t) b] = sendPre[b].load();
+    }
+
+    p.padX = pad.x.load();   p.padY = pad.y.load();   p.padMode = pad.mode.load();
+
+    for (int fx = 0; fx < omx::kNumFxSends; ++fx)
+        p.fxSend[(size_t) fx] = fxSendLevel[(size_t) fx].load();
+
+    p.numSlots = inserts.getNumInserts();
+    for (int s = 0; s < p.numSlots; ++s)
+    {
+        auto& slot = p.slots[(size_t) s];
+        slot = {};
+        if (auto* fx = inserts.getBuiltIn (s))
+        {
+            slot.isBuiltIn = true;
+            slot.fxType = PluginChain::fxTypeDisplayName (fx->getType()).toStdString();
+            slot.name = slot.fxType;
+            inserts.getBuiltInParams (s, slot.fxParams, slot.fxTempoSync);
+        }
+        else if (auto* plugin = inserts.getPlugin (s))
+        {
+            const auto desc = plugin->getPluginDescription();
+            slot.identifier = desc.fileOrIdentifier.toStdString();
+            slot.name = desc.name.toStdString();
+            slot.format = desc.pluginFormatName.toStdString();
+        }
+        slot.bypass = inserts.slotBypass[(size_t) s].load();
+        slot.mix = inserts.slotMix[(size_t) s].load();
+    }
+    return p;
+}
+
+int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormatManager& formats)
+{
+    gainDb.store (p.gainDb);   faderDb.store (p.faderDb);
+    mono.store (p.mono);       invertPolarity.store (p.invertPolarity);
+    soloSafe.store (p.soloSafe);
+
+    fx.denoiseOn.store (p.denoiseOn);       fx.denoiseAmount.store (juce::jlimit (0.0f, 1.0f, p.denoiseAmount));
+    fx.gateOn.store (p.gateOn);             fx.gateThresholdDb.store (p.gateThresholdDb); fx.gateRangeDb.store (p.gateRangeDb);
+    setHpfEnabled (p.hpfOn);                setHpfCutoff (p.hpfHz);
+    setLpfEnabled (p.lpfOn);                setLpfCutoff (p.lpfHz);
+    fx.eqOn.store (p.eqOn);                 fx.eqLowDb.store (p.eqLowDb); fx.eqMidDb.store (p.eqMidDb);
+    fx.eqMidHz.store (p.eqMidHz);           fx.eqHighDb.store (p.eqHighDb);
+    fx.compOn.store (p.compOn);             fx.compThresholdDb.store (p.compThresholdDb); fx.compRatio.store (std::max (1.0f, p.compRatio));
+    fx.deessOn.store (p.deessOn);           fx.deessThresholdDb.store (p.deessThresholdDb); fx.deessMaxDb.store (p.deessMaxDb);
+    fx.duckOn.store (p.duckOn);
+    fx.duckSource.store (juce::isPositiveAndBelow (p.duckSource, kNumStrips) ? p.duckSource : -1);
+    fx.duckDepthDb.store (p.duckDepthDb);   fx.duckThresholdDb.store (p.duckThresholdDb);
+
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        busOn[b].store (p.busOn[(size_t) b]);
+        sendDb[b].store (p.sendDb[(size_t) b]);
+        sendPre[b].store (p.sendPre[(size_t) b]);
+    }
+
+    pad.x.store (juce::jlimit (-1.0f, 1.0f, p.padX));
+    pad.y.store (juce::jlimit (-1.0f, 1.0f, p.padY));
+    pad.mode.store (juce::jlimit (0, VoicePadParams::numModes - 1, p.padMode));
+
+    for (int fx = 0; fx < omx::kNumFxSends; ++fx)
+        setFxSendLevel (fx, p.fxSend[(size_t) fx]);
+
+    // Inserts: replace the chain. Each plugin is re-loaded by identifier and starts
+    // with its defaults (no state is stored in a preset); a plugin that is not
+    // installed any more is skipped and counted, never fatal. Built-in effects
+    // are always available: they are re-created with their saved parameters
+    // and never counted as missing.
+    inserts.removeAllPlugins();
+    int missing = 0;
+    const int n = juce::jlimit (0, kNumSlots, p.numSlots);
+    for (int s = 0; s < n; ++s)
+    {
+        const auto& slot = p.slots[(size_t) s];
+
+        if (slot.isBuiltIn)
+        {
+            omx::FxType type;
+            if (! PluginChain::fxTypeFromName (juce::String (slot.fxType), type))
+            {
+                ++missing;
+                continue;
+            }
+            inserts.installBuiltIn (s, PluginChain::makeBuiltInFx (type));
+
+            // Slots are packed, so the effect may sit lower than its saved index.
+            const int installed = inserts.getNumInserts() - 1;
+            inserts.setBuiltInParams (installed, slot.fxParams, slot.fxTempoSync);
+            inserts.slotBypass[(size_t) installed].store (slot.bypass);
+            inserts.slotMix[(size_t) installed].store (juce::jlimit (0.0f, 1.0f, slot.mix));
+            continue;
+        }
+
+        if (slot.identifier.empty())
+        {
+            ++missing;
+            continue;
+        }
+
+        juce::PluginDescription desc;
+        desc.fileOrIdentifier = slot.identifier;
+        desc.name = slot.name;
+        desc.pluginFormatName = slot.format;
+
+        juce::String error;
+        if (! inserts.loadPlugin (s, desc, formats, error))
+        {
+            juce::Logger::writeToLog ("Strip preset: could not load " + desc.name + " (" + desc.fileOrIdentifier + "): " + error);
+            ++missing;
+            continue;
+        }
+
+        // Slots are packed, so the plugin may sit lower than its saved index.
+        const int installed = inserts.getNumPlugins() - 1;
+        inserts.slotBypass[(size_t) installed].store (slot.bypass);
+        inserts.slotMix[(size_t) installed].store (juce::jlimit (0.0f, 1.0f, slot.mix));
+    }
+    return missing;
 }
 
 //==============================================================================
@@ -170,6 +331,28 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
         storeMin (fx.gateGain, gate.process (L, R, numSamples));
     }
 
+    // HPF/LPF, before the EQ. The filters always run (warm state, no zipper when
+    // the cutoff moves); enabling/disabling crossfades wet/dry over ~20 ms via
+    // the smoothed mixes, so toggling never clicks.
+    {
+        const float hpfHz = fx.hpfHz.load(), lpfHz = fx.lpfHz.load();
+        if (hpfHz != lastHpfHz) { hpf.setHighPass (sampleRate, hpfHz); lastHpfHz = hpfHz; }
+        if (lpfHz != lastLpfHz) { lpf.setLowPass (sampleRate, lpfHz);  lastLpfHz = lpfHz; }
+        hpfMix.setTargetValue (fx.hpfOn.load() ? 1.0f : 0.0f);
+        lpfMix.setTargetValue (fx.lpfOn.load() ? 1.0f : 0.0f);
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float hm = hpfMix.getNextValue(), lm = lpfMix.getNextValue();
+            const float lDry = L[i], rDry = R[i];
+            const float lHp = hpf.process (lDry, 0), rHp = hpf.process (rDry, 1);
+            L[i] = lDry + hm * (lHp - lDry);
+            R[i] = rDry + hm * (rHp - rDry);
+            const float lLp = lpf.process (L[i], 0), rLp = lpf.process (R[i], 1);
+            L[i] += lm * (lLp - L[i]);
+            R[i] += lm * (rLp - R[i]);
+        }
+    }
+
     if (fx.eqOn.load())
     {
         eq.lowDb = fx.eqLowDb.load();
@@ -206,6 +389,7 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
         out.clear (0, numSamples);
         padProcessor.reset();
         dcBlocker.reset();
+        hpf.reset(); lpf.reset();
         gate.reset(); eq.reset(); comp.reset(); deesser.reset(); denoiser.reset();
         faultCount.fetch_add (1);
     }

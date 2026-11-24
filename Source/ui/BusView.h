@@ -8,14 +8,17 @@
 #include "ui/InsertRack.h"
 #include "ui/Panels.h"
 
-// One output bus in the master section: name tape, output device, limiter/monitor/loudness,
-// processing (EQ, compressor), inserts, mute, fader.
+// One output bus in the master section: name tape, output device, limiter with
+// gain-reduction meter, loudness, processing (EQ, compressor), inserts, analyser,
+// mute, fader. The monitor bus is shown only by a thin accent outline plus its
+// name bar lit in the accent colour -- no "monitor" text on the strip.
 class BusView : public juce::Component
 {
 public:
     BusView (MixerEngine&, int index);
 
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
     void refreshDevice();
@@ -34,10 +37,15 @@ public:
 private:
     void showTargetMenu();
     void showBusMenu();
+    void renameBus();
     void openProcessorPanel (Processor);
     void updateKeys();
     static bool isVirtualCable (const juce::String& deviceName);
-    bool isVirtual() const { return juce::String (kBusNames[index]).startsWith ("B"); }
+    // Slot-based, never name-based: slots 0-2 are Hardware, 3-5 Virtual.
+    // A custom bus name must never move a bus between groups.
+    bool isVirtual() const { return index >= 3; }
+    // The bus's own name: the custom name when one is set, else A1..A3 / B1..B3.
+    juce::String busName() const { return engine.getBusName (index); }
 
     MixerEngine& engine;
     Bus& bus;
@@ -53,7 +61,8 @@ private:
     int bayTop = 0;
     FaderSection faderSection;
 
-    juce::Rectangle<int> kindLegend, outputLegend, limiterArea, monitorArea, loudnessArea, processLegend, insertsLegend;
+    juce::Rectangle<int> outputLegend, limiterLegend, limiterArea, loudnessLegend, loudnessArea,
+                         processLegend, insertsLegend;
     std::shared_ptr<BusAnalysis> analysis = std::make_shared<BusAnalysis>();
     MiniSpectrum spectrum { analysis };
     juce::Rectangle<int> spectrumLegend;
@@ -63,4 +72,5 @@ private:
     void openAnalyser();
     bool limiting = false;
     int limitHoldFrames = 0;
+    float limiterReductionDb = 0.0f;   // smoothed gain reduction of the safety limiter
 };

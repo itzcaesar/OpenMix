@@ -1,20 +1,21 @@
 #include "ui/BusView.h"
 #include "ui/Theme.h"
 #include "ui/OpenMixLookAndFeel.h"
+#include "app/Session.h"
 
 BusView::BusView (MixerEngine& e, int i)
     : engine (e), bus (e.getBus (i)), index (i),
       inserts (e, e.getBus (i).inserts),
-      faderSection (bus.peakL, bus.peakR, bus.rmsL, bus.rmsR, "Bus " + juce::String (kBusNames[i]))
+      faderSection (bus.peakL, bus.peakR, bus.rmsL, bus.rmsR, "Bus " + engine.getBusName (i))
 {
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
-    setTitle ("Bus " + juce::String (kBusNames[i]));
+    setTitle ("Bus " + engine.getBusName (i));
 
-    tape.setText (kBusNames[i]);
+    tape.setText (engine.getBusName (i));
     addAndMakeVisible (tape);
 
-    menuButton.setTitle ("Bus " + juce::String (kBusNames[i]) + " options");
-    menuButton.setTooltip ("Analyser and loudness, monitor bus, remove bus.");
+    menuButton.setTitle ("Bus " + engine.getBusName (i) + " options");
+    menuButton.setTooltip ("Rename, analyser and loudness, monitor, remove bus.");
     menuButton.onClick = [this] { showBusMenu(); };
     addAndMakeVisible (menuButton);
 
@@ -22,8 +23,8 @@ BusView::BusView (MixerEngine& e, int i)
     addAndMakeVisible (targetButton);
 
     makeLamp (muteButton, "mute");
-    muteButton.setTitle ("Mute bus " + juce::String (kBusNames[i]));
-    muteButton.setTooltip ("Mute everything going out of " + juce::String (kBusNames[i]) + ".");
+    muteButton.setTitle ("Mute bus " + engine.getBusName (i));
+    muteButton.setTooltip ("Mute everything going out of " + engine.getBusName (i) + ".");
     muteButton.onClick = [this] { bus.mute.store (muteButton.getToggleState()); };
     addAndMakeVisible (muteButton);
 
@@ -47,7 +48,7 @@ BusView::BusView (MixerEngine& e, int i)
     inserts.onRowCountChanged = [this] { if (! inLayout && getHeight() > 0) resized(); };
     addAndMakeVisible (inserts);
 
-    spectrum.setTitle ("Bus " + juce::String (kBusNames[i]) + " spectrum. Opens the analyser.");
+    spectrum.setTitle ("Bus " + engine.getBusName (i) + " spectrum. Opens the analyser.");
     spectrum.onClick = [this] { openAnalyser(); };
     addChildComponent (spectrum);
 
@@ -82,7 +83,7 @@ void BusView::drainAnalysis()
 
 void BusView::updateKeys()
 {
-    const juce::String name (kBusNames[index]);
+    const auto name = busName();
     eqKey.setToggleState (bus.fx.eqOn.load(), juce::dontSendNotification);
     compKey.setToggleState (bus.fx.compOn.load(), juce::dontSendNotification);
     eqKey.setTitle ("Bus " + name + " EQ, " + (bus.fx.eqOn.load() ? "on" : "off"));
@@ -104,7 +105,7 @@ void BusView::openProcessorPanel (Processor p)
 
 void BusView::openAnalyser()
 {
-    auto panel = std::make_unique<AnalyserPanel> ("Bus " + juce::String (kBusNames[index]), analysis);
+    auto panel = std::make_unique<AnalyserPanel> ("Bus " + engine.getBusName (index), analysis);
     auto* top = getTopLevelComponent();
     juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&menuButton, menuButton.getLocalBounds()), top);
 }
@@ -121,7 +122,10 @@ void BusView::tick()
         spectrum.update();
 
     // The safety limiter lamp: lit while it reduces gain by more than 0.5 dB (held 1 s).
+    // limiterReductionDb is the smoothed reduction for the gain-reduction meter.
     const float g = bus.limiterGain.exchange (1.0f);
+    const float reduction = g >= 1.0f ? 0.0f : -juce::Decibels::gainToDecibels (g, -60.0f);
+    limiterReductionDb = juce::jmax (reduction, limiterReductionDb * 0.85f);
     if (g < 0.944f)
         limitHoldFrames = 30;
     else if (limitHoldFrames > 0)
@@ -132,11 +136,16 @@ void BusView::tick()
         limiting = now;
         repaint (limiterArea);
     }
+    else if (limiterReductionDb > 0.05f)
+    {
+        repaint (limiterArea);
+    }
 }
 
 void BusView::showBusMenu()
 {
     juce::PopupMenu menu;
+    menu.addItem ("Rename bus...", [this] { renameBus(); });
     menu.addItem ("Analyser and loudness...", [this] { openAnalyser(); });
 
     // Loudness normalisation: a slow gain that pulls this bus towards the target,
@@ -152,7 +161,9 @@ void BusView::showBusMenu()
                           });
     menu.addSubMenu ("Loudness normalisation", normMenu);
     menu.addSeparator();
-    menu.addItem ("Monitor bus (solo plays here)", true, bus.monitor.load(), [this]
+    // The monitor bus is shown on the strip only by its accent outline and lit name
+    // bar -- there is no "monitor" text on the strip itself.
+    menu.addItem ("Monitor bus", true, bus.monitor.load(), [this]
     {
         engine.setMonitorBus (bus.monitor.load() ? -1 : index);
         if (onLayoutChanged) onLayoutChanged();
@@ -160,7 +171,7 @@ void BusView::showBusMenu()
     menu.addSeparator();
     menu.addItem ("Remove bus...", engine.getNumActiveBuses() > 1, false, [this]
     {
-        const juce::String name (kBusNames[index]);
+        const auto name = busName();
         juce::Component::SafePointer<BusView> safe (this);
         juce::AlertWindow::showAsync (
             juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle ("Remove bus " + name + "?")
@@ -178,8 +189,40 @@ void BusView::showBusMenu()
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (menuButton));
 }
 
+void BusView::renameBus()
+{
+    auto* w = new juce::AlertWindow ("Rename bus",
+                                     "A custom name is shown on the strip and on the strips' send keys. "
+                                     "Leave it empty for the default name (" + juce::String (kBusNames[index]) + "). "
+                                     "The bus stays in its group -- renaming can never move it between "
+                                     "Hardware and Virtual.",
+                                     juce::MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("name", busName(), "Bus name");
+    w->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<BusView> safe (this);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+        safe->engine.setBusName (safe->index, w->getTextEditorContents ("name"));
+        safe->refreshFromBus();
+        Session::save (safe->engine);
+        if (safe->onLayoutChanged)
+            safe->onLayoutChanged();   // the strips' send keys show the new name
+    }), true);
+}
+
 void BusView::refreshFromBus()
 {
+    tape.setText (busName());
+    setTitle ("Bus " + busName());
+    menuButton.setTitle ("Bus " + busName() + " options");
+    muteButton.setTitle ("Mute bus " + busName());
+    muteButton.setTooltip ("Mute everything going out of " + busName() + ".");
+    spectrum.setTitle ("Bus " + busName() + " spectrum. Opens the analyser.");
+    faderSection.fader.setTitle ("Bus " + busName() + " fader");
     faderSection.fader.setValue (bus.faderDb.load(), juce::dontSendNotification);
     muteButton.setToggleState (bus.mute.load(), juce::dontSendNotification);
     updateKeys();
@@ -217,7 +260,7 @@ void BusView::refreshDevice()
     }
 
     targetButton.setContent (caption, text, problem);
-    targetButton.setTitle (juce::String (kBusNames[index]) + " output: " + text);
+    targetButton.setTitle (engine.getBusName (index) + " output: " + text);
 
     // B buses: say what to pick in Discord/OBS, or what B buses are for.
     if (isVirtual())
@@ -237,7 +280,7 @@ void BusView::refreshDevice()
             hint = "B buses are meant for a virtual cable: pick one here, then choose its other end "
                    "(for example CABLE Output) as the microphone in Discord or OBS.";
         }
-        targetButton.setTooltip (juce::String (kBusNames[index]) + " output: " + text + ". " + hint);
+        targetButton.setTooltip (engine.getBusName (index) + " output: " + text + ". " + hint);
         targetButton.setDescription (hint);
     }
 }
@@ -328,31 +371,39 @@ void BusView::paint (juce::Graphics& g)
     const auto& t = Theme::p();
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
 
-    // The output legend says what kind of bus this is (A = hardware, B = virtual).
-    Theme::drawLegend (g, isVirtual() ? "Virtual out" : "Hardware out", outputLegend);
+    // OUTPUT: the device this bus plays into.
+    Theme::drawLegend (g, "Output", outputLegend);
 
-    // Status lamps on one row. Limiter: the -0.3 dBFS safety limiter is reducing gain right now.
-    // Monitor: this bus plays soloed strips.
-    g.setFont (Theme::ui (11.5f, true));
-    auto la = limiterArea;
-    OpenMixLookAndFeel::drawLamp (g, la.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat(), limiting, t.mute);
-    la.removeFromLeft (5);
-    g.setColour (limiting ? t.text : t.textFaint);
-    g.drawText (limiting ? "LIMITING" : "LIMIT", la, juce::Justification::centredLeft);
+    // LIMITER: the -0.3 dBFS safety limiter -- lamp, state, and a gain-reduction meter.
+    Theme::drawLegend (g, "Limiter", limiterLegend);
+    {
+        auto la = limiterArea;
+        g.setFont (Theme::ui (11.5f, true));
+        OpenMixLookAndFeel::drawLamp (g, la.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat(), limiting, t.mute);
+        la.removeFromLeft (5);
+        g.setColour (limiting ? t.text : t.textFaint);
+        g.drawText (limiting ? "LIMITING" : "LIMIT", la.removeFromLeft (58), juce::Justification::centredLeft);
 
-    auto ma = monitorArea;
-    const bool isMonitor = bus.monitor.load();
-    OpenMixLookAndFeel::drawLamp (g, ma.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat(), isMonitor, t.accent);
-    ma.removeFromLeft (5);
-    g.setColour (isMonitor ? t.text : t.textFaint);
-    g.drawText ("SOLO", ma, juce::Justification::centredLeft);
+        // Gain-reduction bar (0..24 dB) with a numeric readout.
+        auto readout = la.removeFromRight (44);
+        auto bar = la.toFloat().withSizeKeepingCentre ((float) la.getWidth(), 8.0f);
+        g.setColour (t.meterWell);
+        g.fillRoundedRectangle (bar, 2.0f);
+        g.setColour (t.meterMid);
+        g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, limiterReductionDb / 24.0f)), 2.0f);
+        g.setFont (Theme::mono (11.0f));
+        g.setColour (limiterReductionDb > 0.05f ? t.text : t.textFaint);
+        g.drawText (limiterReductionDb < 0.05f ? juce::String ("0.0 dB") : "-" + juce::String (limiterReductionDb, 1) + " dB",
+                    readout, juce::Justification::centredRight);
+    }
 
-    // Short-term loudness (3 s), the number streaming platforms normalise to.
+    // LOUDNESS: short-term LUFS (3 s), the number streaming platforms normalise to.
     // With normalisation on, show the target and the gain being applied.
+    // (Momentary / integrated LUFS are deliberately not shown here.)
+    Theme::drawLegend (g, "Loudness", loudnessLegend);
     auto la2 = loudnessArea;
-    Theme::drawLegend (g, "LUFS", la2.removeFromLeft (40));
     const double st = analysis->loudness.shortTerm();
-    juce::String loudText = std::isfinite (st) ? juce::String (st, 1) : juce::String ("no signal");
+    juce::String loudText = std::isfinite (st) ? juce::String (st, 1) + " LUFS" : juce::String ("no signal");
     if (bus.normOn.load())
     {
         const float normDb = juce::Decibels::gainToDecibels (bus.normGain.load(), -100.0f);
@@ -369,13 +420,27 @@ void BusView::paint (juce::Graphics& g)
     Theme::drawLegend (g, "Processing", processLegend);
     Theme::drawLegend (g, "Inserts", insertsLegend);
     if (! spectrumLegend.isEmpty())
-        Theme::drawLegend (g, "Spectrum", spectrumLegend);
+        Theme::drawLegend (g, "Analyser", spectrumLegend);
     if (const int lat = bus.inserts.latencySamples.load(); lat > 0 && engine.getSampleRate() > 0)
     {
         g.setFont (Theme::mono (11.0f));
         g.setColour (t.textFaint);
         g.drawText (juce::String (1000.0 * lat / engine.getSampleRate(), 1) + " ms", insertsLegend, juce::Justification::centredRight);
     }
+}
+
+// The monitor bus is shown only here: a thin 1 px accent outline around the
+// strip, plus the name bar lit in the accent colour. No text on the strip says
+// "monitor" -- the outline and the lit name bar are the whole signal.
+void BusView::paintOverChildren (juce::Graphics& g)
+{
+    if (! bus.monitor.load())
+        return;
+
+    const auto& t = Theme::p();
+    g.setColour (t.accent);
+    g.drawRect (getLocalBounds().toFloat(), 1.0f);
+    g.fillRect (tape.getBounds().withHeight (3).translated (0, tape.getHeight() - 3).toFloat());
 }
 
 void BusView::resized()
@@ -397,11 +462,10 @@ void BusView::resized()
     targetButton.setBounds (top.removeFromTop (32));
     top.removeFromTop (Theme::s2);
 
-    auto lamps = top.removeFromTop (18);
-    limiterArea = lamps.removeFromLeft (lamps.getWidth() / 2);
-    monitorArea = lamps;
+    limiterLegend = top.removeFromTop (legendH);
+    limiterArea = top.removeFromTop (18);
+    loudnessLegend = top.removeFromTop (legendH);
     loudnessArea = top.removeFromTop (18);
-    kindLegend = {};
     top.removeFromTop (gap);
 
     processLegend = top.removeFromTop (legendH);

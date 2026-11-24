@@ -9,7 +9,9 @@
 #include "ui/InsertRack.h"
 
 // One input channel strip, top to bottom in signal-flow order:
-// name tape, source + gain, inserts, processing, voice pad, sends, mute/solo, fader + meter.
+// INPUT (source, gain slider, polarity/mono), FILTER (HPF/LPF), processing keys,
+// PRESET, inserts (VST3 + built-in), voice pad, then the fader bay: bus sends,
+// FX sends, fader + meter, mute/solo/solo-safe, per-channel latency, name bar.
 class StripView : public juce::Component
 {
 public:
@@ -44,7 +46,13 @@ private:
     void openProcessorPanel (int index);
     void openSendPanel (int bus);
     void updateKeys();
+    void updateFilter();
     juce::Component* popupParent();
+
+    // Strip presets (MixerEngine::stripPresets, saved in the session file)
+    void refreshPresets();
+    void applySelectedPreset();
+    void showSavePresetDialog();
 
     juce::String displayName() const;
 
@@ -55,15 +63,26 @@ private:
     TapeLabel tape { true };
     MenuDotsButton menuButton;
     ChipButton sourceButton;
-    DbSlider gainKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxRight };
-    InsertRack inserts;
+    DbSlider gainSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    StripKey invertButton { juce::String::fromUTF8 ("\xc3\x98") }, monoButton { "MONO" };
+    DbSlider hpfKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
+    DbSlider lpfKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
+    StripKey hpfButton { "HPF" }, lpfButton { "LPF" };
     std::array<StripKey, 6> processKeys;
+    juce::ComboBox presetCombo;
+    juce::TextButton presetSaveButton { "Save" }, presetDeleteButton { "Delete" };
+    juce::String selectedPreset;
+    InsertRack inserts;
     VoicePadComponent pad;
     std::array<StripKey, kNumBuses> sendButtons;
-    StripKey muteButton { "Mute" }, soloButton { "Solo" };
+    std::array<DbSlider, omx::kNumFxSends> fxSendSliders;
+    StripKey muteButton { "Mute" }, soloButton { "Solo" }, safeButton { "SAFE" };
     FaderSection faderSection;
+    juce::Label latencyLabel;
 
-    juce::Rectangle<int> gainLegend, insertsLegend, processLegend, padLegend, sendsLegend;
+    juce::Rectangle<int> inputLegend, filterLegend, processLegend, presetLegend, insertsLegend,
+                         padLegend, sendsLegend, fxLegend, nameBarArea;
+    std::array<juce::Rectangle<int>, omx::kNumFxSends> fxSendLabelAreas {};
     int lastLatency = -1, tickCount = 0, bayTop = 0;
     bool inLayout = false;
 

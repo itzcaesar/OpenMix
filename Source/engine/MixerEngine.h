@@ -2,8 +2,11 @@
 
 #include <JuceHeader.h>
 #include "engine/ChannelStrip.h"
+#include "engine/CpuMeter.h"
 #include "engine/ExternalIO.h"
 #include "engine/PluginScanner.h"
+#include "engine/TapTempo.h"
+#include "dsp/BuiltInFx.h"
 #include "dsp/Metering.h"
 #include "creator/Recorder.h"
 #include "creator/Soundboard.h"
@@ -40,6 +43,13 @@ struct Bus
     ProcessingParams fx;
     PluginChain inserts;
 
+    // Latency readout (any thread): the insert chain's latency from the last block.
+    int getLatencySamples() const noexcept { return inserts.latencySamples.load (std::memory_order_relaxed); }
+    double getLatencyMs (double sampleRate) const noexcept
+    {
+        return sampleRate > 0.0 ? 1000.0 * (double) getLatencySamples() / sampleRate : 0.0;
+    }
+
     // Analysis feed for the UI (loudness, spectrum): the audio thread writes, the UI reads.
     juce::AbstractFifo analysisFifo { 32768 };
     juce::AudioBuffer<float> analysisBuffer { 2, 32768 };
@@ -47,6 +57,13 @@ struct Bus
     juce::String deviceName;                    // for BusTarget::Device (message thread only)
     std::unique_ptr<DeviceOutputSink> sink;
     juce::CriticalSection sinkLock;
+
+    // Custom name (message thread only). Empty means the default name
+    // (kBusNames[slot]: A1..A3 / B1..B3). The bus's group is its slot, never
+    // its name -- see MixerEngine::isVirtualBus / omx::isVirtualBusSlot --
+    // so renaming a bus can never move it between the Hardware and Virtual
+    // groups. Persisted in the session file by Session::save/apply.
+    juce::String customName;
 };
 
 class MixerEngine : private juce::AudioIODeviceCallback
@@ -76,6 +93,85 @@ public:
     };
     std::vector<Scene> scenes;
     int currentScene = -1;
+
+    // Named strip presets (message thread only): a strip's sound saved under a
+    // name, persisted in the session file by Session::save/apply. Applying one to
+    // a different strip is supported; see ChannelStrip::loadPreset for what a
+    // preset does and does not carry.
+    struct NamedStripPreset
+    {
+        juce::String name;
+        omx::StripPreset preset;
+    };
+    std::vector<NamedStripPreset> stripPresets;
+
+    juce::StringArray getStripPresetNames() const;
+    const omx::StripPreset* findStripPreset (const juce::String& name) const;
+    bool saveStripPreset (const juce::String& name, int strip);   // false: bad name/strip; overwrites a preset of the same name
+    int applyStripPreset (const juce::String& name, int strip);   // returns missing-plugin count, or -1 if not found / bad strip
+    int applyStripPreset (int presetIndex, int strip);
+    bool deleteStripPreset (const juce::String& name);
+
+    // Solo (message thread / audio thread). getMonitorBus returns the monitor bus
+    // index or -1. isStripMutedBySolo is true when the solo action (not the strip's
+    // own mute) silences this strip on the monitor bus: something is soloed, this
+    // strip isn't soloed, and it isn't solo-safe-and-routed-to-the-monitor-bus.
+    int getMonitorBus() const noexcept;
+    bool isSoloActive() const noexcept;
+    bool isStripMutedBySolo (int strip) const noexcept;
+
+    // Bus latency readout (any thread): insert-chain latency of one bus.
+    int getBusLatencySamples (int bus) const noexcept;
+    double getBusLatencyMs (int bus) const noexcept;
+
+    // Bus names and groups (message thread). Buses keep the fixed 6-slot
+    // capacity: slots 0-2 are the Hardware (A) group, 3-5 the Virtual (B)
+    // group. getBusName returns the custom name when one is set, otherwise
+    // the default (A1..A3 / B1..B3); setBusName with an empty string clears
+    // the custom name back to the default. findNextFreeSlotInGroup returns
+    // the first inactive slot in the group, or -1 when the group is full.
+    // isVirtualBus is slot-based, never name-based.
+    juce::String getBusName (int bus) const;
+    void setBusName (int bus, const juce::String& name);
+    int findNextFreeSlotInGroup (bool virtualGroup) const noexcept;
+    static bool isVirtualBus (int bus) noexcept { return omx::isVirtualBusSlot (bus); }
+
+    // Tap tempo + BPM (message thread, except getBpm which is any thread).
+    // The BPM starts at 120, clamps to 40..240, and is shared by every
+    // tempo-synced BuiltInDelay: the global FX delay, and any delay insert
+    // on a strip or bus whose tempo sync is on (see applyBpmToDelays).
+    // tap() records a tap at the current time and returns the new BPM.
+    double getBpm() const noexcept { return tapTempo.getBpm(); }
+    void setBpm (double bpm);
+    double tap();
+    // Push the current BPM into the global FX delay and every tempo-synced
+    // delay insert in every strip/bus chain. Called by setBpm/tap and when
+    // the audio device starts; the UI agent should also call it after
+    // installing a delay insert, so a freshly added delay picks up the
+    // current BPM instead of its 120 default.
+    void applyBpmToDelays();
+
+    // Global FX units for the sends (message thread for the getters; the
+    // audio thread processes them). One unit per effect type, shared by all
+    // strips: a strip's post-fader signal, scaled by its FX send level,
+    // feeds the unit, and the wet return (the units run at mix 1.0, wet
+    // only) is mixed into every bus that strip is routed to, before that
+    // bus's processing -- so the return follows the bus fader and limiter
+    // like the dry mix. A bus with no contributing strip gets no return.
+    // The units are created when the audio device starts; the getters
+    // return nullptr before that. Per-strip send levels live on
+    // ChannelStrip (setFxSendLevel / getFxSendLevel).
+    omx::BuiltInFx* getFxUnit (int fx) noexcept;
+    omx::BuiltInReverb* getFxReverb() noexcept;
+    omx::BuiltInDelay* getFxDelay() noexcept;
+    omx::BuiltInChorus* getFxChorus() noexcept;
+
+    // CPU meter (any thread): audio-thread CPU usage as a percentage of
+    // real time, smoothed with an exponential moving average (see
+    // engine/CpuMeter.h). 100% means the engine used the whole block
+    // duration; over 100% means it overran real time. 0 before the first
+    // audio block has been measured.
+    double getCpuUsagePercent() const noexcept { return cpuUsagePercent.load (std::memory_order_relaxed); }
 
     ChannelStrip& getStrip (int i) noexcept { return *strips[(size_t) i]; }
     Bus& getBus (int i) noexcept { return buses[(size_t) i]; }
@@ -165,6 +261,19 @@ private:
     std::array<omx::Eq3, kNumBuses> busEq;
     std::array<omx::Compressor, kNumBuses> busComp;
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;
+
+    // Tap tempo + CPU meter (see the public getters above).
+    omx::TapTempo tapTempo;
+    omx::CpuMeter cpuMeter;
+    std::atomic<float> cpuUsagePercent { 0.0f };
+
+    // Global FX units for the sends, one per effect type (see getFxUnit).
+    // fxSendBuffer holds 2 channels per unit (Reverb L/R, Delay L/R,
+    // Chorus L/R); fxSendGain smooths each strip's send level.
+    std::array<std::unique_ptr<omx::BuiltInFx>, omx::kNumFxSends> fxUnits;
+    juce::AudioBuffer<float> fxSendBuffer;
+    std::array<std::array<juce::SmoothedValue<float>, omx::kNumFxSends>, kNumStrips> fxSendGain;
+
     int maxBlock = 512;
     std::atomic<double> currentSampleRate { 48000.0 };
 };

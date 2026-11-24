@@ -56,19 +56,44 @@ ConsoleContent::ConsoleContent (MixerEngine& e) : soundboard (e), engine (e)
 
 void ConsoleContent::showAddBusMenu()
 {
+    // Pick the group first (Hardware = A slots, Virtual = B slots), then a name;
+    // the bus takes the next free slot in that group.
     juce::PopupMenu menu;
-    for (int b = 0; b < kNumBuses; ++b)
-    {
-        if (engine.getBus (b).active.load())
-            continue;
-        const juce::String name (kBusNames[b]);
-        menu.addItem (name + (name.startsWith ("B") ? "  (virtual out)" : "  (hardware out)"), [this, b]
-        {
-            engine.addBus (b);
-            relayout();
-        });
-    }
+    menu.addItem ("Hardware bus (A)...", engine.findNextFreeSlotInGroup (false) >= 0, false,
+                  [this] { askBusName (false); });
+    menu.addItem ("Virtual bus (B)...", engine.findNextFreeSlotInGroup (true) >= 0, false,
+                  [this] { askBusName (true); });
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (addBusButton));
+}
+
+void ConsoleContent::askBusName (bool virtualGroup)
+{
+    const int slot = engine.findNextFreeSlotInGroup (virtualGroup);
+    if (slot < 0)
+        return;
+
+    const auto groupName = virtualGroup ? juce::String ("virtual (B)") : juce::String ("hardware (A)");
+    auto* w = new juce::AlertWindow ("Add a " + groupName + " bus",
+                                     "It takes the next free slot in the " + groupName + " group ("
+                                     + juce::String (kBusNames[slot]) + "). Give it a custom name, or leave "
+                                     "it empty for the default name.",
+                                     juce::MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("name", "", "Bus name (optional)");
+    w->addButton ("Add bus", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<ConsoleContent> safe (this);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w, slot] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+        safe->engine.addBus (slot);
+        const auto name = w->getTextEditorContents ("name").trim();
+        if (name.isNotEmpty())
+            safe->engine.setBusName (slot, name);   // empty = default A1..A3 / B1..B3
+        safe->relayout();
+        Session::save (safe->engine);
+    }), true);
 }
 
 void ConsoleContent::relayout()
@@ -102,20 +127,35 @@ int ConsoleContent::minimumWidth() const
 {
     const int ns = juce::jmax (1, engine.getNumActiveStrips());
     const int nb = juce::jmax (1, engine.getNumActiveBuses());
+    int nA = 0, nB = 0;
+    for (int b = 0; b < kNumBuses; ++b)
+        if (engine.getBus (b).active.load())
+            (b < 3 ? nA : nB)++;
+    const int gap = (nA > 0 && nB > 0) ? groupGap() : 0;
     const int desk = ns * StripView::minWidth() + (ns - 1) * stripGap()
                    + sectionGap()
-                   + juce::jmax (nb * BusView::minWidth() + (nb - 1) * stripGap(), 150);
+                   + juce::jmax (nb * BusView::minWidth() + (nb - 1) * stripGap() + gap, 150);
     return consolePad() * 2 + (soundboard.isVisible() ? juce::jmax (desk, SoundboardPanel::minWidth) : desk);
 }
 
 void ConsoleContent::paint (juce::Graphics& g)
 {
     Theme::drawLegend (g, "Inputs", inputsLegend);
-    Theme::drawLegend (g, "Outputs", outputsLegend);
+    if (! hardwareLegend.isEmpty())
+        Theme::drawLegend (g, "Hardware", hardwareLegend);
+    if (! virtualLegend.isEmpty())
+        Theme::drawLegend (g, "Virtual", virtualLegend);
 
     // Divider between the input channels and the master section, as on a desk.
     g.setColour (Theme::p().line);
     g.fillRect (dividerX, inputsLegend.getBottom(), 1, deskBottom - inputsLegend.getBottom());
+
+    // Divider between the Hardware and Virtual bus groups.
+    if (groupDividerX > 0)
+    {
+        g.setColour (Theme::p().line);
+        g.fillRect (groupDividerX, groupDividerTop, 1, groupDividerBottom - groupDividerTop);
+    }
 }
 
 void ConsoleContent::resized()
@@ -128,13 +168,20 @@ void ConsoleContent::resized()
 
     // Fill the window: strips and buses share the width, a bus getting about 3/4 of a strip,
     // within each one's limits. Only past those limits is the desk centred with margins.
-    const int avail = r.getWidth() - sectionGap() - soundW - (ns - 1) * stripGap() - (nb - 1) * stripGap();
+    // The bus groups get a gap + divider between them when both have active buses.
+    int nA = 0, nB = 0;
+    for (int b = 0; b < kNumBuses; ++b)
+        if (engine.getBus (b).active.load())
+            (b < 3 ? nA : nB)++;
+    const int busGroupGap = (nA > 0 && nB > 0) ? groupGap() : 0;
+
+    const int avail = r.getWidth() - sectionGap() - soundW - (ns - 1) * stripGap() - (nb - 1) * stripGap() - busGroupGap;
     const int unit = (int) (avail / (ns + nb * 0.75f));
     const int stripW = juce::jlimit (StripView::minWidth(), StripView::maxWidth(), unit);
     const int busW = juce::jlimit (BusView::minWidth(), BusView::maxWidth(), (avail - ns * stripW) / nb);
 
     const int inputsW = ns * stripW + (ns - 1) * stripGap();
-    const int outputsW = juce::jmax (nb * busW + (nb - 1) * stripGap(), 150);
+    const int outputsW = juce::jmax (nb * busW + (nb - 1) * stripGap() + busGroupGap, 150);
     const int deskW = inputsW + sectionGap() + soundW + outputsW;
     r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), juce::jmax (deskW, soundboard.isVisible() ? SoundboardPanel::minWidth : 0)),
                                  r.getHeight());
@@ -148,7 +195,8 @@ void ConsoleContent::resized()
     deskBottom = r.getBottom();
     r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), deskW), r.getHeight());
 
-    // Section legends, with the add buttons at their right end.
+    // Section legends, with the add buttons at their right end. The bus row's group
+    // labels sit over their own group's columns (HARDWARE over A, VIRTUAL over B).
     auto legends = r.removeFromTop (36);
     inputsLegend = legends.removeFromLeft (inputsW);
     legends.removeFromLeft (sectionGap());
@@ -156,9 +204,17 @@ void ConsoleContent::resized()
     addStripButton.setBounds (inputsLegend.withTrimmedLeft (inputsLegend.getWidth() - 72).withSizeKeepingCentre (72, 24));
     addBusButton.setBounds (outputsLegend.withTrimmedLeft (outputsLegend.getWidth() - 64).withSizeKeepingCentre (64, 24));
 
+    const int aW = nA > 0 ? nA * busW + (nA - 1) * stripGap() : 0;
+    const int bW = nB > 0 ? nB * busW + (nB - 1) * stripGap() : 0;
+    hardwareLegend = nA > 0 ? outputsLegend.withWidth (aW) : juce::Rectangle<int>();
+    virtualLegend = nB > 0 ? outputsLegend.withTrimmedLeft (aW + busGroupGap).withWidth (bW) : juce::Rectangle<int>();
+    groupDividerTop = inputsLegend.getBottom();
+
     // One fader bay for every column: faders, meters and mute rows line up across the desk,
-    // whatever sits above them. The bay takes about half the height.
-    const int bayHeight = juce::jlimit (230, 440, (int) (r.getHeight() * 0.48f));
+    // whatever sits above them. The bay takes about a third of the height: the strip's top
+    // section grew (filter and preset sections), so the bay gives up height to keep at
+    // least a couple of insert rows visible at the default window size.
+    const int bayHeight = juce::jlimit (230, 400, (int) (r.getHeight() * 0.36f));
     const int bayTop = r.getHeight() - bayHeight;
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -172,14 +228,24 @@ void ConsoleContent::resized()
 
     r.removeFromLeft (sectionGap() - stripGap());
     dividerX = r.getX() - sectionGap() / 2;
+    groupDividerBottom = deskBottom;
 
+    // Buses in slot order, with the group gap + divider between the A and B groups.
+    groupDividerX = 0;
+    int placed = 0;
     for (int b = 0; b < kNumBuses; ++b)
     {
         if (! buses[(size_t) b]->isVisible())
             continue;
+        if (b >= 3 && placed == nA && busGroupGap > 0)
+        {
+            groupDividerX = r.getX() + busGroupGap / 2;
+            r.removeFromLeft (busGroupGap);
+        }
         buses[(size_t) b]->setBayTop (bayTop);
         buses[(size_t) b]->setBounds (r.removeFromLeft (busW));
         r.removeFromLeft (stripGap());
+        ++placed;
     }
 }
 
@@ -241,6 +307,87 @@ void StatusDisplay::paintButton (juce::Graphics& g, bool highlighted, bool down)
 
     if (hasKeyboardFocus (false))
         Theme::drawFocusRing (g, getLocalBounds().toFloat());
+}
+
+//==============================================================================
+// StatusBar
+
+StatusBar::StatusBar()
+{
+    tapButton.setTooltip ("Tap the tempo: each tap sets the BPM (40..240). Tempo-synced delays follow it.");
+    tapButton.onClick = [this] { if (onTap) onTap(); };
+    makeClickable (tapButton);
+    addAndMakeVisible (tapButton);
+
+    bpmButton.setButtonText ("120 BPM");
+    bpmButton.setTooltip ("Tempo for the tap-tempo delays. Click to type a BPM (40..240).");
+    bpmButton.onClick = [this] { if (onEditBpm) onEditBpm(); };
+    makeClickable (bpmButton);
+    addAndMakeVisible (bpmButton);
+}
+
+void StatusBar::setBpm (double bpm)
+{
+    if (std::abs (bpm - currentBpm) < 0.05)
+        return;
+    currentBpm = bpm;
+    bpmButton.setButtonText (juce::String (bpm, 0) + " BPM");
+}
+
+void StatusBar::paint (juce::Graphics& g)
+{
+    const auto& t = Theme::p();
+    g.setColour (t.panel);
+    g.fillRect (getLocalBounds());
+    g.setColour (t.line);
+    g.fillRect (getLocalBounds().withHeight (1));
+
+    auto area = getLocalBounds().reduced (consolePad(), 0);
+
+    // LIVE indicator: the audio device is running.
+    auto liveArea = area.removeFromLeft (64);
+    g.setColour (isLive ? t.meterLow : t.textFaint);
+    g.fillEllipse (liveArea.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat());
+    g.setFont (Theme::ui (11.5f, true));
+    g.setColour (isLive ? t.text : t.textFaint);
+    g.drawText (isLive ? "LIVE" : "OFFLINE", liveArea, juce::Justification::centredLeft);
+
+    area.removeFromLeft (Theme::s3);
+    g.setColour (t.line);
+    g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
+    area.removeFromLeft (Theme::s3);
+
+    const auto font = Theme::mono (12.0f);
+    g.setFont (font);
+    for (int i = 0; i < segments.size(); ++i)
+    {
+        const auto& seg = segments[i];
+        const bool isDevice = i == 0;
+        const int natural = juce::GlyphArrangement::getStringWidthInt (font, seg);
+        const int w = isDevice ? juce::jmin (natural, area.getWidth()) : natural;
+        if (w > area.getWidth() || w <= 0)
+            break;
+
+        g.setColour (isDevice ? t.text : t.textDim);
+        g.drawText (seg, area.removeFromLeft (w), juce::Justification::centredLeft, true);
+
+        if (i < segments.size() - 1 && area.getWidth() > 30)
+        {
+            area.removeFromLeft (Theme::s3);
+            g.setColour (t.line);
+            g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
+            area.removeFromLeft (Theme::s3);
+        }
+    }
+}
+
+void StatusBar::resized()
+{
+    auto r = getLocalBounds().reduced (consolePad(), 0);
+    constexpr int h = 22;
+    bpmButton.setBounds (r.removeFromRight (76).withSizeKeepingCentre (76, h));
+    r.removeFromRight (Theme::s1);
+    tapButton.setBounds (r.removeFromRight (56).withSizeKeepingCentre (56, h));
 }
 
 //==============================================================================
@@ -308,6 +455,12 @@ MainComponent::MainComponent()
 
     statusDisplay.onClick = [this] { showAudioSettings(); };
     addAndMakeVisible (statusDisplay);
+
+    // Bottom status bar: device / rate / buffer / engine CPU / LIVE, plus tap tempo.
+    statusBar.onTap = [this] { onTapTempo(); };
+    statusBar.onEditBpm = [this] { onEditBpm(); };
+    addAndMakeVisible (statusBar);
+    updateBpm();
 
     appSettingsButton.setTooltip ("Light or dark theme, startup and tray, plugins, remote control, updates.");
     appSettingsButton.onClick = [this] { showSettings(); };
@@ -514,6 +667,56 @@ void MainComponent::updateStatus()
     statusDisplay.setSegments (statusSegments);
     statusDisplay.setTitle ("Audio settings. " + statusSegments.joinIntoString (", "));
     repaint (bannerArea);
+
+    // Bottom status bar: device, sample rate, buffer size, engine CPU%, LIVE.
+    juce::StringArray bottom;
+    if (auto* device = dm.getCurrentAudioDevice())
+    {
+        bottom.add (device->getTypeName() + "  " + device->getName());
+        bottom.add (juce::String (device->getCurrentSampleRate() / 1000.0, 1) + " kHz");
+        bottom.add (juce::String (device->getCurrentBufferSizeSamples()) + " smp buffer");
+        bottom.add ("CPU " + juce::String (engine.getCpuUsagePercent(), 0) + "%");
+        statusBar.setLive (true);
+    }
+    else
+    {
+        bottom.add ("No audio device. Open Audio settings to choose one.");
+        statusBar.setLive (false);
+    }
+    statusBar.setSegments (bottom);
+    updateBpm();
+}
+
+void MainComponent::updateBpm()
+{
+    statusBar.setBpm (engine.getBpm());
+}
+
+void MainComponent::onTapTempo()
+{
+    engine.tap();   // tap() already pushes the BPM into every tempo-synced delay
+    updateBpm();
+}
+
+void MainComponent::onEditBpm()
+{
+    auto* w = new juce::AlertWindow ("Set tempo",
+                                     "Tempo for the tap-tempo delays (40..240 BPM).",
+                                     juce::MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("bpm", juce::String (engine.getBpm(), 0), "BPM");
+    w->addButton ("Set", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<MainComponent> safe (this);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+        const double bpm = w->getTextEditorContents ("bpm").getDoubleValue();
+        if (bpm > 0.0)
+            safe->engine.setBpm (bpm);   // clamps to 40..240, pushes to tempo-synced delays
+        safe->updateBpm();
+    }), true);
 }
 
 void MainComponent::timerCallback()
@@ -677,7 +880,7 @@ void MainComponent::updateRecordButton()
     replayButton.setButtonText (replay.isEnabled() ? "Replay " + juce::String ((int) replay.getSeconds()) + " s" : "Replay off");
     replayButton.setTitle (replay.isEnabled() ? "Save the last " + juce::String ((int) replay.getSeconds()) + " seconds" : "Replay buffer is off");
     replayButton.setTooltip (replay.isEnabled()
-        ? "Save the last " + juce::String ((int) replay.getSeconds()) + " seconds of " + juce::String (kBusNames[replay.sourceBus.load()]) + " (Ctrl+Shift+S)."
+        ? "Save the last " + juce::String ((int) replay.getSeconds()) + " seconds of " + engine.getBusName (replay.sourceBus.load()) + " (Ctrl+Shift+S)."
         : juce::String ("Turn on the replay buffer in the recording options (the dots next to Record)."));
 }
 
@@ -705,7 +908,7 @@ void MainComponent::startRecording()
     if (what == 0 || what == 2)
         for (int b = 0; b < kNumBuses; ++b)
             if (engine.getBus (b).active.load())
-                targets.push_back ({ juce::String ("Bus ") + kBusNames[b], true, b });
+                targets.push_back ({ juce::String ("Bus ") + engine.getBusName (b), true, b });
 
     if (what == 1 || what == 2)
         for (int s = 0; s < kNumStrips; ++s)
@@ -748,7 +951,7 @@ void MainComponent::showRecordMenu()
     juce::PopupMenu source;
     for (int b = 0; b < kNumBuses; ++b)
         if (engine.getBus (b).active.load())
-            source.addItem (kBusNames[b], true, settings.replayBus() == b, [this, b]
+            source.addItem (engine.getBusName (b), true, settings.replayBus() == b, [this, b]
             {
                 AppSettings::get().setReplayBus (b);
                 applyReplaySettings();
@@ -1127,6 +1330,10 @@ void MainComponent::resized()
     {
         bannerArea = {};
     }
+
+    // Bottom status bar: device, rate, buffer, engine CPU, LIVE, tap tempo.
+    statusBar.setBounds (r.removeFromBottom (28));
+    r.removeFromBottom (Theme::s3);
 
     consoleView.setBounds (r);
     const int minW = console->minimumWidth();

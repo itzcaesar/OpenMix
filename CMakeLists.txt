@@ -92,6 +92,7 @@ target_sources(OpenMix PRIVATE
 
     # DSP (the rest is header-only)
     Source/dsp/Denoiser.cpp
+    Source/dsp/BuiltInFx.cpp   # built-in Reverb / Delay / Chorus (inserts + FX sends)
 
     # interface
     Source/ui/OpenMixLookAndFeel.cpp

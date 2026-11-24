@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
@@ -62,6 +63,26 @@ struct Biquad
         const double w = 2.0 * std::numbers::pi * freq / fs;
         const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
         set (alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cw, 1.0 - alpha);
+    }
+
+    // RBJ high-pass / low-pass (Q = 0.707 is Butterworth, -3 dB at the cutoff).
+    // The cutoff is clamped inside (0, Nyquist) so retuning can never go unstable.
+    void setHighPass (double fs, double freq, double q = 0.707) noexcept
+    {
+        const double f = std::clamp (freq, 10.0, fs * 0.45);
+        const double w = 2.0 * std::numbers::pi * f / fs;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        set ((1.0 + cw) / 2.0, -(1.0 + cw), (1.0 + cw) / 2.0,
+             1.0 + alpha, -2.0 * cw, 1.0 - alpha);
+    }
+
+    void setLowPass (double fs, double freq, double q = 0.707) noexcept
+    {
+        const double f = std::clamp (freq, 10.0, fs * 0.45);
+        const double w = 2.0 * std::numbers::pi * f / fs;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        set ((1.0 - cw) / 2.0, 1.0 - cw, (1.0 - cw) / 2.0,
+             1.0 + alpha, -2.0 * cw, 1.0 - alpha);
     }
 
 private:

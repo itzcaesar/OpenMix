@@ -145,9 +145,9 @@ SoundboardPanel::SoundboardPanel (MixerEngine& e)
     for (int b = 0; b < kNumBuses; ++b)
     {
         auto& btn = sendButtons[(size_t) b];
-        btn.setButtonText (kBusNames[b]);
+        btn.setButtonText (engine.getBusName (b));
         makeLamp (btn, "accent");
-        btn.setTitle ("Play the soundboard on " + juce::String (kBusNames[b]));
+        btn.setTitle ("Play the soundboard on " + engine.getBusName (b));
         btn.onClick = [this, b] { board.busOn[b].store (sendButtons[(size_t) b].getToggleState()); if (onChanged) onChanged(); };
         addChildComponent (btn);
     }
@@ -177,6 +177,8 @@ void SoundboardPanel::refresh()
     volume.setValue (board.volumeDb.load(), juce::dontSendNotification);
     for (int b = 0; b < kNumBuses; ++b)
     {
+        sendButtons[(size_t) b].setButtonText (engine.getBusName (b));
+        sendButtons[(size_t) b].setTitle ("Play the soundboard on " + engine.getBusName (b));
         sendButtons[(size_t) b].setToggleState (board.busOn[b].load(), juce::dontSendNotification);
         sendButtons[(size_t) b].setVisible (engine.getBus (b).active.load());
     }

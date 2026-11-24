@@ -13,6 +13,9 @@
 #include "app/GlobalHotkeys.h"
 
 // The console: input strips on the left, the master section (buses) on the right.
+// The bus row is split into two visual groups -- HARDWARE (slots 0-2) and VIRTUAL
+// (slots 3-5) -- with a divider between them when both groups have active buses.
+// Grouping is slot-based, never name-based, so a renamed bus stays in its group.
 class ConsoleContent : public juce::Component
 {
 public:
@@ -26,7 +29,9 @@ public:
     std::function<void()> onSizeChanged;   // the minimum width changed (MainComponent resizes)
 
     int minimumWidth() const;
-    int minimumHeight() const { return 560 + (soundboard.isVisible() ? SoundboardPanel::barHeight() + Theme::s3 : 0); }
+    // Tall enough for the strip's top sections (input, filter, processing, preset) plus
+    // the pad and at least one insert row above the fader bay; shorter windows scroll.
+    int minimumHeight() const { return 730 + (soundboard.isVisible() ? SoundboardPanel::barHeight() + Theme::s3 : 0); }
 
     std::array<std::unique_ptr<StripView>, kNumStrips> strips;
     std::array<std::unique_ptr<BusView>, kNumBuses> buses;
@@ -34,11 +39,35 @@ public:
 
 private:
     void showAddBusMenu();
+    void askBusName (bool virtualGroup);   // group first, then a custom name, then the next free slot
+    static int groupGap() { return Theme::isCompact() ? 14 : 20; }   // gap + divider between the bus groups
 
     MixerEngine& engine;
     juce::TextButton addStripButton { "+" }, addBusButton { "+" };
-    juce::Rectangle<int> inputsLegend, outputsLegend;
-    int dividerX = 0, deskBottom = 0;
+    juce::Rectangle<int> inputsLegend, outputsLegend, hardwareLegend, virtualLegend;
+    int dividerX = 0, groupDividerX = 0, groupDividerTop = 0, groupDividerBottom = 0, deskBottom = 0;
+};
+
+// The bottom status bar: audio device, sample rate, buffer size, engine CPU%,
+// a LIVE indicator, and tap tempo (Tap button + BPM, click the BPM to type one).
+class StatusBar : public juce::Component
+{
+public:
+    StatusBar();
+    void setSegments (const juce::StringArray& s) { segments = s; repaint(); }
+    void setLive (bool live) { if (live != isLive) { isLive = live; repaint(); } }
+    void setBpm (double bpm);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+    std::function<void()> onTap, onEditBpm;
+
+private:
+    juce::StringArray segments;
+    bool isLive = false;
+    double currentBpm = 120.0;
+    juce::TextButton tapButton { "Tap" };
+    juce::TextButton bpmButton;
 };
 
 // The header's status readout (device, rate, latency, CPU, dropouts). It is also the way into
@@ -74,6 +103,9 @@ private:
     void toggleTheme();
     void applyTheme();
     void updateStatus();
+    void updateBpm();        // tap-tempo readout in the status bar
+    void onTapTempo();       // Tap button: one tap, drives tempo-synced delays
+    void onEditBpm();        // BPM button: type a tempo (40..240)
 
     // Creator tools
     void toggleRecording();
@@ -104,6 +136,7 @@ private:
 
     juce::TooltipWindow tooltips { this, 600 };
     StatusDisplay statusDisplay;
+    StatusBar statusBar;
     juce::TextButton appSettingsButton { "Settings" };
     juce::TextButton fixButton { "Open audio settings" };
     StripKey recordButton { "Record" };
