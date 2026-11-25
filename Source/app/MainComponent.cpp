@@ -538,7 +538,10 @@ void MainComponent::applyTheme()
         laf->applyPalette();
 
     if (auto* window = dynamic_cast<juce::DocumentWindow*> (getTopLevelComponent()))
+    {
         window->setBackgroundColour (Theme::p().window);
+        window->repaint();
+    }
 
     sendLookAndFeelChange();
     repaint();
@@ -553,11 +556,11 @@ void MainComponent::toggleTheme()
 
 namespace
 {
-class AudioSettingsPanel : public juce::Component
+class AudioSettingsPanel : public juce::Component, private juce::ChangeListener
 {
 public:
     explicit AudioSettingsPanel (MixerEngine& e)
-        : selector (e.getDeviceManager(), 0, 16, 2, 16, false, false, false, false)
+        : dm (e.getDeviceManager())
     {
         setFocusContainerType (FocusContainerType::keyboardFocusContainer);
         content.setFocusContainerType (FocusContainerType::keyboardFocusContainer);
@@ -565,7 +568,90 @@ public:
         viewport.setScrollBarsShown (true, false);
         viewport.setScrollBarThickness (8);
         addAndMakeVisible (viewport);
-        content.addAndMakeVisible (selector);
+
+        rescanButton.setTooltip ("Rescan for newly connected audio interfaces or USB devices.");
+        rescanButton.onClick = [this]
+        {
+            if (auto* t = dm.getCurrentDeviceTypeObject())
+                t->scanForDevices();
+            rebuildFromDevice();
+        };
+        makeClickable (rescanButton);
+        content.addAndMakeVisible (rescanButton);
+
+        outputBox.setTitle ("Audio output device");
+        outputBox.onChange = [this]
+        {
+            if (rebuilding) return;
+            auto setup = dm.getAudioDeviceSetup();
+            const int id = outputBox.getSelectedId();
+            setup.outputDeviceName = (id <= 1 || ! juce::isPositiveAndBelow (id - 2, outputNames.size()))
+                                       ? juce::String() : outputNames[id - 2];
+            applySetup (setup);
+        };
+        makeClickable (outputBox);
+        content.addAndMakeVisible (outputBox);
+
+        inputBox.setTitle ("Audio input device");
+        inputBox.onChange = [this]
+        {
+            if (rebuilding) return;
+            auto setup = dm.getAudioDeviceSetup();
+            const int id = inputBox.getSelectedId();
+            setup.inputDeviceName = (id <= 1 || ! juce::isPositiveAndBelow (id - 2, inputNames.size()))
+                                      ? juce::String() : inputNames[id - 2];
+            applySetup (setup);
+        };
+        makeClickable (inputBox);
+        content.addChildComponent (inputBox);
+
+        rateBox.setTitle ("Sample rate");
+        rateBox.onChange = [this]
+        {
+            if (rebuilding) return;
+            const int idx = rateBox.getSelectedId() - 1;
+            if (! juce::isPositiveAndBelow (idx, sampleRates.size())) return;
+            auto setup = dm.getAudioDeviceSetup();
+            setup.sampleRate = sampleRates[idx];
+            applySetup (setup);
+        };
+        makeClickable (rateBox);
+        content.addAndMakeVisible (rateBox);
+
+        bufferBox.setTitle ("Audio buffer size");
+        bufferBox.onChange = [this]
+        {
+            if (rebuilding) return;
+            const int idx = bufferBox.getSelectedId() - 1;
+            if (! juce::isPositiveAndBelow (idx, bufferSizes.size())) return;
+            auto setup = dm.getAudioDeviceSetup();
+            setup.bufferSize = bufferSizes[idx];
+            applySetup (setup);
+        };
+        makeClickable (bufferBox);
+        content.addAndMakeVisible (bufferBox);
+
+        testButton.setTooltip ("Play a short test tone on the active output.");
+        testButton.onClick = [this] { dm.playTestSound(); };
+        makeClickable (testButton);
+        content.addAndMakeVisible (testButton);
+
+        controlPanelButton.setTooltip ("Open this driver's control panel (e.g. ASIO buffer / clock settings).");
+        controlPanelButton.onClick = [this]
+        {
+            if (auto* dev = dm.getCurrentAudioDevice())
+                dev->showControlPanel();
+        };
+        makeClickable (controlPanelButton);
+        content.addChildComponent (controlPanelButton);
+
+        dm.addChangeListener (this);
+        rebuildFromDevice();
+    }
+
+    ~AudioSettingsPanel() override
+    {
+        dm.removeChangeListener (this);
     }
 
     void paint (juce::Graphics& g) override { g.fillAll (Theme::p().window); }
@@ -574,7 +660,7 @@ public:
     {
         viewport.setBounds (getLocalBounds());
         const int w = juce::jmax (500, viewport.getMaximumVisibleWidth());
-        content.setSize (w, 616);
+        content.setSize (w, totalContentHeight());
         layoutContent();
     }
 
@@ -587,12 +673,215 @@ private:
         void resized() override { owner.layoutContent(); }
     };
 
+    void changeListenerCallback (juce::ChangeBroadcaster*) override { rebuildFromDevice(); }
+
+    void applySetup (juce::AudioDeviceManager::AudioDeviceSetup setup)
+    {
+        lastError = dm.setAudioDeviceSetup (setup, true);
+        rebuildFromDevice();
+    }
+
+    void rebuildFromDevice()
+    {
+        const juce::ScopedValueSetter<bool> guard (rebuilding, true);
+
+        // Driver selector buttons
+        driverButtons.clear();
+        const auto currentType = dm.getCurrentAudioDeviceType();
+        for (auto* t : dm.getAvailableDeviceTypes())
+        {
+            auto btn = std::make_unique<juce::TextButton> (t->getTypeName());
+            makeLamp (*btn, "key");
+            btn->setToggleState (t->getTypeName() == currentType, juce::dontSendNotification);
+            const auto typeName = t->getTypeName();
+            btn->onClick = [this, typeName]
+            {
+                lastError.clear();
+                dm.setCurrentAudioDeviceType (typeName, true);
+                if (auto* dt = dm.getCurrentDeviceTypeObject())
+                    dt->scanForDevices();
+                rebuildFromDevice();
+            };
+            content.addAndMakeVisible (*btn);
+            driverButtons.push_back (std::move (btn));
+        }
+
+        auto* type = dm.getCurrentDeviceTypeObject();
+        const auto setup = dm.getAudioDeviceSetup();
+        hasSeparateInput = (type != nullptr && type->hasSeparateInputsAndOutputs());
+
+        outputNames.clear();
+        outputBox.clear (juce::dontSendNotification);
+        outputBox.addItem ("<none>", 1);
+        if (type != nullptr)
+        {
+            outputNames = type->getDeviceNames (false);
+            for (int i = 0; i < outputNames.size(); ++i)
+                outputBox.addItem (outputNames[i], i + 2);
+        }
+        const int outIdx = setup.outputDeviceName.isEmpty() ? -1 : outputNames.indexOf (setup.outputDeviceName);
+        outputBox.setSelectedId (outIdx >= 0 ? outIdx + 2 : 1, juce::dontSendNotification);
+
+        inputNames.clear();
+        inputBox.clear (juce::dontSendNotification);
+        inputBox.setVisible (hasSeparateInput);
+        if (hasSeparateInput && type != nullptr)
+        {
+            inputBox.addItem ("<none> (recommended for strip mics)", 1);
+            inputNames = type->getDeviceNames (true);
+            for (int i = 0; i < inputNames.size(); ++i)
+                inputBox.addItem (inputNames[i], i + 2);
+            const int inIdx = setup.inputDeviceName.isEmpty() ? -1 : inputNames.indexOf (setup.inputDeviceName);
+            inputBox.setSelectedId (inIdx >= 0 ? inIdx + 2 : 1, juce::dontSendNotification);
+        }
+
+        auto* dev = dm.getCurrentAudioDevice();
+        sampleRates.clear();
+        rateBox.clear (juce::dontSendNotification);
+        bufferSizes.clear();
+        bufferBox.clear (juce::dontSendNotification);
+        outputChannelButtons.clear();
+        inputChannelButtons.clear();
+
+        if (dev != nullptr)
+        {
+            sampleRates = dev->getAvailableSampleRates();
+            const double curSr = dev->getCurrentSampleRate();
+            int srSel = 1;
+            for (int i = 0; i < sampleRates.size(); ++i)
+            {
+                const double r = sampleRates[i];
+                rateBox.addItem (juce::String (r / 1000.0, std::fmod (r, 1000.0) == 0.0 ? 0 : 1) + " kHz", i + 1);
+                if (std::abs (r - curSr) < 1.0)
+                    srSel = i + 1;
+            }
+            if (! sampleRates.isEmpty())
+                rateBox.setSelectedId (srSel, juce::dontSendNotification);
+            rateBox.setEnabled (! sampleRates.isEmpty());
+
+            bufferSizes = dev->getAvailableBufferSizes();
+            const int curBuf = dev->getCurrentBufferSizeSamples();
+            int bufSel = 1;
+            for (int i = 0; i < bufferSizes.size(); ++i)
+            {
+                const int b = bufferSizes[i];
+                const double ms = curSr > 0.0 ? (1000.0 * b / curSr) : 0.0;
+                bufferBox.addItem (juce::String (b) + " smp (" + juce::String (ms, 1) + " ms)", i + 1);
+                if (b == curBuf)
+                    bufSel = i + 1;
+            }
+            if (! bufferSizes.isEmpty())
+                bufferBox.setSelectedId (bufSel, juce::dontSendNotification);
+            bufferBox.setEnabled (! bufferSizes.isEmpty());
+
+            const double sr = curSr > 0.0 ? curSr : 48000.0;
+            const double inMs = 1000.0 * dev->getInputLatencyInSamples() / sr;
+            const double outMs = 1000.0 * dev->getOutputLatencyInSamples() / sr;
+            statusSummary = "Active: " + juce::String (dev->getCurrentBitDepth()) + "-bit  |  In "
+                          + juce::String (inMs, 1) + " ms / Out " + juce::String (outMs, 1) + " ms";
+
+            // Stereo pair channel keys (up to 16 outputs / 16 inputs)
+            const auto outNames = dev->getOutputChannelNames();
+            const auto activeOut = dev->getActiveOutputChannels();
+            for (int ch = 0; ch < juce::jmin (16, outNames.size()); ch += 2)
+            {
+                const bool hasPair = (ch + 1) < outNames.size();
+                const juce::String lbl = hasPair
+                    ? ("Out " + juce::String (ch + 1) + "-" + juce::String (ch + 2) + ": " + outNames[ch])
+                    : ("Out " + juce::String (ch + 1) + ": " + outNames[ch]);
+                auto btn = std::make_unique<juce::TextButton> (lbl);
+                makeLamp (*btn, "accent");
+                btn->setClickingTogglesState (false);
+                const bool on = activeOut[ch] || (hasPair && activeOut[ch + 1]);
+                btn->setToggleState (on, juce::dontSendNotification);
+                btn->onClick = [this, ch, hasPair, on]
+                {
+                    auto s = dm.getAudioDeviceSetup();
+                    if (auto* d = dm.getCurrentAudioDevice())
+                        if (s.useDefaultOutputChannels)
+                            s.outputChannels = d->getActiveOutputChannels();
+                    s.useDefaultOutputChannels = false;
+                    s.outputChannels.setBit (ch, ! on);
+                    if (hasPair)
+                        s.outputChannels.setBit (ch + 1, ! on);
+                    applySetup (s);
+                };
+                content.addAndMakeVisible (*btn);
+                outputChannelButtons.push_back (std::move (btn));
+            }
+
+            const auto inNames = dev->getInputChannelNames();
+            const auto activeIn = dev->getActiveInputChannels();
+            for (int ch = 0; ch < juce::jmin (16, inNames.size()); ch += 2)
+            {
+                const bool hasPair = (ch + 1) < inNames.size();
+                const juce::String lbl = hasPair
+                    ? ("In " + juce::String (ch + 1) + "-" + juce::String (ch + 2) + ": " + inNames[ch])
+                    : ("In " + juce::String (ch + 1) + ": " + inNames[ch]);
+                auto btn = std::make_unique<juce::TextButton> (lbl);
+                makeLamp (*btn, "accent");
+                btn->setClickingTogglesState (false);
+                const bool on = activeIn[ch] || (hasPair && activeIn[ch + 1]);
+                btn->setToggleState (on, juce::dontSendNotification);
+                btn->onClick = [this, ch, hasPair, on]
+                {
+                    auto s = dm.getAudioDeviceSetup();
+                    if (auto* d = dm.getCurrentAudioDevice())
+                        if (s.useDefaultInputChannels)
+                            s.inputChannels = d->getActiveInputChannels();
+                    s.useDefaultInputChannels = false;
+                    s.inputChannels.setBit (ch, ! on);
+                    if (hasPair)
+                        s.inputChannels.setBit (ch + 1, ! on);
+                    applySetup (s);
+                };
+                content.addAndMakeVisible (*btn);
+                inputChannelButtons.push_back (std::move (btn));
+            }
+
+            testButton.setEnabled (true);
+            controlPanelButton.setVisible (dev->hasControlPanel());
+            controlPanelButton.setEnabled (dev->hasControlPanel());
+        }
+        else
+        {
+            rateBox.setEnabled (false);
+            bufferBox.setEnabled (false);
+            testButton.setEnabled (false);
+            controlPanelButton.setVisible (false);
+            statusSummary = "No audio device is currently active.";
+        }
+
+        if (getWidth() > 0 && getHeight() > 0)
+            resized();
+        content.repaint();
+    }
+
+    int totalContentHeight() const
+    {
+        int h = Theme::s3 * 2 + 52 + 10;   // outer pad + tip card
+        if (lastError.isNotEmpty())
+            h += 44 + 10;
+        h += 78 + 10;                      // Driver card
+        const int devRows = hasSeparateInput ? 5 : 4;
+        h += (24 + 18 + devRows * 34 + 34) + 10;   // Device & format card
+        if (! outputChannelButtons.empty() || ! inputChannelButtons.empty())
+        {
+            const int outRows = ((int) outputChannelButtons.size() + 1) / 2;
+            const int inRows  = ((int) inputChannelButtons.size() + 1) / 2;
+            h += 24 + 18
+               + (outRows > 0 ? 18 + outRows * 30 : 0)
+               + (inRows  > 0 ? 8 + 18 + inRows * 30 : 0);
+        }
+        return juce::jmax (440, h);
+    }
+
     void paintContent (juce::Graphics& g)
     {
         const auto& t = Theme::p();
         g.fillAll (t.window);
 
-        // Tip card with accent stripe
+        // Tip card
         g.setColour (t.selBg);
         g.fillRoundedRectangle (tipCard.toFloat(), Theme::panelRadius);
         g.setColour (t.line);
@@ -601,30 +890,203 @@ private:
         g.fillRect (tipCard.getX() + 1, tipCard.getY() + 6, 3, tipCard.getHeight() - 12);
         g.setFont (Theme::ui (12.5f));
         g.setColour (t.textDim);
-        g.drawFittedText ("Select your ASIO or Windows output device here. Pick mics per strip under "
+        g.drawFittedText ("Select your ASIO or Windows output device below. Pick mics per strip under "
                           "Input -> Windows input device so each audio device keeps its own clock.",
                           tipCard.reduced (14, 8), juce::Justification::centredLeft, 3);
 
-        Theme::drawFaceplate (g, selectorCard.toFloat());
-        Theme::drawLegend (g, "Audio interface", selectorLegend);
+        if (! errorCard.isEmpty())
+        {
+            g.setColour (t.selBg);
+            g.fillRoundedRectangle (errorCard.toFloat(), Theme::panelRadius);
+            g.setColour (t.mute);
+            g.drawRoundedRectangle (errorCard.toFloat().reduced (0.5f), Theme::panelRadius, 1.0f);
+            g.fillRect (errorCard.getX() + 1, errorCard.getY() + 6, 3, errorCard.getHeight() - 12);
+            g.setFont (Theme::ui (12.5f));
+            g.setColour (t.text);
+            g.drawFittedText (lastError, errorCard.reduced (14, 6), juce::Justification::centredLeft, 2);
+        }
+
+        Theme::drawFaceplate (g, driverCard.toFloat());
+        Theme::drawLegend (g, "Driver", driverLegend);
+
+        Theme::drawFaceplate (g, deviceCard.toFloat());
+        Theme::drawLegend (g, "Device and format", deviceLegend);
+        g.setFont (Theme::ui (13.0f));
+        g.setColour (t.textDim);
+        g.drawText ("Output",      outputLabelArea, juce::Justification::centredLeft);
+        if (hasSeparateInput)
+            g.drawText ("Input",   inputLabelArea,  juce::Justification::centredLeft);
+        g.drawText ("Sample rate", rateLabelArea,   juce::Justification::centredLeft);
+        g.drawText ("Buffer size", bufferLabelArea, juce::Justification::centredLeft);
+
+        g.setFont (Theme::mono (11.5f));
+        g.setColour (t.textFaint);
+        g.drawText (statusSummary, statusArea, juce::Justification::centredRight, true);
+
+        if (! channelsCard.isEmpty())
+        {
+            Theme::drawFaceplate (g, channelsCard.toFloat());
+            Theme::drawLegend (g, "Active channels", channelsLegend);
+            g.setFont (Theme::ui (12.0f));
+            g.setColour (t.textDim);
+            if (! outChLabelArea.isEmpty())
+                g.drawText ("Output channels", outChLabelArea, juce::Justification::centredLeft);
+            if (! inChLabelArea.isEmpty())
+                g.drawText ("Input channels",  inChLabelArea,  juce::Justification::centredLeft);
+        }
     }
 
     void layoutContent()
     {
         auto r = content.getLocalBounds().reduced (Theme::s3);
+        constexpr int pad = Theme::s3;
+
         tipCard = r.removeFromTop (52);
         r.removeFromTop (10);
-        selectorCard = r;
-        auto c = selectorCard.reduced (Theme::s3);
-        selectorLegend = c.removeFromTop (18);
-        c.removeFromTop (4);
-        selector.setBounds (c);
+
+        if (lastError.isNotEmpty())
+        {
+            errorCard = r.removeFromTop (44);
+            r.removeFromTop (10);
+        }
+        else
+        {
+            errorCard = {};
+        }
+
+        driverCard = r.removeFromTop (78);
+        {
+            auto c = driverCard.reduced (pad);
+            auto head = c.removeFromTop (22);
+            rescanButton.setBounds (head.removeFromRight (84));
+            driverLegend = head;
+            c.removeFromTop (4);
+            const int n = (int) driverButtons.size();
+            if (n > 0)
+            {
+                const int bw = (c.getWidth() - (n - 1) * Theme::s1) / n;
+                for (auto& b : driverButtons)
+                {
+                    b->setBounds (c.removeFromLeft (bw));
+                    c.removeFromLeft (Theme::s1);
+                }
+            }
+        }
+        r.removeFromTop (10);
+
+        const int devRows = hasSeparateInput ? 5 : 4;
+        deviceCard = r.removeFromTop (24 + 18 + devRows * 34 + 34);
+        {
+            auto c = deviceCard.reduced (pad);
+            deviceLegend = c.removeFromTop (18);
+            c.removeFromTop (6);
+            constexpr int labelW = 104;
+
+            auto row = c.removeFromTop (28);
+            outputLabelArea = row.removeFromLeft (labelW);
+            outputBox.setBounds (row);
+            c.removeFromTop (6);
+
+            if (hasSeparateInput)
+            {
+                row = c.removeFromTop (28);
+                inputLabelArea = row.removeFromLeft (labelW);
+                inputBox.setBounds (row);
+                c.removeFromTop (6);
+            }
+            else
+            {
+                inputLabelArea = {};
+            }
+
+            row = c.removeFromTop (28);
+            rateLabelArea = row.removeFromLeft (labelW);
+            rateBox.setBounds (row);
+            c.removeFromTop (6);
+
+            row = c.removeFromTop (28);
+            bufferLabelArea = row.removeFromLeft (labelW);
+            bufferBox.setBounds (row);
+            c.removeFromTop (10);
+
+            auto footer = c.removeFromTop (28);
+            testButton.setBounds (footer.removeFromLeft (92));
+            if (controlPanelButton.isVisible())
+            {
+                footer.removeFromLeft (Theme::s2);
+                controlPanelButton.setBounds (footer.removeFromLeft (120));
+            }
+            footer.removeFromLeft (Theme::s2);
+            statusArea = footer;
+        }
+        r.removeFromTop (10);
+
+        if (! outputChannelButtons.empty() || ! inputChannelButtons.empty())
+        {
+            channelsCard = r;
+            auto c = channelsCard.reduced (pad);
+            channelsLegend = c.removeFromTop (18);
+            c.removeFromTop (4);
+
+            auto placeGrid = [] (juce::Rectangle<int>& area, std::vector<std::unique_ptr<juce::TextButton>>& btns)
+            {
+                const int rows = ((int) btns.size() + 1) / 2;
+                const int colW = (area.getWidth() - Theme::s1) / 2;
+                for (int idx = 0; idx < (int) btns.size(); ++idx)
+                {
+                    const int col = idx % 2, rowIdx = idx / 2;
+                    btns[(size_t) idx]->setBounds (area.getX() + col * (colW + Theme::s1),
+                                                   area.getY() + rowIdx * 30, colW, 26);
+                }
+                area.removeFromTop (rows * 30);
+            };
+
+            if (! outputChannelButtons.empty())
+            {
+                outChLabelArea = c.removeFromTop (18);
+                placeGrid (c, outputChannelButtons);
+            }
+            else
+            {
+                outChLabelArea = {};
+            }
+
+            if (! inputChannelButtons.empty())
+            {
+                if (! outputChannelButtons.empty())
+                    c.removeFromTop (8);
+                inChLabelArea = c.removeFromTop (18);
+                placeGrid (c, inputChannelButtons);
+            }
+            else
+            {
+                inChLabelArea = {};
+            }
+        }
+        else
+        {
+            channelsCard = {};
+            outChLabelArea = {};
+            inChLabelArea = {};
+        }
     }
 
+    juce::AudioDeviceManager& dm;
     juce::Viewport viewport;
     Content content { *this };
-    juce::AudioDeviceSelectorComponent selector;
-    juce::Rectangle<int> tipCard, selectorCard, selectorLegend;
+
+    std::vector<std::unique_ptr<juce::TextButton>> driverButtons, outputChannelButtons, inputChannelButtons;
+    juce::TextButton rescanButton { "Rescan" }, testButton { "Test tone" }, controlPanelButton { "Control panel..." };
+    juce::ComboBox outputBox, inputBox, rateBox, bufferBox;
+    juce::StringArray outputNames, inputNames;
+    juce::Array<double> sampleRates;
+    juce::Array<int> bufferSizes;
+    juce::String lastError, statusSummary;
+    bool hasSeparateInput = false, rebuilding = false;
+
+    juce::Rectangle<int> tipCard, errorCard, driverCard, driverLegend, deviceCard, deviceLegend,
+                         outputLabelArea, inputLabelArea, rateLabelArea, bufferLabelArea, statusArea,
+                         channelsCard, channelsLegend, outChLabelArea, inChLabelArea;
 };
 }
 
@@ -640,7 +1102,7 @@ void MainComponent::showAudioSettings()
     o.dialogTitle = "Audio settings";
     o.dialogBackgroundColour = Theme::p().window;
     o.escapeKeyTriggersCloseButton = true;
-    o.useNativeTitleBar = true;
+    o.useNativeTitleBar = false;
     o.resizable = true;
     o.componentToCentreAround = this;
     o.launchAsync();
@@ -660,7 +1122,7 @@ void MainComponent::showSettings()
     o.dialogTitle = "Settings";
     o.dialogBackgroundColour = Theme::p().window;
     o.escapeKeyTriggersCloseButton = true;
-    o.useNativeTitleBar = true;
+    o.useNativeTitleBar = false;
     o.resizable = true;
     o.componentToCentreAround = this;
     o.launchAsync();
@@ -1293,9 +1755,9 @@ void MainComponent::showHotkeys()
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned (panel);
     o.dialogTitle = "Hotkeys";
-    o.dialogBackgroundColour = Theme::p().panel;
+    o.dialogBackgroundColour = Theme::p().window;
     o.escapeKeyTriggersCloseButton = true;
-    o.useNativeTitleBar = true;
+    o.useNativeTitleBar = false;
     o.resizable = false;
     o.componentToCentreAround = this;
     o.launchAsync();

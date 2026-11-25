@@ -14,6 +14,12 @@ public:
     // Re-reads Theme::p(); call after Theme::setDark(), then repaint.
     void applyPalette();
 
+    juce::Button* createDocumentWindowButton (int buttonType) override;
+    void positionDocumentWindowButtons (juce::DocumentWindow&, int, int, int, int,
+                                        juce::Button*, juce::Button*, juce::Button*, bool) override;
+    void drawDocumentWindowTitleBar (juce::DocumentWindow&, juce::Graphics&, int, int, int, int,
+                                     const juce::Image*, bool) override;
+
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour& backgroundColour,
                                bool isHighlighted, bool isDown) override;
@@ -24,6 +30,31 @@ public:
                       bool ticked, bool isEnabled, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
                        int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
+    juce::Font getComboBoxFont (juce::ComboBox&) override;
+
+    void drawAlertBox (juce::Graphics&, juce::AlertWindow&, const juce::Rectangle<int>& textArea, juce::TextLayout&) override;
+    int getAlertWindowButtonHeight() override;
+    juce::Font getAlertWindowTitleFont() override;
+    juce::Font getAlertWindowMessageFont() override;
+    juce::Font getAlertWindowFont() override;
+
+    int getDefaultScrollbarWidth() override;
+    void drawScrollbar (juce::Graphics&, juce::ScrollBar&, int x, int y, int width, int height,
+                        bool isScrollbarVertical, int thumbStartPosition, int thumbSize,
+                        bool isMouseOver, bool isMouseDown) override;
+
+    void drawBubble (juce::Graphics&, juce::BubbleComponent&, const juce::Point<float>& tip,
+                     const juce::Rectangle<float>& body) override;
+
+    void drawPopupMenuBackground (juce::Graphics&, int width, int height) override;
+    void drawPopupMenuItem (juce::Graphics&, const juce::Rectangle<int>& area,
+                            bool isSeparator, bool isActive, bool isHighlighted, bool isTicked, bool hasSubMenu,
+                            const juce::String& text, const juce::String& shortcutKeyText,
+                            const juce::Drawable* icon, const juce::Colour* textColour) override;
+    void drawPopupMenuSectionHeader (juce::Graphics&, const juce::Rectangle<int>& area,
+                                     const juce::String& sectionName) override;
+    void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int standardMenuItemHeight,
+                                    int& idealWidth, int& idealHeight) override;
 
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPos, float startAngle, float endAngle, juce::Slider&) override;

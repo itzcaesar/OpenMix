@@ -96,9 +96,12 @@ public:
             : DocumentWindow (name, Theme::p().window, DocumentWindow::allButtons),
               onClose (std::move (onCloseFn))
         {
-            setUsingNativeTitleBar (true);
+            setUsingNativeTitleBar (false);
+            setTitleBarHeight (30);
+            setTitleBarTextCentred (false);
+            setIcon (TrayIcon::makeIcon (32));
             setContentOwned (new MainComponent(), true);
-            setResizable (true, true);
+            setResizable (true, false);
 
             // Smallest size that still fits a 1366x768 laptop (taskbar and title bar included).
             setResizeLimits (960, 600, 8000, 5000);

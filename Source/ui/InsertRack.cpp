@@ -11,7 +11,9 @@ PluginWindow::PluginWindow (juce::AudioPluginInstance& plugin, std::function<voi
     : DocumentWindow (plugin.getName(), Theme::p().window, DocumentWindow::closeButton),
       onClose (std::move (onCloseFn))
 {
-    setUsingNativeTitleBar (true);
+    setUsingNativeTitleBar (false);
+    setTitleBarHeight (26);
+    setTitleBarTextCentred (false);
 
     if (auto* editor = plugin.createEditorAndMakeActive())
     {
