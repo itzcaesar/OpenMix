@@ -59,8 +59,6 @@ private:
     void openEditor (juce::AudioPluginInstance*);
     void closeEditor (juce::AudioPluginInstance*);
     void openMixPanel (int slot);
-    void openBuiltInPanel (int slot);
-    void addBuiltIn (int slot, omx::FxType type);
 
     MixerEngine& engine;
     PluginChain& chain;

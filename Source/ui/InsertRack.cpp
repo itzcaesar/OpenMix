@@ -167,8 +167,6 @@ void InsertRack::updateRows()
             row.setState (PluginSlotRow::State::Loading, loadingName, false, false, 0, sr);
         else if (s < n)
         {
-            // A slot holds a VST plugin or a built-in effect (never both);
-            // a built-in has no plugin instance, editor or latency to show.
             if (auto* p = chain.getPlugin (s))
             {
                 const auto ab = abStates.find (p);
@@ -176,12 +174,6 @@ void InsertRack::updateRows()
                               chain.slotFault[(size_t) s].load(), p->getLatencySamples(), sr,
                               juce::roundToInt (chain.slotMix[(size_t) s].load() * 100.0f),
                               ab == abStates.end() ? juce::String() : juce::String (ab->second.onB ? "B" : "A"));
-            }
-            else if (chain.getBuiltIn (s) != nullptr)
-            {
-                row.setState (PluginSlotRow::State::Loaded, chain.getInsertDisplayName (s),
-                              chain.slotBypass[(size_t) s].load(), chain.slotFault[(size_t) s].load(),
-                              0, sr, juce::roundToInt (chain.slotMix[(size_t) s].load() * 100.0f));
             }
         }
         else
@@ -211,8 +203,6 @@ void InsertRack::slotMain (int slot)
 
     if (auto* p = chain.getPlugin (slot))
         openEditor (p);
-    else if (chain.isBuiltInSlot (slot))
-        openBuiltInPanel (slot);
     else
         showPluginMenu (slot);
 }
@@ -252,28 +242,6 @@ void InsertRack::moveSlot (int from, int to)
 void InsertRack::showSlotMenu (int slot)
 {
     const int n = chain.getNumPlugins();
-
-    // A built-in effect has no plugin instance, editor or A/B state, but it has
-    // the same bypass, wet/dry, move and remove as a VST slot, plus its own panel.
-    if (chain.isBuiltInSlot (slot))
-    {
-        juce::PopupMenu menu;
-        menu.addItem ("Open settings...", [this, slot] { openBuiltInPanel (slot); });
-        menu.addItem (chain.slotBypass[(size_t) slot].load() ? "Turn on" : "Bypass",
-                      [this, slot] { toggleBypass (slot); });
-        menu.addSeparator();
-        menu.addItem ("Move up", slot > 0, false, [this, slot] { moveSlot (slot, slot - 1); });
-        menu.addItem ("Move down", slot < n - 1, false, [this, slot] { moveSlot (slot, slot + 1); });
-        menu.addSeparator();
-        menu.addItem ("Wet/dry mix...", [this, slot] { openMixPanel (slot); });
-        menu.addItem ("Replace with...", [this, slot] { showPluginMenu (slot); });
-        menu.addSeparator();
-        menu.addItem ("Remove", [this, slot] { removeSlot (slot); });
-
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (list->rows[(size_t) slot]));
-        return;
-    }
-
     auto* p = chain.getPlugin (slot);
     if (p == nullptr)
         return;
@@ -338,14 +306,6 @@ void InsertRack::showPluginMenu (int slot)
     const auto plugins = scanner.getPlugins();
 
     juce::PopupMenu menu;
-
-    // Built-in effects are always available: no scan, no licence, no crash probe.
-    juce::PopupMenu builtIns;
-    builtIns.addItem ("Reverb", [this, slot] { addBuiltIn (slot, omx::FxType::Reverb); });
-    builtIns.addItem ("Delay (tempo-synced)", [this, slot] { addBuiltIn (slot, omx::FxType::Delay); });
-    builtIns.addItem ("Chorus", [this, slot] { addBuiltIn (slot, omx::FxType::Chorus); });
-    menu.addSubMenu ("Built-in effect", builtIns);
-    menu.addSeparator();
 
     if (scanner.isScanning())
     {
@@ -624,41 +584,14 @@ void InsertRack::abSwitch (juce::AudioPluginInstance* plugin, bool toB)
 
 void InsertRack::openMixPanel (int slot)
 {
-    // Wet/dry works the same for a VST plugin and a built-in effect: the name
-    // is the only thing that differs.
-    const juce::String name = chain.getInsertDisplayName (slot);
-    if (name.isEmpty())
+    auto* p = chain.getPlugin (slot);
+    if (p == nullptr)
         return;
 
-    auto panel = std::make_unique<SlotMixPanel> (name, chain.slotMix[(size_t) slot]);
+    auto panel = std::make_unique<SlotMixPanel> (p->getName(), chain.slotMix[(size_t) slot]);
     juce::Component::SafePointer<InsertRack> safe (this);
     panel->onChange = [safe] { if (safe != nullptr) safe->updateRows(); };
 
-    auto& row = list->rows[(size_t) slot];
-    auto* top = getTopLevelComponent();
-    juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&row, row.getLocalBounds()), top);
-}
-
-void InsertRack::addBuiltIn (int slot, omx::FxType type)
-{
-    if (auto* old = chain.getPlugin (slot))
-    {
-        closeEditor (old);
-        abStates.erase (old);
-    }
-
-    chain.installBuiltIn (slot, PluginChain::makeBuiltInFx (type));
-
-    updateRows();
-    openBuiltInPanel (slot);
-}
-
-void InsertRack::openBuiltInPanel (int slot)
-{
-    if (! chain.isBuiltInSlot (slot))
-        return;
-
-    auto panel = std::make_unique<BuiltInFxPanel> (engine, chain, slot);
     auto& row = list->rows[(size_t) slot];
     auto* top = getTopLevelComponent();
     juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&row, row.getLocalBounds()), top);

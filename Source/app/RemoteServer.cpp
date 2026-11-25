@@ -485,7 +485,7 @@ h1{font-size:18px;margin:4px 0 12px}h2{font-size:14px;color:#aaa;margin:18px 0 6
 input[type=range]{flex:1}button{background:#2a2e38;color:#eee;border:1px solid #444;border-radius:6px;padding:8px 12px}
 button.on{background:#c98a2b;color:#111}.pad{width:22%;height:44px;margin:2px}
 #status{color:#888;font-size:12px}</style></head>
-<body><h1>OpenMix remote</h1><div id="status">connecting…</div>
+<body><h1>OpenMix remote</h1><div id="status">connecting...</div>
 <h2>Strips</h2><div id="strips"></div><h2>Buses</h2><div id="buses"></div>
 <h2>Soundboard</h2><div id="pads"></div><h2>Scenes</h2><div id="scenes"></div>
 <script>

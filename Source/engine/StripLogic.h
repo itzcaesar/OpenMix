@@ -23,11 +23,6 @@ namespace omx
     constexpr int kPresetNumBuses = 6;   // must match kNumBuses (ChannelStrip.h)
     constexpr int kPresetNumSlots = 6;   // must match kNumSlots (PluginChain.h)
 
-    // FX sends: one send per built-in effect type, indexed 0..2.
-    // The order matches omx::FxType (Reverb, Delay, Chorus) in dsp/BuiltInFx.h.
-    constexpr int kFxReverb = 0, kFxDelay = 1, kFxChorus = 2;
-    constexpr int kNumFxSends = 3;
-
     // Bus groups are slot-based, never name-based (see isVirtualBusSlot):
     // slots 0-2 are the Hardware (A) group, slots 3-5 the Virtual (B) group.
     // A bus keeps its group when it is renamed, so a custom name can never
@@ -62,12 +57,6 @@ namespace omx
     // One insert slot in a preset: just enough to find the plugin again.
     // No state blob: the plugin loads with its defaults, and if the plugin is not
     // installed any more the slot is skipped (counted as missing by loadPreset).
-    // A built-in effect slot instead carries its type + parameters (fxParams);
-    // built-ins are always available, so they are never counted as missing.
-    // fxParams layout per type:
-    //   Reverb: [roomSize, damping, mix, preDelayMs]
-    //   Delay:  [timeMs, feedback, mix, feedbackLowpassHz, noteDivision, tempoBpm]
-    //   Chorus: [rateHz, depthMs, mix, feedback]
     struct StripPluginSlot
     {
         std::string identifier;   // PluginDescription::fileOrIdentifier (e.g. the .vst3 path)
@@ -75,11 +64,6 @@ namespace omx
         std::string format;       // e.g. "VST3"
         bool bypass = false;
         float mix = 1.0f;         // wet/dry, 0..1 (1 = fully wet)
-
-        bool isBuiltIn = false;
-        std::string fxType;       // "Reverb" / "Delay" / "Chorus" (built-in slots only)
-        bool fxTempoSync = false; // Delay only: follow the tap-tempo BPM (see fxParams[5])
-        std::array<float, 6> fxParams {};
     };
 
     struct StripPreset
@@ -110,14 +94,7 @@ namespace omx
         std::array<float, 4> padModeY { -1.0f, -1.0f, -1.0f, -1.0f };
 
         // Insert slots, packed (numSlots entries of `slots` are used).
-        // A slot holds either a VST plugin (isBuiltIn false) or a built-in
-        // effect (isBuiltIn true, see StripPluginSlot).
         std::array<StripPluginSlot, kPresetNumSlots> slots {};
         int numSlots = 0;
-
-        // FX sends (post-fader, linear gain 0..1, 0 = no send), indexed by
-        // omx::kFxReverb / kFxDelay / kFxChorus. They feed the engine's
-        // global FX units; see MixerEngine for the return routing.
-        std::array<float, kNumFxSends> fxSend {};
     };
 }

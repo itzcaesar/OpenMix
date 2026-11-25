@@ -5,7 +5,6 @@
 #include "engine/CpuMeter.h"
 #include "engine/ExternalIO.h"
 #include "engine/PluginScanner.h"
-#include "dsp/BuiltInFx.h"
 #include "dsp/Metering.h"
 #include "creator/Recorder.h"
 #include "creator/Soundboard.h"
@@ -135,21 +134,6 @@ public:
     int findNextFreeSlotInGroup (bool virtualGroup) const noexcept;
     static bool isVirtualBus (int bus) noexcept { return omx::isVirtualBusSlot (bus); }
 
-    // Global FX units for the sends (message thread for the getters; the
-    // audio thread processes them). One unit per effect type, shared by all
-    // strips: a strip's post-fader signal, scaled by its FX send level,
-    // feeds the unit, and the wet return (the units run at mix 1.0, wet
-    // only) is mixed into every bus that strip is routed to, before that
-    // bus's processing -- so the return follows the bus fader and limiter
-    // like the dry mix. A bus with no contributing strip gets no return.
-    // The units are created when the audio device starts; the getters
-    // return nullptr before that. Per-strip send levels live on
-    // ChannelStrip (setFxSendLevel / getFxSendLevel).
-    omx::BuiltInFx* getFxUnit (int fx) noexcept;
-    omx::BuiltInReverb* getFxReverb() noexcept;
-    omx::BuiltInDelay* getFxDelay() noexcept;
-    omx::BuiltInChorus* getFxChorus() noexcept;
-
     // CPU meter (any thread): audio-thread CPU usage as a percentage of
     // real time, smoothed with an exponential moving average (see
     // engine/CpuMeter.h). 100% means the engine used the whole block
@@ -249,14 +233,6 @@ private:
     // CPU meter (see the public getters above).
     omx::CpuMeter cpuMeter;
     std::atomic<float> cpuUsagePercent { 0.0f };
-
-    // Global FX units for the sends, one per effect type (see getFxUnit).
-    // fxSendBuffer holds 2 channels per unit (Reverb L/R, Delay L/R,
-    // Chorus L/R); fxSendGain smooths each strip's send level.
-    std::array<std::unique_ptr<omx::BuiltInFx>, omx::kNumFxSends> fxUnits;
-    juce::AudioBuffer<float> fxSendBuffer;
-    std::array<std::array<juce::SmoothedValue<float>, omx::kNumFxSends>, kNumStrips> fxSendGain;
-    int fxBusTailSamples[omx::kNumFxSends][kNumBuses] {};
 
     int maxBlock = 512;
     std::atomic<double> currentSampleRate { 48000.0 };

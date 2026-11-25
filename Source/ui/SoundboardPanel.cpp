@@ -93,7 +93,7 @@ public:
                               juce::Justification::centredLeft, 2, 0.85f);
             g.setColour (playing ? t.onAccent.withAlpha (0.8f) : t.textFaint);
             g.setFont (Theme::mono (10.0f));
-            g.drawText (juce::String (seconds, 1) + " s \xc2\xb7 Key " + juce::String (index + 1),
+            g.drawText (juce::String (seconds, 1) + juce::String::fromUTF8 (" s \xc2\xb7 Key ") + juce::String (index + 1),
                         inner, juce::Justification::centredLeft);
         }
 

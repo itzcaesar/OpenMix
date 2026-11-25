@@ -215,7 +215,7 @@ void ConsoleContent::resized()
 
     // One fader bay for every column: faders, meters and mute rows line up across the desk,
     // whatever sits above them.
-    const int bayHeight = juce::jlimit (210, 290, (int) (r.getHeight() * 0.34f));
+    const int bayHeight = juce::jlimit (190, 265, (int) (r.getHeight() * 0.32f));
     const int bayTop = r.getHeight() - bayHeight;
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -324,9 +324,10 @@ void StatusBar::paint (juce::Graphics& g)
     auto area = getLocalBounds().reduced (consolePad(), 0);
 
     // LIVE indicator: the audio device is running.
-    auto liveArea = area.removeFromLeft (64);
+    auto liveArea = area.removeFromLeft (74);
     g.setColour (isLive ? t.meterLow : t.textFaint);
     g.fillEllipse (liveArea.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat());
+    liveArea.removeFromLeft (5);
     g.setFont (Theme::ui (11.5f, true));
     g.setColour (isLive ? t.text : t.textFaint);
     g.drawText (isLive ? "LIVE" : "OFFLINE", liveArea, juce::Justification::centredLeft);

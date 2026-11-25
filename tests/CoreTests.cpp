@@ -484,36 +484,18 @@ int main()
         CHECK (firstSlotInGroup (false) == 0 && firstSlotInGroup (true) == 3, "group starts should be 0 and 3");
     });
 
-    run ("StripPreset: built-in FX slot and FX sends survive a copy round-trip", []
+    run ("StripPreset: VST slots survive a copy round-trip", []
     {
-        CHECK (omx::kNumFxSends == 3 && omx::kFxReverb == 0 && omx::kFxDelay == 1 && omx::kFxChorus == 2,
-               "FX send indices must be Reverb 0 / Delay 1 / Chorus 2");
-
         omx::StripPreset p;
-        p.fxSend[omx::kFxReverb] = 0.5f;
-        p.fxSend[omx::kFxDelay] = 0.25f;
-        p.fxSend[omx::kFxChorus] = 0.0f;
-
         p.numSlots = 2;
         p.slots[0] = { "C:\\Plugins\\Comp.vst3", "Comp", "VST3", false, 0.8f };
-        p.slots[1].isBuiltIn = true;
-        p.slots[1].fxType = "Delay";
-        p.slots[1].name = "Delay";
-        p.slots[1].fxTempoSync = true;
-        p.slots[1].fxParams = { 0.0f, 0.35f, 0.3f, 8000.0f, 0.5f, 132.0f };   // time unused when synced
-        p.slots[1].bypass = true;
-        p.slots[1].mix = 0.9f;
+        p.slots[1] = { "C:\\Plugins\\Lim.vst3", "Lim", "VST3", true, 0.9f };
 
         const omx::StripPreset q = p;
-        CHECK (q.fxSend[omx::kFxReverb] == 0.5f && q.fxSend[omx::kFxDelay] == 0.25f && q.fxSend[omx::kFxChorus] == 0.0f,
-               "FX sends lost in copy");
-        CHECK (q.numSlots == 2 && ! q.slots[0].isBuiltIn && q.slots[0].identifier == "C:\\Plugins\\Comp.vst3",
+        CHECK (q.numSlots == 2 && q.slots[0].identifier == "C:\\Plugins\\Comp.vst3",
                "VST slot lost in copy");
-        CHECK (q.slots[1].isBuiltIn && q.slots[1].fxType == "Delay" && q.slots[1].fxTempoSync,
-               "built-in slot lost its type / tempo sync in copy");
-        CHECK (q.slots[1].fxParams[1] == 0.35f && q.slots[1].fxParams[4] == 0.5f && q.slots[1].fxParams[5] == 132.0f,
-               "built-in delay params lost in copy");
-        CHECK (q.slots[1].bypass && q.slots[1].mix == 0.9f, "built-in slot bypass/mix lost in copy");
+        CHECK (q.slots[1].identifier == "C:\\Plugins\\Lim.vst3" && q.slots[1].bypass && q.slots[1].mix == 0.9f,
+               "second VST slot bypass/mix lost in copy");
     });
 
     run ("Gate: open on signal, closes to the range on room noise", [&]

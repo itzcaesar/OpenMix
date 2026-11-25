@@ -120,23 +120,6 @@ public:
         return sampleRate > 0.0 ? 1000.0 * (double) getTotalLatencySamples() / sampleRate : 0.0;
     }
 
-    // FX sends (message thread): one post-fader send per built-in effect
-    // type, indexed by omx::kFxReverb / kFxDelay / kFxChorus (0/1/2).
-    // Level is linear gain 0..1 (0 = no send, 1 = unity). The sends feed
-    // the engine's global FX units (see MixerEngine): the wet return is
-    // mixed into every bus this strip is routed to, before that bus's
-    // processing, so it follows the bus fader and limiter like the dry mix.
-    void setFxSendLevel (int fxIndex, float level) noexcept
-    {
-        if (juce::isPositiveAndBelow (fxIndex, omx::kNumFxSends))
-            fxSendLevel[(size_t) fxIndex].store (juce::jlimit (0.0f, 1.0f, level));
-    }
-    float getFxSendLevel (int fxIndex) const noexcept
-    {
-        return juce::isPositiveAndBelow (fxIndex, omx::kNumFxSends)
-            ? fxSendLevel[(size_t) fxIndex].load() : 0.0f;
-    }
-
     // Strip preset (message thread): the strip's sound, see omx::StripPreset.
     // savePreset() snapshots the current settings; loadPreset() applies a preset
     // (to this strip or any other) and returns how many insert plugins could not
@@ -198,8 +181,6 @@ public:
     std::atomic<bool>  busOn[kNumBuses] {};
     std::atomic<float> sendDb[kNumBuses] {};      // send level, 0 dB = unity
     std::atomic<bool>  sendPre[kNumBuses] {};     // pre-fader send (independent of the fader)
-
-    std::array<std::atomic<float>, omx::kNumFxSends> fxSendLevel {};   // post-fader FX sends, linear 0..1
 
     VoicePadParams   pad;
     ProcessingParams fx;

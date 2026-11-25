@@ -1,6 +1,5 @@
 // Integration unit tests for OpenMix app/engine/creator modules:
-//   - PluginChain slot packing, reordering, built-in params, wet/dry, and NaN fault isolation
-//   - Session save/apply and scene capture/recall (including built-in FX slots & global FX)
+//   - VoicePadParams per-mode circle persistence
 //   - RemoteCommands validation, state JSON, and custom bus display names
 //   - MidiControl JSON round-trip, record toggle, /norm toggle, soundboard trigger
 //   - Soundboard short-clip resampling (< 8 samples)
@@ -38,73 +37,6 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("OpenMix app tests\n");
-
-    run ("PluginChain: built-in packing, move, wet/dry and param round-trip", []
-    {
-        PluginChain chain;
-        chain.prepare (48000.0, 256);
-
-        chain.installBuiltIn (4, PluginChain::makeBuiltInFx (omx::FxType::Reverb));
-        chain.installBuiltIn (5, PluginChain::makeBuiltInFx (omx::FxType::Delay));
-        CHECK (chain.getNumPlugins() == 2, "expected packed 2 slots, got %d", chain.getNumPlugins());
-        CHECK (chain.isBuiltInSlot (0) && chain.isBuiltInSlot (1), "slots 0/1 should hold built-ins");
-
-        std::array<float, 6> p { 250.0f, 0.4f, 0.75f, 5000.0f, 0.5f, 128.0f };
-        CHECK (chain.setBuiltInParams (1, p, true), "setBuiltInParams failed");
-        std::array<float, 6> out {};
-        bool sync = false;
-        CHECK (chain.getBuiltInParams (1, out, sync) && sync && std::abs (out[5] - 128.0f) < 0.01f,
-               "getBuiltInParams lost tempoSync/BPM");
-
-        chain.movePlugin (1, 0);
-        CHECK (chain.getBuiltIn (0)->getType() == omx::FxType::Delay, "movePlugin did not move Delay to slot 0");
-
-        std::vector<float> l (256, 0.5f), r (256, 0.5f);
-        int latency = 0;
-        chain.process (l.data(), r.data(), 256, latency);
-        CHECK (latency == 0, "built-in chain latency should be 0, got %d", latency);
-        for (float v : l)
-        {
-            CHECK (std::isfinite (v), "non-finite output from PluginChain");
-            if (! std::isfinite (v)) break;
-        }
-    });
-
-    run ("Session: scene recall preserves built-in FX slot bypass, mix and params", []
-    {
-        MixerEngine engine;
-        auto& strip = engine.getStrip (0);
-        strip.inserts.prepare (48000.0, 256);
-        strip.inserts.installBuiltIn (0, PluginChain::makeBuiltInFx (omx::FxType::Reverb));
-        strip.inserts.slotBypass[0].store (true);
-        strip.inserts.slotMix[0].store (0.4f);
-        strip.inserts.setBuiltInParams (0, { 0.85f, 0.2f, 0.6f, 15.0f, 0.0f, 0.0f }, false);
-
-        auto sceneA = Session::captureScene (engine);
-
-        strip.inserts.slotBypass[0].store (false);
-        strip.inserts.slotMix[0].store (1.0f);
-        strip.inserts.setBuiltInParams (0, { 0.1f, 0.9f, 0.2f, 0.0f, 0.0f, 0.0f }, false);
-
-        Session::applyScene (*sceneA, engine);
-        CHECK (strip.inserts.slotBypass[0].load(), "built-in bypass not restored by scene");
-        CHECK (std::abs (strip.inserts.slotMix[0].load() - 0.4f) < 0.01f, "built-in mix not restored by scene");
-
-        std::array<float, 6> p {};
-        bool sync = false;
-        CHECK (strip.inserts.getBuiltInParams (0, p, sync) && std::abs (p[0] - 0.85f) < 0.01f,
-               "built-in params not restored by scene");
-    });
-
-    run ("MixerEngine: global FX units always exist and delay time updates cleanly", []
-    {
-        MixerEngine engine;
-        CHECK (engine.getFxReverb() != nullptr && engine.getFxDelay() != nullptr && engine.getFxChorus() != nullptr,
-               "global FX units should be constructed with MixerEngine");
-        engine.getFxDelay()->setTimeMs (333.0f);
-        CHECK (! engine.getFxDelay()->isTempoSynced(), "setTimeMs should disable tempo sync");
-        CHECK (std::abs (engine.getFxDelay()->getTimeMs() - 333.0f) < 0.01f, "global delay time not set");
-    });
 
     run ("VoicePadParams: each mode saves and restores its own circle position", []
     {

@@ -4,7 +4,8 @@
 #include "engine/MixerEngine.h"
 #include "ui/Widgets.h"
 
-// Pop-over panels opened from a strip: one per built-in processor, and one per send.
+// Pop-over panels opened from a strip or bus: one per built-in processor,
+// plus wet/dry insert mix and bus send panels.
 
 enum class Processor { Denoise, Gate, Eq, Comp, DeEss, Duck };
 
@@ -12,11 +13,12 @@ juce::String processorShortName (Processor);   // label on the strip key, e.g. "
 juce::String processorName (Processor);        // full name, e.g. "Noise removal"
 std::atomic<bool>& processorOn (ProcessingParams&, Processor);
 
-// Base: title, On lamp, a grid of knobs, optional meter and help text.
+// Base: title, On lamp, optional interactive visual + overview card, optional
+// extra controls, rotary knobs, optional meter, and help text.
 class PanelBase : public juce::Component, private juce::Timer
 {
 public:
-    std::function<void()> onChange;   // tell the strip to refresh its keys
+    std::function<void()> onChange;   // tell the strip/bus to refresh its keys
 
 protected:
     PanelBase (const juce::String& title, std::atomic<bool>* onFlag);
@@ -34,7 +36,13 @@ protected:
     void addKnob (const KnobSpec&);
     void setHelp (const juce::String& text) { help = text; repaint(); }
     void setMeter (std::atomic<float>* gainMeter, const juce::String& meterLabel);
-    virtual void layoutExtra (juce::Rectangle<int>&) {}   // extra controls above the knobs
+    void setVisual (std::unique_ptr<juce::Component> v, int height);
+    juce::Component* getVisual() const noexcept { return visual.get(); }
+    void repaintVisual();
+    void syncKnobsFromTargets();
+    float getSmoothedReductionDb() const noexcept { return meterDb; }
+
+    virtual void layoutExtra (juce::Rectangle<int>&) {}   // extra controls below visual / above knobs
     virtual void tick() {}
 
     void paint (juce::Graphics&) override;
@@ -50,15 +58,19 @@ private:
     {
         std::unique_ptr<DbSlider> slider;
         juce::String label;
+        std::atomic<float>* target = nullptr;
+        double scale = 1.0;
     };
 
     juce::String title;
     std::atomic<bool>* onFlag;
+    std::unique_ptr<juce::Component> visual;
+    int visualHeight = 0;
     std::vector<Knob> knobs;
     std::atomic<float>* meterSource = nullptr;
     juce::String meterLabel;
     float meterDb = 0.0f;
-    juce::Rectangle<int> titleArea, knobArea, meterArea, helpArea;
+    juce::Rectangle<int> titleArea, helpArea, meterArea;
 };
 
 class ProcessorPanel : public PanelBase
@@ -70,6 +82,7 @@ public:
 private:
     void layoutExtra (juce::Rectangle<int>&) override;
     void tick() override;
+    void syncFromVisual();
 
     MixerEngine& engine;
     ProcessingParams& fx;
@@ -102,68 +115,4 @@ private:
     ChannelStrip& strip;
     int bus;
     juce::TextButton preButton { "Pre-fader" };
-};
-
-// Editor for a built-in insert (Reverb / Delay / Chorus) in a PluginChain slot.
-// Unlike PanelBase its parameters live on the effect object, not in atomics, so
-// it reads them with PluginChain::getBuiltInParams and writes them back with
-// setBuiltInParams.
-class BuiltInFxPanel : public juce::Component
-{
-public:
-    BuiltInFxPanel (MixerEngine&, PluginChain&, int slot);
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-
-private:
-    struct KnobDef
-    {
-        juce::String label;
-        double min, max, step, skewMid = 0.0;
-        juce::String suffix;
-        int paramIndex;
-        double scale = 1.0;   // shown value = stored * scale
-    };
-
-    void push();   // write the sliders back into the chain
-    void rebuildFromChain();
-
-    PluginChain& chain;
-    int slot;
-    omx::FxType type;
-    std::array<float, 6> params {};
-
-    std::vector<KnobDef> defs;
-    std::vector<std::unique_ptr<DbSlider>> sliders;
-    juce::String title, help;
-    juce::Rectangle<int> titleArea, helpArea;
-};
-
-// Editor for the shared global FX unit (Reverb / Delay / Chorus) fed by strip FX sends.
-// Wet/dry mix is fixed at 100% wet on global sends (the per-strip send slider is the level).
-class GlobalFxPanel : public juce::Component
-{
-public:
-    GlobalFxPanel (MixerEngine&, int fxIndex);
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-
-private:
-    struct KnobDef
-    {
-        juce::String label;
-        double min, max, step, skewMid = 0.0;
-        juce::String suffix;
-        double value = 0.0;
-        std::function<void (double)> onApply;
-    };
-
-    MixerEngine& engine;
-    int fxIndex;
-    std::vector<KnobDef> defs;
-    std::vector<std::unique_ptr<DbSlider>> sliders;
-    juce::String title, help;
-    juce::Rectangle<int> titleArea, helpArea;
 };

@@ -82,8 +82,6 @@ void ChannelStrip::resetToDefaults()
         sendDb[b].store (0.0f);
         sendPre[b].store (false);
     }
-    for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
-        fxSendLevel[(size_t) fxIdx].store (0.0f);
     pad.x.store (0.0f);
     pad.y.store (-1.0f);
     pad.mode.store (VoicePadParams::Voice);
@@ -136,22 +134,18 @@ omx::StripPreset ChannelStrip::savePreset() const
         p.padModeY[(size_t) m] = pad.modeY[(size_t) m].load();
     }
 
-    for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
-        p.fxSend[(size_t) fxIdx] = fxSendLevel[(size_t) fxIdx].load();
+    p.padX = pad.x.load();
+    p.padY = pad.y.load();
+    p.padMode = pad.mode.load();
+    for (int m = 0; m < VoicePadParams::numModes; ++m)
+        pad.getModePosition (m, p.padModeX[(size_t) m], p.padModeY[(size_t) m]);
 
-    p.numSlots = inserts.getNumInserts();
+    p.numSlots = inserts.getNumPlugins();
     for (int s = 0; s < p.numSlots; ++s)
     {
         auto& slot = p.slots[(size_t) s];
         slot = {};
-        if (auto* builtIn = inserts.getBuiltIn (s))
-        {
-            slot.isBuiltIn = true;
-            slot.fxType = PluginChain::fxTypeDisplayName (builtIn->getType()).toStdString();
-            slot.name = slot.fxType;
-            inserts.getBuiltInParams (s, slot.fxParams, slot.fxTempoSync);
-        }
-        else if (auto* plugin = inserts.getPlugin (s))
+        if (auto* plugin = inserts.getPlugin (s))
         {
             const auto desc = plugin->getPluginDescription();
             slot.identifier = desc.fileOrIdentifier.toStdString();
@@ -194,39 +188,15 @@ int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormat
         pad.setModePosition (m, p.padModeX[(size_t) m], p.padModeY[(size_t) m]);
     pad.setPosition (p.padX, p.padY);
 
-    for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
-        setFxSendLevel (fxIdx, p.fxSend[(size_t) fxIdx]);
-
     // Inserts: replace the chain. Each plugin is re-loaded by identifier and starts
     // with its defaults (no state is stored in a preset); a plugin that is not
-    // installed any more is skipped and counted, never fatal. Built-in effects
-    // are always available: they are re-created with their saved parameters
-    // and never counted as missing.
+    // installed any more is skipped and counted, never fatal.
     inserts.removeAllPlugins();
     int missing = 0;
     const int n = juce::jlimit (0, kNumSlots, p.numSlots);
     for (int s = 0; s < n; ++s)
     {
         const auto& slot = p.slots[(size_t) s];
-
-        if (slot.isBuiltIn)
-        {
-            omx::FxType type;
-            if (! PluginChain::fxTypeFromName (juce::String (slot.fxType), type))
-            {
-                ++missing;
-                continue;
-            }
-            inserts.installBuiltIn (s, PluginChain::makeBuiltInFx (type));
-
-            // Slots are packed, so the effect may sit lower than its saved index.
-            const int installed = inserts.getNumInserts() - 1;
-            inserts.setBuiltInParams (installed, slot.fxParams, slot.fxTempoSync);
-            inserts.slotBypass[(size_t) installed].store (slot.bypass);
-            inserts.slotMix[(size_t) installed].store (juce::jlimit (0.0f, 1.0f, slot.mix));
-            continue;
-        }
-
         if (slot.identifier.empty())
         {
             ++missing;

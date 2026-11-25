@@ -9,10 +9,9 @@
 #include "ui/InsertRack.h"
 
 // One input channel strip: INPUT (source, gain slider, polarity/mono),
-// PROCESSING keys, inserts (VST3 + built-in), voice pad, then the fader bay:
-// fader + meter with the sends (bus keys + FX sends) beside it, mute/solo,
-// name bar. There is deliberately no PRESET or FILTER section on the strip:
-// presets and solo-safe live in the strip menu, HPF/LPF live in the EQ panel.
+// PROCESSING keys, inserts (VST3), voice pad, horizontal bus sends row, then
+// the fader bay: fader + meter above mute/solo. Presets and solo-safe live in
+// the strip menu, HPF/LPF live in the EQ panel.
 class StripView : public juce::Component
 {
 public:
@@ -46,7 +45,6 @@ private:
     // Processing + sends
     void openProcessorPanel (int index);
     void openSendPanel (int bus);
-    void openGlobalFxPanel (int fxIndex);
     void updateKeys();
     juce::Component* popupParent();
 
@@ -72,14 +70,11 @@ private:
     InsertRack inserts;
     VoicePadComponent pad;
     std::array<StripKey, kNumBuses> sendButtons;
-    std::array<juce::TextButton, omx::kNumFxSends> fxEditButtons;
-    std::array<DbSlider, omx::kNumFxSends> fxSendSliders;
     StripKey muteButton { "Mute" }, soloButton { "Solo" };
     FaderSection faderSection;
 
     juce::Rectangle<int> inputLegend, processLegend, insertsLegend,
-                         padLegend, sendsLegend, fxLegend, nameBarArea,
-                         gainHeadArea, gainScaleArea, iconRowArea;
+                         padLegend, sendsLegend, gainHeadArea, gainScaleArea;
     std::vector<int> dividerYs;   // y of each 1 px section divider, in strip coords
     int bayTop = 0;
     bool inLayout = false;

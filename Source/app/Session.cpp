@@ -118,26 +118,6 @@ static void saveChain (juce::XmlElement& x, PluginChain& chain)
 {
     for (int slot = 0; slot < kNumSlots; ++slot)
     {
-        // A built-in insert is stored as a <BuiltInSlot> with its type and
-        // parameters (no state blob -- the parameters are the whole state).
-        // A VST insert keeps the existing <Slot> format (description + blob).
-        if (auto* fx = chain.getBuiltIn (slot))
-        {
-            auto* xf = x.createNewChildElement ("BuiltInSlot");
-            xf->setAttribute ("index", slot);
-            xf->setAttribute ("type", PluginChain::fxTypeDisplayName (fx->getType()));
-            xf->setAttribute ("bypass", chain.slotBypass[(size_t) slot].load());
-            xf->setAttribute ("mix", chain.slotMix[(size_t) slot].load());
-
-            std::array<float, 6> params {};
-            bool tempoSync = false;
-            chain.getBuiltInParams (slot, params, tempoSync);
-            xf->setAttribute ("tempoSync", tempoSync);
-            for (int i = 0; i < 6; ++i)
-                xf->setAttribute ("param" + juce::String (i), params[(size_t) i]);
-            continue;
-        }
-
         auto* plugin = chain.getPlugin (slot);
         if (plugin == nullptr)
             continue;
@@ -156,42 +136,19 @@ static void saveChain (juce::XmlElement& x, PluginChain& chain)
 
 static void loadChain (const juce::XmlElement& x, PluginChain& chain, MixerEngine& engine)
 {
-    // Load in saved slot order (VST and built-in slots interleaved), so the
-    // packed chain comes back in the same order it was saved in.
-    struct SavedSlot { int index; const juce::XmlElement* element; bool builtIn; };
-    std::vector<SavedSlot> saved;
+    std::vector<const juce::XmlElement*> saved;
     for (auto* xp : x.getChildWithTagNameIterator ("Slot"))
-        saved.push_back ({ xp->getIntAttribute ("index", -1), xp, false });
-    for (auto* xf : x.getChildWithTagNameIterator ("BuiltInSlot"))
-        saved.push_back ({ xf->getIntAttribute ("index", -1), xf, true });
-    std::sort (saved.begin(), saved.end(),
-               [] (const SavedSlot& a, const SavedSlot& b) { return a.index < b.index; });
-
-    for (const auto& entry : saved)
+        saved.push_back (xp);
+    std::sort (saved.begin(), saved.end(), [] (const juce::XmlElement* a, const juce::XmlElement* b)
     {
-        const int slot = entry.index;
-        const juce::XmlElement* xp = entry.element;
+        return a->getIntAttribute ("index", -1) < b->getIntAttribute ("index", -1);
+    });
+
+    for (const auto* xp : saved)
+    {
+        const int slot = xp->getIntAttribute ("index", -1);
         if (! juce::isPositiveAndBelow (slot, kNumSlots))
             continue;
-
-        if (entry.builtIn)
-        {
-            omx::FxType type;
-            if (! PluginChain::fxTypeFromName (xp->getStringAttribute ("type"), type))
-                continue;
-
-            chain.installBuiltIn (slot, PluginChain::makeBuiltInFx (type));
-
-            // Slots are packed, so the effect may sit lower than its saved index.
-            const int installed = chain.getNumInserts() - 1;
-            std::array<float, 6> params {};
-            for (int i = 0; i < 6; ++i)
-                params[(size_t) i] = (float) xp->getDoubleAttribute ("param" + juce::String (i), 0.0);
-            chain.setBuiltInParams (installed, params, xp->getBoolAttribute ("tempoSync", false));
-            chain.slotBypass[(size_t) installed].store (xp->getBoolAttribute ("bypass", false));
-            chain.slotMix[(size_t) installed].store ((float) xp->getDoubleAttribute ("mix", 1.0));
-            continue;
-        }
 
         auto* xd = xp->getChildByName ("PLUGIN");
         if (xd == nullptr)
@@ -286,18 +243,7 @@ static void saveStripPresetXml (juce::XmlElement& parent, const juce::String& na
         xs->setAttribute ("format", slot.format);
         xs->setAttribute ("bypass", slot.bypass);
         xs->setAttribute ("mix", slot.mix);
-        // Built-in slots carry their type + parameters instead of a plugin
-        // identifier; they are always available, so they never go missing.
-        xs->setAttribute ("builtIn", slot.isBuiltIn);
-        xs->setAttribute ("fxType", slot.fxType);
-        xs->setAttribute ("tempoSync", slot.fxTempoSync);
-        for (int i = 0; i < 6; ++i)
-            xs->setAttribute ("param" + juce::String (i), slot.fxParams[(size_t) i]);
     }
-
-    e->setAttribute ("fxSendReverb", p.fxSend[omx::kFxReverb]);
-    e->setAttribute ("fxSendDelay", p.fxSend[omx::kFxDelay]);
-    e->setAttribute ("fxSendChorus", p.fxSend[omx::kFxChorus]);
 }
 
 static bool loadStripPresetXml (const juce::XmlElement& e, juce::String& name, omx::StripPreset& p)
@@ -371,16 +317,8 @@ static bool loadStripPresetXml (const juce::XmlElement& e, juce::String& name, o
         slot.format = xs->getStringAttribute ("format").toStdString();
         slot.bypass = xs->getBoolAttribute ("bypass", false);
         slot.mix = (float) xs->getDoubleAttribute ("mix", 1.0);
-        slot.isBuiltIn = xs->getBoolAttribute ("builtIn", false);
-        slot.fxType = xs->getStringAttribute ("fxType").toStdString();
-        slot.fxTempoSync = xs->getBoolAttribute ("tempoSync", false);
-        for (int i = 0; i < 6; ++i)
-            slot.fxParams[(size_t) i] = (float) xs->getDoubleAttribute ("param" + juce::String (i), 0.0);
         p.numSlots = std::max (p.numSlots, s + 1);
     }
-    p.fxSend[omx::kFxReverb] = (float) e.getDoubleAttribute ("fxSendReverb", 0.0);
-    p.fxSend[omx::kFxDelay] = (float) e.getDoubleAttribute ("fxSendDelay", 0.0);
-    p.fxSend[omx::kFxChorus] = (float) e.getDoubleAttribute ("fxSendChorus", 0.0);
     return true;
 }
 
@@ -397,18 +335,6 @@ static void saveSlots (juce::XmlElement& x, PluginChain& chain)
         e->setAttribute ("index", s);
         e->setAttribute ("bypass", chain.slotBypass[(size_t) s].load());
         e->setAttribute ("mix", chain.slotMix[(size_t) s].load());
-        if (chain.isBuiltInSlot (s))
-        {
-            std::array<float, 6> params {};
-            bool tempoSync = false;
-            if (chain.getBuiltInParams (s, params, tempoSync))
-            {
-                e->setAttribute ("builtIn", true);
-                e->setAttribute ("tempoSync", tempoSync);
-                for (int i = 0; i < 6; ++i)
-                    e->setAttribute ("param" + juce::String (i), params[(size_t) i]);
-            }
-        }
     }
 }
 
@@ -417,19 +343,11 @@ static void loadSlots (const juce::XmlElement& x, PluginChain& chain)
     for (auto* e : x.getChildWithTagNameIterator ("SlotMix"))
     {
         const int s = e->getIntAttribute ("index", -1);
-        if (! juce::isPositiveAndBelow (s, kNumSlots)
-            || (chain.getPlugin (s) == nullptr && ! chain.isBuiltInSlot (s)))
+        if (! juce::isPositiveAndBelow (s, kNumSlots) || chain.getPlugin (s) == nullptr)
             continue;
         chain.slotFault[(size_t) s].store (false);
         chain.slotBypass[(size_t) s].store (e->getBoolAttribute ("bypass"));
         chain.slotMix[(size_t) s].store ((float) e->getDoubleAttribute ("mix", 1.0));
-        if (e->getBoolAttribute ("builtIn", false) && chain.isBuiltInSlot (s))
-        {
-            std::array<float, 6> params {};
-            for (int i = 0; i < 6; ++i)
-                params[(size_t) i] = (float) e->getDoubleAttribute ("param" + juce::String (i), 0.0);
-            chain.setBuiltInParams (s, params, e->getBoolAttribute ("tempoSync", false));
-        }
     }
 }
 
@@ -457,9 +375,6 @@ std::unique_ptr<juce::XmlElement> Session::captureScene (MixerEngine& engine)
             x->setAttribute ("send" + bus, strip.sendDb[b].load());
             x->setAttribute ("pre" + bus, strip.sendPre[b].load());
         }
-        x->setAttribute ("fxSendReverb", strip.getFxSendLevel (omx::kFxReverb));
-        x->setAttribute ("fxSendDelay", strip.getFxSendLevel (omx::kFxDelay));
-        x->setAttribute ("fxSendChorus", strip.getFxSendLevel (omx::kFxChorus));
         saveProcessing (*x, strip.fx);
         saveSlots (*x, strip.inserts);
     }
@@ -509,9 +424,6 @@ void Session::applyScene (const juce::XmlElement& root, MixerEngine& engine)
             strip.sendDb[b].store ((float) x->getDoubleAttribute ("send" + bus, strip.sendDb[b].load()));
             strip.sendPre[b].store (x->getBoolAttribute ("pre" + bus, strip.sendPre[b].load()));
         }
-        strip.setFxSendLevel (omx::kFxReverb, (float) x->getDoubleAttribute ("fxSendReverb", strip.getFxSendLevel (omx::kFxReverb)));
-        strip.setFxSendLevel (omx::kFxDelay, (float) x->getDoubleAttribute ("fxSendDelay", strip.getFxSendLevel (omx::kFxDelay)));
-        strip.setFxSendLevel (omx::kFxChorus, (float) x->getDoubleAttribute ("fxSendChorus", strip.getFxSendLevel (omx::kFxChorus)));
         loadProcessing (x->getChildByName ("Processing"), strip.fx);
         loadSlots (*x, strip.inserts);
     }
@@ -585,9 +497,6 @@ void Session::save (MixerEngine& engine)
             xs->setAttribute ("send" + bus, strip.sendDb[b].load());
             xs->setAttribute ("pre" + bus, strip.sendPre[b].load());
         }
-        xs->setAttribute ("fxSendReverb", strip.getFxSendLevel (omx::kFxReverb));
-        xs->setAttribute ("fxSendDelay", strip.getFxSendLevel (omx::kFxDelay));
-        xs->setAttribute ("fxSendChorus", strip.getFxSendLevel (omx::kFxChorus));
 
         saveProcessing (*xs, strip.fx);
         saveChain (*xs, strip.inserts);
@@ -647,33 +556,6 @@ void Session::save (MixerEngine& engine)
         auto* xs = root.createNewChildElement ("StripPresets");
         for (const auto& preset : engine.stripPresets)
             saveStripPresetXml (*xs, preset.name, preset.preset);
-    }
-
-    {
-        auto* xfx = root.createNewChildElement ("GlobalFx");
-        if (auto* rev = engine.getFxReverb())
-        {
-            auto* xr = xfx->createNewChildElement ("Reverb");
-            xr->setAttribute ("roomSize", rev->getRoomSize());
-            xr->setAttribute ("damping", rev->getDamping());
-            xr->setAttribute ("preDelayMs", rev->getPreDelayMs());
-        }
-        if (auto* dly = engine.getFxDelay())
-        {
-            auto* xd = xfx->createNewChildElement ("Delay");
-            xd->setAttribute ("tempoSync", dly->isTempoSynced());
-            xd->setAttribute ("timeMs", dly->getTimeMs());
-            xd->setAttribute ("noteDivision", dly->getNoteDivision());
-            xd->setAttribute ("feedback", dly->getFeedback());
-            xd->setAttribute ("lowpassHz", dly->getFeedbackLowpassHz());
-        }
-        if (auto* cho = engine.getFxChorus())
-        {
-            auto* xc = xfx->createNewChildElement ("Chorus");
-            xc->setAttribute ("rateHz", cho->getRateHz());
-            xc->setAttribute ("depthMs", cho->getDepthMs());
-            xc->setAttribute ("feedback", cho->getFeedback());
-        }
     }
 
     // Only touch the disk when something actually changed (this runs every few seconds).
@@ -757,9 +639,6 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
             strip.sendDb[b].store ((float) xs->getDoubleAttribute ("send" + bus, 0.0));
             strip.sendPre[b].store (xs->getBoolAttribute ("pre" + bus, false));
         }
-        strip.setFxSendLevel (omx::kFxReverb, (float) xs->getDoubleAttribute ("fxSendReverb", 0.0));
-        strip.setFxSendLevel (omx::kFxDelay, (float) xs->getDoubleAttribute ("fxSendDelay", 0.0));
-        strip.setFxSendLevel (omx::kFxChorus, (float) xs->getDoubleAttribute ("fxSendChorus", 0.0));
 
         loadProcessing (xs->getChildByName ("Processing"), strip.fx);
         if (loadPlugins)
@@ -841,31 +720,5 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
             else
                 juce::Logger::writeToLog ("Soundboard pad " + juce::String (p + 1) + ": " + error);
         }
-    }
-
-    // Global FX units
-    if (auto* xfx = root.getChildByName ("GlobalFx"))
-    {
-        if (auto* xr = xfx->getChildByName ("Reverb"))
-            if (auto* rev = engine.getFxReverb())
-            {
-                rev->setRoomSize ((float) xr->getDoubleAttribute ("roomSize", rev->getRoomSize()));
-                rev->setDamping ((float) xr->getDoubleAttribute ("damping", rev->getDamping()));
-                rev->setPreDelayMs ((float) xr->getDoubleAttribute ("preDelayMs", rev->getPreDelayMs()));
-            }
-        if (auto* xd = xfx->getChildByName ("Delay"))
-            if (auto* dly = engine.getFxDelay())
-            {
-                dly->setTimeMs ((float) xd->getDoubleAttribute ("timeMs", dly->getTimeMs()));
-                dly->setFeedback ((float) xd->getDoubleAttribute ("feedback", dly->getFeedback()));
-                dly->setFeedbackLowpassHz ((float) xd->getDoubleAttribute ("lowpassHz", dly->getFeedbackLowpassHz()));
-            }
-        if (auto* xc = xfx->getChildByName ("Chorus"))
-            if (auto* cho = engine.getFxChorus())
-            {
-                cho->setRateHz ((float) xc->getDoubleAttribute ("rateHz", cho->getRateHz()));
-                cho->setDepthMs ((float) xc->getDoubleAttribute ("depthMs", cho->getDepthMs()));
-                cho->setFeedback ((float) xc->getDoubleAttribute ("feedback", cho->getFeedback()));
-            }
     }
 }

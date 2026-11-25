@@ -92,7 +92,6 @@ target_sources(OpenMix PRIVATE
 
     # DSP (the rest is header-only)
     Source/dsp/Denoiser.cpp
-    Source/dsp/BuiltInFx.cpp   # built-in Reverb / Delay / Chorus (inserts + FX sends)
 
     # interface
     Source/ui/OpenMixLookAndFeel.cpp
@@ -127,6 +126,7 @@ target_compile_definitions(OpenMix PRIVATE
     JUCE_USE_MP3AUDIOFORMAT=1   # soundboard pads (Windows Media decoders are not used)
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_VERSION>")
+target_compile_options(OpenMix PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
 # Core unit tests (plain C++, no JUCE). Run with: ctest --test-dir build -C Release
 option(OPENMIX_BUILD_TESTS "Build the unit tests" ON)
@@ -134,14 +134,9 @@ if(OPENMIX_BUILD_TESTS)
     enable_testing()
     add_executable(OpenMixCoreTests tests/CoreTests.cpp Source/dsp/Denoiser.cpp)
     target_include_directories(OpenMixCoreTests PRIVATE Source)
+    target_compile_options(OpenMixCoreTests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
     target_link_libraries(OpenMixCoreTests PRIVATE rnnoise)
     add_test(NAME OpenMixCoreTests COMMAND OpenMixCoreTests)
-
-    add_executable(OpenMixBuiltInFxTests tests/BuiltInFxTests.cpp Source/dsp/BuiltInFx.cpp)
-    target_include_directories(OpenMixBuiltInFxTests PRIVATE Source)
-    target_compile_definitions(OpenMixBuiltInFxTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
-    target_link_libraries(OpenMixBuiltInFxTests PRIVATE juce::juce_audio_basics)
-    add_test(NAME OpenMixBuiltInFxTests COMMAND OpenMixBuiltInFxTests)
 
     add_executable(OpenMixAppTests
         tests/AppTests.cpp
@@ -159,10 +154,10 @@ if(OPENMIX_BUILD_TESTS)
         Source/creator/Recorder.cpp
         Source/creator/Soundboard.cpp
         Source/dsp/Denoiser.cpp
-        Source/dsp/BuiltInFx.cpp
         Source/ui/Widgets.cpp
         Source/ui/OpenMixLookAndFeel.cpp)
     target_include_directories(OpenMixAppTests PRIVATE Source $<TARGET_PROPERTY:OpenMix,BINARY_DIR>/OpenMix_artefacts/JuceLibraryCode)
+    target_compile_options(OpenMixAppTests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
     add_dependencies(OpenMixAppTests OpenMix)
     target_compile_definitions(OpenMixAppTests PRIVATE
         JUCE_WEB_BROWSER=0

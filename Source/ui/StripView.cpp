@@ -44,7 +44,7 @@ StripView::StripView (MixerEngine& e, int i)
     // Polarity invert and mono, below the gain slider (also in the strip menu).
     makeLamp (invertButton, "key");
     invertButton.setTitle ("Invert polarity");
-    invertButton.setTooltip ("Invert the polarity of this strip (Ø).");
+    invertButton.setTooltip (juce::String::fromUTF8 ("Invert the polarity of this strip (\xc3\x98)."));
     invertButton.onClick = [this]
     {
         strip.invertPolarity.store (! strip.invertPolarity.load());
@@ -102,35 +102,6 @@ StripView::StripView (MixerEngine& e, int i)
     soloButton.onClick = [this] { strip.solo.store (soloButton.getToggleState()); };
     addAndMakeVisible (soloButton);
 
-    // FX sends: post-fader sends to the engine's global reverb / delay / chorus.
-    static const char* fxNames[] { "Reverb", "Delay", "Chorus" };
-    static const char* fxShort[] { "REV", "DLY", "CHO" };
-    for (int f = 0; f < omx::kNumFxSends; ++f)
-    {
-        auto& btn = fxEditButtons[(size_t) f];
-        btn.setButtonText (fxShort[f]);
-        btn.getProperties().set ("micro", true);
-        btn.setTitle (juce::String (fxNames[f]) + " settings");
-        btn.setTooltip (juce::String ("Configure global ") + fxNames[f] + " settings.");
-        btn.onClick = [this, f] { openGlobalFxPanel (f); };
-        makeClickable (btn);
-        addAndMakeVisible (btn);
-
-        auto& slider = fxSendSliders[(size_t) f];
-        slider.setSliderStyle (juce::Slider::LinearHorizontal);
-        slider.setRange (0.0, 1.0, 0.01);
-        slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        slider.setPopupDisplayEnabled (true, true, this);
-        slider.textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
-        slider.setTitle (juce::String (fxNames[f]) + " send");
-        slider.setTooltip (juce::String (fxNames[f]) + " send (post-fader). Click " + fxShort[f]
-                           + " to edit the global " + fxNames[f] + " effect.");
-        slider.setWantsKeyboardFocus (true);
-        makeClickable (slider);
-        slider.onValueChange = [this, f] { strip.setFxSendLevel (f, (float) fxSendSliders[(size_t) f].getValue()); };
-        addAndMakeVisible (slider);
-    }
-
     faderSection.fader.onValueChange = [this] { strip.faderDb.store ((float) faderSection.fader.getValue()); };
     addAndMakeVisible (faderSection);
 
@@ -163,9 +134,6 @@ void StripView::refreshFromStrip()
 
     invertButton.setToggleState (strip.invertPolarity.load(), juce::dontSendNotification);
     monoButton.setToggleState (strip.mono.load(), juce::dontSendNotification);
-
-    for (int f = 0; f < omx::kNumFxSends; ++f)
-        fxSendSliders[(size_t) f].setValue (strip.getFxSendLevel (f), juce::dontSendNotification);
 
     repaint (gainHeadArea);
 
@@ -320,14 +288,6 @@ void StripView::openSendPanel (int b)
     auto& key = sendButtons[(size_t) b];
     auto* top = popupParent();
     juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&key, key.getLocalBounds()), top);
-}
-
-void StripView::openGlobalFxPanel (int fxIndex)
-{
-    auto panel = std::make_unique<GlobalFxPanel> (engine, fxIndex);
-    auto& btn = fxEditButtons[(size_t) fxIndex];
-    auto* top = popupParent();
-    juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&btn, btn.getLocalBounds()), top);
 }
 
 void StripView::showStripMenu()
@@ -579,52 +539,15 @@ void StripView::showSourceMenu()
 //==============================================================================
 // Paint + layout
 
-static void drawStripIcon (juce::Graphics& g, juce::Rectangle<int> area, SourceType type)
-{
-    const float cx = (float) area.getCentreX();
-    const float cy = (float) area.getCentreY();
-    juce::Path p;
-
-    if (type == SourceType::Main || type == SourceType::Device)
-    {
-        p.addRoundedRectangle (cx - 2.5f, cy - 6.5f, 5.0f, 8.0f, 2.5f);
-        p.addArc (cx - 5.0f, cy - 5.5f, 10.0f, 9.0f, 1.570796f, 4.712389f, true);
-        p.startNewSubPath (cx, cy + 3.5f);
-        p.lineTo (cx, cy + 6.5f);
-        p.startNewSubPath (cx - 3.5f, cy + 6.5f);
-        p.lineTo (cx + 3.5f, cy + 6.5f);
-    }
-    else if (type == SourceType::App)
-    {
-        p.addEllipse (cx - 5.5f, cy + 1.5f, 3.5f, 3.0f);
-        p.addEllipse (cx + 1.5f, cy + 0.5f, 3.5f, 3.0f);
-        p.startNewSubPath (cx - 2.0f, cy + 3.0f);
-        p.lineTo (cx - 2.0f, cy - 5.0f);
-        p.lineTo (cx + 5.0f, cy - 6.0f);
-        p.lineTo (cx + 5.0f, cy + 2.0f);
-    }
-    else
-    {
-        p.addEllipse (cx - 6.0f, cy - 6.0f, 12.0f, 12.0f);
-        p.startNewSubPath (cx - 6.0f, cy);
-        p.lineTo (cx + 6.0f, cy);
-        p.addEllipse (cx - 2.8f, cy - 6.0f, 5.6f, 12.0f);
-    }
-
-    g.setColour (Theme::p().textDim);
-    g.strokePath (p, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-}
-
 void StripView::paint (juce::Graphics& g)
 {
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
 
     Theme::drawLegend (g, "Input", inputLegend, juce::Justification::centred);
     Theme::drawLegend (g, "Processing", processLegend, juce::Justification::centred);
-    Theme::drawLegend (g, "Insert \xc2\xb7 VST3", insertsLegend, juce::Justification::centred);
+    Theme::drawLegend (g, juce::String::fromUTF8 ("Insert \xc2\xb7 VST3"), insertsLegend, juce::Justification::centred);
     Theme::drawLegend (g, "VoicePad", padLegend, juce::Justification::centred);
     Theme::drawLegend (g, "Sends", sendsLegend, juce::Justification::centred);
-    Theme::drawLegend (g, "FX sends", fxLegend, juce::Justification::centred);
 
     // 1 px edge-to-edge section dividers (mockup style).
     g.setColour (Theme::p().line);
@@ -652,28 +575,9 @@ void StripView::paint (juce::Graphics& g)
         g.drawText ("+24", gainScaleArea, juce::Justification::centredRight);
     }
 
-    // Channel icon row: source glyph above the fader bay.
-    if (! iconRowArea.isEmpty())
-        drawStripIcon (g, iconRowArea, (SourceType) strip.sourceType.load());
-
     // A hairline above the fader bay, the same height on every column.
     g.setColour (Theme::p().line);
     g.fillRect (0, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth(), 1);
-
-    // Bold solid-colour name bar flush along the bottom of the strip (mockup style).
-    if (! nameBarArea.isEmpty())
-    {
-        const auto bar = nameBarArea.withX (1).withWidth (getWidth() - 2).withBottom (getHeight() - 1).toFloat();
-        juce::Path p;
-        const float rad = Theme::panelRadius - 1.0f;
-        p.addRoundedRectangle (bar.getX(), bar.getY(), bar.getWidth(), bar.getHeight(),
-                               rad, rad, false, false, true, true);
-        g.setColour (Theme::nameBarColour (strip.colour));
-        g.fillPath (p);
-        g.setColour (Theme::nameBarTextColour (strip.colour));
-        g.setFont (Theme::ui (13.0f, true));
-        g.drawText (displayName(), nameBarArea.reduced (Theme::s2, 0), juce::Justification::centred);
-    }
 }
 
 void StripView::resized()
@@ -731,13 +635,13 @@ void StripView::resized()
     top.removeFromTop (gap);
     dividerYs.push_back (top.getY() - 2);
 
-    // The voice pad and icon row sit at the bottom of the top section;
+    // VoicePad and horizontal bus sends sit at the bottom of the top section;
     // the inserts take whatever is left in the middle.
     const int padH = Theme::isCompact() ? 66 : 82;
     const int padSectionH = legendH + VoicePadComponent::headerHeight + padH;
-    constexpr int iconH = 20;
+    const int sendsH = legendH + 24;
 
-    iconRowArea = top.removeFromBottom (iconH);
+    auto sendsBlock = top.removeFromBottom (sendsH);
     top.removeFromBottom (gap);
     auto padBlock = top.removeFromBottom (padSectionH);
 
@@ -751,12 +655,29 @@ void StripView::resized()
     // VOICE PAD: mode buttons + pad.
     padLegend = padBlock.removeFromTop (legendH);
     pad.setBounds (padBlock);
-    dividerYs.push_back (iconRowArea.getY() - 2);
+    dividerYs.push_back (sendsBlock.getY() - 3);
 
-    // Fader bay: name bar along the bottom, Mute / Solo above it, and above
-    // that the fader + meter with the sends beside it.
-    nameBarArea = bay.removeFromBottom (26);
-    bay.removeFromBottom (gap);
+    // SENDS: horizontal row of active bus send buttons across the strip.
+    sendsLegend = sendsBlock.removeFromTop (legendH);
+    {
+        auto row = sendsBlock;
+        const int activeBuses = engine.getNumActiveBuses();
+        const int nSends = juce::jmax (1, activeBuses);
+        const int btnGap = nSends >= 5 ? 2 : 3;
+        const int totalGap = (nSends - 1) * btnGap;
+        const int bw = juce::jmax (18, (row.getWidth() - totalGap) / nSends);
+        int placed = 0;
+        for (int b = 0; b < kNumBuses; ++b)
+        {
+            if (! engine.getBus (b).active.load())
+                continue;
+            const int w = (++placed == nSends) ? row.getWidth() : bw;
+            sendButtons[(size_t) b].setBounds (row.removeFromLeft (w));
+            row.removeFromLeft (btnGap);
+        }
+    }
+
+    // Fader bay: Mute / Solo along the bottom, fader + meter above using full column width.
     auto muteRow = bay.removeFromBottom (26);
     {
         const int bw = (muteRow.getWidth() - Theme::s1) / 2;
@@ -765,41 +686,5 @@ void StripView::resized()
         soloButton.setBounds (muteRow);
     }
     bay.removeFromBottom (gap);
-
-    const int sendsMin = Theme::isCompact() ? 66 : 74;
-    const int sendsW = juce::jlimit (sendsMin, 104, bay.getWidth() - FaderSection::preferredWidth - 5);
-    auto sends = bay.removeFromRight (sendsW);
-    bay.removeFromRight (5);
     faderSection.setBounds (bay);
-
-    const int activeBuses = engine.getNumActiveBuses();
-    const int sendRows = juce::jmax (1, (activeBuses + 1) / 2);
-    const int gridH = sendRows * 24 + (sendRows - 1) * 3;
-    sendsLegend = sends.removeFromTop (legendH);
-    {
-        auto grid = sends.removeFromTop (gridH);
-        const int cellW = (grid.getWidth() - 3) / 2;
-        int placed = 0;
-        for (int b = 0; b < kNumBuses; ++b)
-        {
-            if (! engine.getBus (b).active.load())
-                continue;
-            const int col = placed % 2, row = placed / 2;
-            sendButtons[(size_t) b].setBounds (grid.getX() + col * (cellW + 3),
-                                               grid.getY() + row * (24 + 3), cellW, 24);
-            ++placed;
-        }
-    }
-    sends.removeFromTop (gap);
-    fxLegend = sends.removeFromTop (legendH);
-    const int fxBtnW = Theme::isCompact() ? 28 : 32;
-    for (int f = 0; f < omx::kNumFxSends; ++f)
-    {
-        auto row = sends.removeFromTop (18);
-        fxEditButtons[(size_t) f].setBounds (row.removeFromLeft (fxBtnW));
-        row.removeFromLeft (2);
-        fxSendSliders[(size_t) f].setBounds (row);
-        if (f + 1 < omx::kNumFxSends)
-            sends.removeFromTop (2);
-    }
 }

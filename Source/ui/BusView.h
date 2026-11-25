@@ -8,11 +8,10 @@
 #include "ui/InsertRack.h"
 #include "ui/Panels.h"
 
-// One output bus in the master section, in the mockup's order: name tape, output
-// device, processing (EQ, compressor), inserts, analyser, limiter with
-// gain-reduction meter, loudness (short-term LUFS + normalisation), fader bay
-// (mute, fader, name bar). The monitor bus is shown only by a thin accent outline
-// plus its name bar lit in the accent colour -- no "monitor" text on the strip.
+// One output bus in the master section: name tape, output device, processing
+// (EQ, compressor), inserts, analyser, limiter with gain-reduction meter, loudness
+// (short-term LUFS + normalisation), fader bay (fader + meter, mute). The monitor
+// bus is shown by a thin accent outline around the strip -- no "monitor" text.
 class BusView : public juce::Component
 {
 public:
@@ -68,7 +67,7 @@ private:
 
     juce::Rectangle<int> outputLegend, limiterLegend, limiterArea, grHeadArea, grTrackArea, grScaleArea,
                          limiterSectionArea, loudnessLegend, loudnessValueArea,
-                         processLegend, insertsLegend, nameBarArea, iconRowArea;
+                         processLegend, insertsLegend;
     std::vector<int> dividerYs;   // y of each 1 px section divider, in strip coords
     std::shared_ptr<BusAnalysis> analysis = std::make_shared<BusAnalysis>();
     MiniSpectrum spectrum { analysis };

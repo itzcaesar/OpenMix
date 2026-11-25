@@ -182,7 +182,7 @@ void BusView::refreshNormGainLabel()
     if (! bus.normOn.load())
     {
         normGainLabel.setColour (juce::Label::textColourId, Theme::p().textDim);
-        normGainLabel.setText ("Gain applied —", juce::dontSendNotification);
+        normGainLabel.setText (juce::String::fromUTF8 ("Gain applied \xe2\x80\x94"), juce::dontSendNotification);
         return;
     }
     normGainLabel.setColour (juce::Label::textColourId, Theme::p().accent);
@@ -422,33 +422,6 @@ bool BusView::isVirtualCable (const juce::String& deviceName)
     return n.contains ("cable") || n.contains ("vb-audio") || n.contains ("voicemeeter") || n.contains ("virtual");
 }
 
-static void drawBusIcon (juce::Graphics& g, juce::Rectangle<int> area, bool isVirtualBus)
-{
-    const float cx = (float) area.getCentreX();
-    const float cy = (float) area.getCentreY();
-    juce::Path p;
-
-    if (! isVirtualBus)
-    {
-        // Headphones (hardware output)
-        p.addArc (cx - 6.0f, cy - 6.0f, 12.0f, 11.0f, 4.712389f, 7.853982f, true);
-        p.addRoundedRectangle (cx - 7.5f, cy - 1.0f, 2.8f, 6.0f, 1.0f);
-        p.addRoundedRectangle (cx + 4.7f, cy - 1.0f, 2.8f, 6.0f, 1.0f);
-    }
-    else
-    {
-        // Broadcast tower / virtual stream
-        p.startNewSubPath (cx, cy + 6.5f);
-        p.lineTo (cx, cy - 1.5f);
-        p.addEllipse (cx - 1.5f, cy - 4.0f, 3.0f, 3.0f);
-        p.addArc (cx - 4.5f, cy - 6.0f, 9.0f, 7.0f, 3.7f, 5.7f, true);
-        p.addArc (cx - 4.5f, cy - 6.0f, 9.0f, 7.0f, 0.58f, 2.58f, true);
-    }
-
-    g.setColour (Theme::p().textDim);
-    g.strokePath (p, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-}
-
 void BusView::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
@@ -457,7 +430,7 @@ void BusView::paint (juce::Graphics& g)
     // Centered small-caps section legends (mockup style).
     Theme::drawLegend (g, "Output", outputLegend, juce::Justification::centred);
     Theme::drawLegend (g, "Processing", processLegend, juce::Justification::centred);
-    Theme::drawLegend (g, "Insert \xc2\xb7 VST3", insertsLegend, juce::Justification::centred);
+    Theme::drawLegend (g, juce::String::fromUTF8 ("Insert \xc2\xb7 VST3"), insertsLegend, juce::Justification::centred);
     if (! spectrumLegend.isEmpty())
         Theme::drawLegend (g, "Analyser", spectrumLegend, juce::Justification::centred);
 
@@ -557,33 +530,12 @@ void BusView::paint (juce::Graphics& g)
                     valRect, juce::Justification::centredRight, true);
     }
 
-    // Bus icon row, matching input strips.
-    if (! iconRowArea.isEmpty())
-        drawBusIcon (g, iconRowArea, isVirtual());
-
     // A hairline above the fader bay, the same height on every column.
     g.setColour (t.line);
     g.fillRect (0, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth(), 1);
-
-    // Bold solid-colour name bar flush along the bottom of the bus (mockup style).
-    if (! nameBarArea.isEmpty())
-    {
-        const bool monitor = bus.monitor.load();
-        const auto bar = nameBarArea.withX (1).withWidth (getWidth() - 2).withBottom (getHeight() - 1).toFloat();
-        juce::Path p;
-        const float rad = Theme::panelRadius - 1.0f;
-        p.addRoundedRectangle (bar.getX(), bar.getY(), bar.getWidth(), bar.getHeight(),
-                               rad, rad, false, false, true, true);
-        g.setColour (monitor ? t.accent : Theme::busColour (index));
-        g.fillPath (p);
-        g.setColour (monitor ? t.onAccent : juce::Colours::white);
-        g.setFont (Theme::ui (13.0f, true));
-        g.drawText (busName(), nameBarArea.reduced (Theme::s2, 0), juce::Justification::centred);
-    }
 }
 
-// The monitor bus is shown only here: a thin 1 px accent outline around the
-// strip. The lit name bar (painted above) is the rest of the signal -- no text
+// The monitor bus is shown by a thin accent outline around the strip -- no text
 // on the strip says "monitor".
 void BusView::paintOverChildren (juce::Graphics& g)
 {
@@ -591,7 +543,7 @@ void BusView::paintOverChildren (juce::Graphics& g)
         return;
 
     g.setColour (Theme::p().accent);
-    g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), Theme::panelRadius, 1.0f);
+    g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.75f), Theme::panelRadius, 1.5f);
 }
 
 void BusView::resized()
@@ -632,15 +584,11 @@ void BusView::resized()
     top.removeFromTop (gap);
     dividerYs.push_back (top.getY() - 2);
 
-    // The analyser, limiter, loudness and icon row are fixed heights pinned to
+    // The analyser, limiter and loudness sections are fixed heights pinned to
     // the bottom of the top section; the inserts expand to fill the middle.
     const int analyserH = legendH + (Theme::isCompact() ? 58 : 72);
     constexpr int limiterH = legendH + 20 + 12 + 11 + 10;
     constexpr int loudnessH = legendH + 22 + 4 + 26 + 4 + 14;
-    constexpr int iconH = 20;
-
-    iconRowArea = top.removeFromBottom (iconH);
-    top.removeFromBottom (gap);
 
     auto loudnessBlock = top.removeFromBottom (loudnessH);
     top.removeFromBottom (gap);
@@ -678,12 +626,8 @@ void BusView::resized()
     normCombo.setBounds (loudnessBlock.removeFromTop (26));
     loudnessBlock.removeFromTop (4);
     normGainLabel.setBounds (loudnessBlock.removeFromTop (14));
-    dividerYs.push_back (iconRowArea.getY() - 2);
 
-    // Fader bay, aligned with the strips: name bar along the very bottom, mute
-    // above it, fader + meter above that.
-    nameBarArea = bay.removeFromBottom (26);
-    bay.removeFromBottom (gap);
+    // Fader bay, aligned with the strips: mute along the bottom, fader + meter above.
     muteButton.setBounds (bay.removeFromBottom (26));
     bay.removeFromBottom (gap);
     faderSection.setBounds (bay);
