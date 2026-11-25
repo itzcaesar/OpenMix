@@ -8,11 +8,11 @@
 #include "ui/Panels.h"
 #include "ui/InsertRack.h"
 
-// One input channel strip, in the mockup's order: INPUT (source, gain slider,
-// polarity/mono), PROCESSING keys, inserts (VST3 + built-in), voice pad, sends
-// (bus keys + FX sends), then the fader bay: fader + meter, mute/solo, name bar.
-// There is deliberately no PRESET or FILTER section on the strip: presets and
-// solo-safe live in the strip menu, HPF/LPF live in the EQ panel.
+// One input channel strip: INPUT (source, gain slider, polarity/mono),
+// PROCESSING keys, inserts (VST3 + built-in), voice pad, then the fader bay:
+// fader + meter with the sends (bus keys + FX sends) beside it, mute/solo,
+// name bar. There is deliberately no PRESET or FILTER section on the strip:
+// presets and solo-safe live in the strip menu, HPF/LPF live in the EQ panel.
 class StripView : public juce::Component
 {
 public:

@@ -688,19 +688,16 @@ void StripView::resized()
     dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
 
-    // The voice pad and the sends are fixed heights pinned to the bottom of the
-    // top section; the inserts take whatever is left in the middle (at least one
-    // row -- the list scrolls past that).
+    // The voice pad is a fixed height pinned to the bottom of the top section;
+    // the inserts take whatever is left in the middle (at least one row -- the
+    // list scrolls past that). The sends live in the fader bay, beside the
+    // fader, so the top section is shorter than it used to be.
     const int padH = Theme::isCompact() ? 76 : 94;
     const int padSectionH = legendH + VoicePadComponent::headerHeight + padH;
-    const int activeBuses = engine.getNumActiveBuses();
-    const int sendRows = juce::jmax (1, (activeBuses + 2) / 3);
-    const int gridH = sendRows * 25 + (sendRows - 1) * 3;
-    const int sendsSectionH = legendH + gridH + gap + legendH + 3 * 18 + 2 * 2;
     constexpr int iconH = 21;
 
     insertsLegend = top.removeFromTop (legendH);
-    const int insertsAvail = top.getHeight() - padSectionH - gap - sendsSectionH - gap - iconH;
+    const int insertsAvail = top.getHeight() - padSectionH - gap - iconH;
     const int rackH = insertsAvail <= 0 ? 0
         : juce::jlimit (InsertRack::heightForRows (1), InsertRack::heightForRows (kNumSlots), insertsAvail);
     inserts.setBounds (rackH > 0 ? top.removeFromTop (rackH) : juce::Rectangle<int>());
@@ -713,39 +710,14 @@ void StripView::resized()
     dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
 
-    // SENDS: full-width, one key per bus in a 3-column grid, then the three
-    // FX send sliders underneath.
-    sendsLegend = top.removeFromTop (legendH);
-    {
-        auto grid = top.removeFromTop (gridH);
-        const int cellW = (grid.getWidth() - 2 * 3) / 3;
-        int placed = 0;
-        for (int b = 0; b < kNumBuses; ++b)
-        {
-            if (! engine.getBus (b).active.load())
-                continue;
-            const int col = placed % 3, row = placed / 3;
-            sendButtons[(size_t) b].setBounds (grid.getX() + col * (cellW + 3),
-                                               grid.getY() + row * (25 + 3), cellW, 25);
-            ++placed;
-        }
-    }
-    top.removeFromTop (gap);
-    fxLegend = top.removeFromTop (legendH);
-    for (int f = 0; f < omx::kNumFxSends; ++f)
-    {
-        auto row = top.removeFromTop (18);
-        fxSendLabelAreas[(size_t) f] = row.removeFromLeft (30);
-        fxSendSliders[(size_t) f].setBounds (row);
-        if (f + 1 < omx::kNumFxSends)
-            top.removeFromTop (2);
-    }
-    dividerYs.push_back (top.getY());
-
     // Icon row, at the bottom of the top section just above the fader bay.
     iconRowArea = top.removeFromTop (iconH);
 
-    // Fader bay: only the fader + meter, Mute / Solo, and the name bar.
+    // Fader bay: name bar along the bottom, Mute / Solo above it, and above
+    // that the fader + meter with the sends beside it -- bus keys in a
+    // 2-column grid, FX send sliders underneath. The sends column takes what
+    // is left after the fader's preferred width (at least 80 px, 64 compact,
+    // so the keys stay readable); the fader track narrows instead of the keys.
     nameBarArea = bay.removeFromBottom (28);
     bay.removeFromBottom (gap);
     auto muteRow = bay.removeFromBottom (28);
@@ -756,5 +728,39 @@ void StripView::resized()
         soloButton.setBounds (muteRow);
     }
     bay.removeFromBottom (gap);
+
+    const int sendsMin = Theme::isCompact() ? 64 : 80;
+    const int sendsW = juce::jlimit (sendsMin, 112, bay.getWidth() - FaderSection::preferredWidth - 6);
+    auto sends = bay.removeFromRight (sendsW);
+    bay.removeFromRight (6);
     faderSection.setBounds (bay);
+
+    const int activeBuses = engine.getNumActiveBuses();
+    const int sendRows = juce::jmax (1, (activeBuses + 1) / 2);
+    const int gridH = sendRows * 25 + (sendRows - 1) * 3;
+    sendsLegend = sends.removeFromTop (legendH);
+    {
+        auto grid = sends.removeFromTop (gridH);
+        const int cellW = (grid.getWidth() - 3) / 2;
+        int placed = 0;
+        for (int b = 0; b < kNumBuses; ++b)
+        {
+            if (! engine.getBus (b).active.load())
+                continue;
+            const int col = placed % 2, row = placed / 2;
+            sendButtons[(size_t) b].setBounds (grid.getX() + col * (cellW + 3),
+                                               grid.getY() + row * (25 + 3), cellW, 25);
+            ++placed;
+        }
+    }
+    sends.removeFromTop (gap);
+    fxLegend = sends.removeFromTop (legendH);
+    for (int f = 0; f < omx::kNumFxSends; ++f)
+    {
+        auto row = sends.removeFromTop (18);
+        fxSendLabelAreas[(size_t) f] = row.removeFromLeft (30);
+        fxSendSliders[(size_t) f].setBounds (row);
+        if (f + 1 < omx::kNumFxSends)
+            sends.removeFromTop (2);
+    }
 }

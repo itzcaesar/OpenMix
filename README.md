@@ -99,7 +99,7 @@ Everything is saved automatically.
 ## Strips
 
 Top to bottom, in the order the audio flows — INPUT, PROCESSING, INSERTS,
-VOICE PAD, SENDS, FADER. There is no PRESET or FILTER section on the strip:
+VOICE PAD, FADER, with the sends beside the fader. There is no PRESET or FILTER section on the strip:
 presets and solo-safe live in the strip's three-dot menu, and HPF/LPF live
 in the EQ panel.
 
@@ -141,7 +141,8 @@ in the EQ panel.
    - *Pan*: X = constant-power pan, Y = stereo width (100-200%).
    - *Color*: corners Warm, Bright, Radio and Close; the puck blends them.
    - *Space*: X = pan, Y = distance (quieter, darker, with early reflections).
-6. **Sends**, in their own full-width section above the fader, not beside it:
+6. **Sends**, beside the fader in the fader bay: bus send keys in a
+   two-column grid, with the three **FX sends** underneath.
    - Click a bus send key to switch it. Right-click (or M) for its level and **pre-fader**
      (the send ignores the strip fader, for example a separate mix for a call). A level
      other than 0 dB and "P" for pre-fader are printed on the key. Send keys show the bus's
@@ -149,7 +150,7 @@ in the EQ panel.
    - Three small **FX sends** (REV / DLY / CHO) feed the shared global
      reverb, delay and chorus; the effect return is mixed into every bus the strip is routed
      to. The Delay send follows the tap tempo. FX sends ignore solo.
-7. **Fader bay:** fader and meter, **Mute** and **Solo**, and a solid-colour **name bar**
+7. **Fader bay:** fader and meter, with the sends beside them, **Mute** and **Solo**, and a solid-colour **name bar**
    along the bottom of the strip. There is no per-strip latency readout on the desk.
    - **Solo** plays the strip alone on the **monitor bus** (A1 unless you choose another in a
      bus menu). **SAFE** (solo-safe, in the strip's three-dot menu) keeps the strip playing

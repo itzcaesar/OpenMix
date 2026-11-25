@@ -212,7 +212,7 @@ void ConsoleContent::resized()
 
     // One fader bay for every column: faders, meters and mute rows line up across the desk,
     // whatever sits above them. The bay takes about a third of the height; the strip's
-    // top section (input, processing, inserts, voice pad, sends) takes the rest, and the
+    // top section (input, processing, inserts, voice pad) takes the rest, and the
     // console's minimum height guarantees the top section never squeezes at the
     // default window size -- shorter windows scroll instead.
     const int bayHeight = juce::jlimit (230, 360, (int) (r.getHeight() * 0.34f));

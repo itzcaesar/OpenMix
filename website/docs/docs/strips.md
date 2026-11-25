@@ -2,9 +2,9 @@
 
 Up to 8 input strips, added and removed at runtime with **+ Strip**.
 Each strip, top to bottom, in the order the audio flows — INPUT,
-PROCESSING, INSERTS, VOICE PAD, SENDS, FADER. There is no PRESET or
-FILTER section on the strip: presets and solo-safe live in the strip's
-three-dot menu, and HPF/LPF live in the EQ panel.
+PROCESSING, INSERTS, VOICE PAD, FADER, with the sends beside the fader.
+There is no PRESET or FILTER section on the strip: presets and solo-safe
+live in the strip's three-dot menu, and HPF/LPF live in the EQ panel.
 
 ## 1. Name plate
 
@@ -81,7 +81,8 @@ Double-click or Home resets the puck:
 
 ## 7. Sends
 
-Sends live in their own full-width section above the fader, not beside it.
+Sends live beside the fader in the fader bay: the bus send keys in a
+two-column grid, with the three FX send sliders underneath.
 
 - Click a bus send key to switch it. Right-click (or M) for its level and
   **pre-fader** (the send ignores the strip fader, for example a separate
@@ -95,9 +96,9 @@ Sends live in their own full-width section above the fader, not beside it.
 
 ## 8. Fader bay
 
-Fader and meter, **Mute** and **Solo**, and a solid-colour **name bar**
-along the bottom of the strip. There is no per-strip latency readout on
-the desk.
+Fader and meter, with the sends beside them, **Mute** and **Solo**, and a
+solid-colour **name bar** along the bottom of the strip. There is no
+per-strip latency readout on the desk.
 
 - **Solo** plays the strip alone on the **monitor bus** (A1 unless you
   choose another in a bus menu). **SAFE** (solo-safe, in the strip's

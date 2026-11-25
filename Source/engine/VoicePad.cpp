@@ -349,12 +349,24 @@ void VoicePadComponent::paint (juce::Graphics& g)
         g.drawText (padMode == VoicePadParams::Voice ? "BRIGHT" : "R", legends.withTrimmedBottom (20), juce::Justification::bottomRight);
     }
 
-    // Readout: what the position does, in numbers. It sits on its own line at the
-    // very bottom, clear of the corner legends above it (at 94 px pad height the
-    // two rows no longer collide).
+    // Readout: what the position does, in numbers. It is two values, drawn
+    // left- and right-aligned on the bottom line so the puck -- which rests
+    // at bottom centre -- sits between them instead of on top of the text
+    // (a centred readout ran straight under the puck and the two halves
+    // looked overlapped). The corner legends sit 20 px above this line.
     g.setFont (Theme::mono (10.0f));
     g.setColour (dragging ? t.text : t.textDim);
-    g.drawText (readout(), legends, juce::Justification::centredBottom);
+    const auto readoutText = readout();
+    const int split = readoutText.indexOf ("  ");
+    if (split > 0)
+    {
+        g.drawText (readoutText.substring (0, split), legends, juce::Justification::bottomLeft);
+        g.drawText (readoutText.substring (split).trimStart(), legends, juce::Justification::bottomRight);
+    }
+    else
+    {
+        g.drawText (readoutText, legends, juce::Justification::centredBottom);
+    }
 
     // Puck (raised, so it gets the small shadow)
     const float px = juce::jmap (params.x.load(), -1.0f, 1.0f, inner.getX(), inner.getRight());

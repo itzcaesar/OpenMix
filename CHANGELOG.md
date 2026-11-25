@@ -92,6 +92,9 @@ This is OpenMix's first public release. There was no earlier release —
 - Gain slider under the source name, monitor bus shown by a 1px accent
   outline and a lit name bar, and the bus row split into Hardware / Virtual
   groups with a divider.
+- Sends beside the fader in the fader bay: bus send keys in a two-column
+  grid, with the FX send sliders underneath, so the strip reads top to
+  bottom as INPUT, PROCESSING, INSERTS, VOICE PAD, FADER.
 
 ### Known limits
 
