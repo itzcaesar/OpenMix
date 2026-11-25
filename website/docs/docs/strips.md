@@ -1,8 +1,8 @@
 # Strips & voice processing
 
 Up to 8 input strips, added and removed at runtime with **+ Strip**.
-Each strip, top to bottom, in the order the audio flows — INPUT,
-PROCESSING, INSERTS, VOICE PAD, FADER, with the sends beside the fader.
+Each strip, top to bottom, in the order the audio flows: INPUT,
+PROCESSING, INSERTS, VOICE PAD, SENDS, then the fader.
 There is no PRESET or FILTER section on the strip: presets and solo-safe
 live in the strip's three-dot menu, and HPF/LPF live in the EQ panel.
 
@@ -66,19 +66,20 @@ Processing keys, lit when on. Click for settings, Space switches on or off.
 
 Save the strip's sound under a name and recall it from the strip's
 three-dot menu (or on any other strip). A preset carries gain, fader,
-processing, inserts, sends and the VoicePad — never the name, source,
-mute or solo state. If a preset's plugins are missing on recall, those
-slots are skipped and you are told how many.
+processing, inserts, sends and the VoicePad, never the name, source,
+mute or solo state. If a preset's plugins are missing on recall (or are on
+the crash skip list), those slots are skipped and you are told how many.
+Plugin windows open on the strip close first, and a preset never makes a
+strip duck under itself.
 
 !!! note
-    A strip preset does not store plugin state blobs — a recalled preset
+    A strip preset does not store plugin state: a recalled preset
     restores the plugin choice and the strip settings, not a plugin's
     internal saved state.
 
 ## 5. Inserts
 
-Up to 6 slots, VST3 plugins or built-in effects (Reverb, tempo-synced
-Delay, Chorus). See [Plugins & built-in effects](plugins.md).
+Up to 6 VST3 plugins. See [Plugins](plugins.md).
 
 ## 6. VoicePad
 
@@ -91,22 +92,17 @@ Double-click or Home resets the puck:
 
 ## 7. Sends
 
-Sends live beside the fader in the fader bay: the bus send keys in a
-two-column grid, with the three FX send sliders underneath.
+One send key per active bus, in a row above the fader.
 
-- Click a bus send key to switch it. Right-click (or M) for its level and
+- Click a send key to switch it. Right-click (or M) for its level and
   **pre-fader** (the send ignores the strip fader, for example a separate
   mix for a call). A level other than 0 dB and "P" for pre-fader are
   printed on the key. Send keys show the bus's own name, so a renamed bus
   reads correctly here.
-- Three small **FX sends** (REV / DLY / CHO) feed the shared global
-  reverb, delay and chorus; the effect return is mixed into every bus the
-  strip is routed to. The Delay send follows the tap tempo. FX sends
-  ignore solo.
 
 ## 8. Fader bay
 
-Fader and meter, with the sends beside them, **Mute** and **Solo**, and a
+Fader and meter, **Mute** and **Solo**, and a
 solid-colour **name bar** along the bottom of the strip. There is no
 per-strip latency readout on the desk.
 
@@ -116,7 +112,7 @@ per-strip latency readout on the desk.
   strip is soloed. Stream and call buses are not affected.
 - Latency is compensated, not displayed per strip: each strip is delayed
   to match the slowest one (noise removal + plugins), so sends stay
-  aligned. The overall device latency is shown in the status bar.
+  aligned. The overall device latency is shown in the header readout.
 
 **Signal path:** gain, polarity/mono, DC blocker, noise removal, gate,
 HPF/LPF, EQ, compressor, de-esser, inserts, voice pad, ducking, latency

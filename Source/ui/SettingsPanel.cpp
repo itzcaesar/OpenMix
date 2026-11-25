@@ -165,29 +165,43 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     };
     refreshMidiDevices();
 
+    // Item ids are 1-based positions in midiLearnPaths (section headings take no id).
     auto addLearnTarget = [this] (const juce::String& label, const juce::String& targetPath)
     {
-        midiLearnTarget.addItem (label, midiLearnTarget.getNumItems() + 1);
         midiLearnPaths.push_back (targetPath);
+        midiLearnTarget.addItem (label, (int) midiLearnPaths.size());
     };
     for (int sIdx = 0; sIdx < kNumStrips; ++sIdx)
     {
         const auto n = juce::String (sIdx + 1);
+        midiLearnTarget.addSectionHeading ("Strip " + n);
         addLearnTarget ("Strip " + n + " fader", "strip/" + n + "/fader");
+        addLearnTarget ("Strip " + n + " gain",  "strip/" + n + "/gain");
         addLearnTarget ("Strip " + n + " mute",  "strip/" + n + "/mute");
         addLearnTarget ("Strip " + n + " solo",  "strip/" + n + "/solo");
+        for (int b = 0; b < kNumBuses; ++b)
+        {
+            const juce::String bn (kBusNames[b]);
+            addLearnTarget ("Strip " + n + " send to " + bn + " (on/off)", "strip/" + n + "/send/" + bn);
+            addLearnTarget ("Strip " + n + " send level to " + bn,         "strip/" + n + "/sendlevel/" + bn);
+        }
     }
+    midiLearnTarget.addSectionHeading ("Buses");
     for (int b = 0; b < kNumBuses; ++b)
     {
         const juce::String bn (kBusNames[b]);
         addLearnTarget ("Bus " + bn + " fader", "bus/" + bn + "/fader");
         addLearnTarget ("Bus " + bn + " mute",  "bus/" + bn + "/mute");
+        addLearnTarget ("Bus " + bn + " loudness normalisation (on/off)", "bus/" + bn + "/norm");
     }
+    midiLearnTarget.addSectionHeading ("Soundboard, recording and scenes");
     for (int p = 0; p < Soundboard::numPads; ++p)
         addLearnTarget ("Soundboard pad " + juce::String (p + 1), "soundboard/" + juce::String (p + 1) + "/play");
     addLearnTarget ("Record", "record");
     addLearnTarget ("Save replay", "replay/save");
-    midiLearnTarget.setSelectedItemIndex (0);
+    for (int sc = 0; sc < 8; ++sc)
+        addLearnTarget ("Scene " + juce::String (sc + 1), "scene/" + juce::String (sc + 1));
+    midiLearnTarget.setSelectedId (1, juce::dontSendNotification);
     midiLearnButton.getProperties().set ("lamp", "key");
     midiLearnButton.setClickingTogglesState (false);
     midiLearnButton.onClick = [this]
@@ -202,7 +216,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
             updateMidiText();
             return;
         }
-        const int index = midiLearnTarget.getSelectedItemIndex();
+        const int index = midiLearnTarget.getSelectedId() - 1;
         if (! juce::isPositiveAndBelow (index, (int) midiLearnPaths.size()))
             return;
         const auto target = midiLearnPaths[(size_t) index];
@@ -252,6 +266,9 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
 SettingsPanel::~SettingsPanel()
 {
     stopTimer();
+    // A learn left running would silently bind the next knob anyone touches.
+    if (midiControl != nullptr && midiControl->isLearning())
+        midiControl->cancelLearn();
     engine.getScanner().removeChangeListener (this);
 }
 

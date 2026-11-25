@@ -31,10 +31,6 @@
     --font:"Segoe UI", system-ui, -apple-system, sans-serif;
     --mono:ui-monospace, "Cascadia Mono", Consolas, monospace;
   }
-  :root[data-accent="sky"]{ --accent:#5b9ef0; }
-  :root[data-accent="green"]{ --accent:#3ec46d; }
-  :root[data-accent="violet"]{ --accent:#a78bfa; }
-  :root[data-accent="cyan"]{ --accent:#39c2d7; }
 
   *{box-sizing:border-box}
   html{scroll-behavior:smooth;overflow-x:clip;-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -80,12 +76,6 @@
 
   /* Desk */
   .desk-controls{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;margin-bottom:10px}
-  .swatches{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .swatches>span{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-3);margin-right:2px}
-  .swatch{width:44px;height:44px;min-height:44px;border-radius:4px;border:1px solid var(--line);background:var(--panel);padding:9px;cursor:pointer}
-  @media(min-width:768px){.swatch{width:36px;height:36px;min-height:36px;padding:6px}}
-  .swatch i{display:block;width:100%;height:100%;border-radius:2px}
-  .swatch[aria-pressed="true"]{border-color:var(--accent)}
   .toggle{display:inline-flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--ink-2);min-height:44px;padding:6px 0}
   .toggle input{width:20px;height:20px;accent-color:var(--accent);flex:none}
 
@@ -134,9 +124,6 @@
   .bus-pill{font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:3px;border:1px solid var(--line);color:var(--ink-3)}
   .bus-pill.active{color:var(--ink);border-color:var(--accent)}
   .tempo{display:flex;align-items:center;gap:10px}
-  .bpm{font-family:var(--mono);font-size:13px;color:var(--ink);min-width:86px}
-  .bpm small{color:var(--ink-3);display:block;font-size:9.5px;letter-spacing:.08em}
-  .tap-btn{height:44px;min-height:44px;padding:0 20px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:13px;cursor:pointer;min-width:72px}
   @media(max-width:640px){
     .desk-bottom{flex-direction:column;align-items:stretch}
     .tempo{justify-content:space-between;width:100%}
@@ -205,14 +192,6 @@
   <section id="desk" style="padding-top:8px">
     <div class="wrap">
       <div class="desk-controls">
-        <div class="swatches" role="group" aria-label="Accent colour">
-          <span>ACCENT</span>
-          <button class="swatch" type="button" data-accent-btn="amber" aria-pressed="true" aria-label="Amber accent"><i style="background:#f0a23b"></i></button>
-          <button class="swatch" type="button" data-accent-btn="sky" aria-pressed="false" aria-label="Sky accent"><i style="background:#5b9ef0"></i></button>
-          <button class="swatch" type="button" data-accent-btn="green" aria-pressed="false" aria-label="Green accent"><i style="background:#3ec46d"></i></button>
-          <button class="swatch" type="button" data-accent-btn="violet" aria-pressed="false" aria-label="Violet accent"><i style="background:#a78bfa"></i></button>
-          <button class="swatch" type="button" data-accent-btn="cyan" aria-pressed="false" aria-label="Cyan accent"><i style="background:#39c2d7"></i></button>
-        </div>
         <label class="toggle"><input type="checkbox" id="compactToggle"> Compact mode</label>
       </div>
 
@@ -232,13 +211,9 @@
             <span class="bus-pill active">B1 · Stream</span>
             <span class="bus-pill">B2 · Discord</span>
           </div>
-          <div class="tempo">
-            <span class="bpm"><span class="bpm-val">120.0</span> BPM<small>TAP TEMPO</small></span>
-            <button class="tap-btn" type="button" data-tap>TAP</button>
-          </div>
         </div>
       </div>
-      <p class="note">Preview of the interface, an interactive mockup, not a screenshot. Drag the faders, use M / S, tap tempo, or change the accent, as in the app's Settings.</p>
+      <p class="note">Preview of the interface, an interactive mockup, not a screenshot. Drag the faders, use M / S, or try compact mode, as in the app's Settings.</p>
     </div>
   </section>
 
@@ -250,7 +225,7 @@
       <ul class="features">
         <li><b>Inputs</b><p>Up to 8 strips: a main device (ASIO / WASAPI / DirectSound), other Windows inputs, per-app capture, and output loopback. Devices and apps reconnect on their own when they come back.</p></li>
         <li><b>Voice chain</b><p>Per strip: gain, phase / mono, RNNoise noise removal, gate, HPF / LPF, 3-band EQ, compressor, de-esser, ducking, and a VoicePad XY pad for tone, pan, colour and space. Latency is compensated across strips.</p></li>
-        <li><b>Plugins &amp; effects</b><p>6 VST3 insert slots per strip and bus, scanned and loaded in separate processes so a crashing plugin is skipped. Built-in reverb, tempo-synced delay and chorus, with post-fader FX sends.</p></li>
+        <li><b>Plugins</b><p>6 VST3 insert slots per strip and bus, scanned and test-started in separate processes so a crashing plugin is skipped, with click-free bypass, wet/dry, A/B compare and latency compensation.</p></li>
         <li><b>Buses</b><p>6 buses, A1–A3 hardware and B1–B3 virtual, each with EQ, compression, a limiter at −0.3 dBFS, peak / RMS meters, spectrum, and LUFS metering with normalisation to −14 / −16 / −23 LUFS.</p></li>
         <li><b>Record &amp; play</b><p>Multitrack WAV recorder (per bus, per strip, or both), a replay buffer for the last 30 / 60 / 120 seconds, and an 8-pad soundboard on keys 1–8.</p></li>
         <li><b>Scenes &amp; control</b><p>Scenes snapshot the whole desk. Global hotkeys work while a game has focus. Remote control from a phone browser, OSC (<code>/openmix/strip/1/fader</code>), MIDI learn, and Stream Deck. It is off by default with no password, so only enable remotes on a network you trust.</p></li>
@@ -398,33 +373,7 @@
     requestAnimationFrame(animate);
   }
 
-  /* Tap tempo */
-  var taps = [];
-  var bpmEls = document.querySelectorAll(".bpm-val");
-  document.querySelectorAll("[data-tap]").forEach(function(btn){
-    btn.addEventListener("click", function(){
-      var now = performance.now();
-      taps = taps.filter(function(x){ return now - x < 2500; });
-      taps.push(now);
-      if(taps.length > 1){
-        var total = 0;
-        for(var i=1;i<taps.length;i++) total += taps[i]-taps[i-1];
-        var bpm = Math.max(40, Math.min(240, Math.round(60000/(total/(taps.length-1))*10)/10));
-        bpmEls.forEach(function(el){ el.textContent = bpm.toFixed(1); });
-      }
-    });
-  });
 
-  /* Accent picker */
-  var accentBtns = document.querySelectorAll("[data-accent-btn]");
-  accentBtns.forEach(function(btn){
-    btn.addEventListener("click", function(){
-      var name = btn.getAttribute("data-accent-btn");
-      if(name === "amber") document.documentElement.removeAttribute("data-accent");
-      else document.documentElement.setAttribute("data-accent", name);
-      accentBtns.forEach(function(b){ b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
-    });
-  });
 
   /* Compact mode */
   var compactToggle = document.getElementById("compactToggle");

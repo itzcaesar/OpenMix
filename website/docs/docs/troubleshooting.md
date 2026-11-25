@@ -14,7 +14,7 @@ to work around silently.
   at start-up; full out-of-process plugin hosting is not done yet.
 - **The phone / WebSocket remote has no password:** anyone on the same
   network can control the mixer while it is on. Only enable it on a
-  network you trust.
+  network you trust. (Browser requests from other websites are refused.)
 - VST3 plugins have to start on the UI thread (a VST3 rule), so a slow
   plugin can pause the window briefly while it opens; its slot shows
   "Loading..." meanwhile.
@@ -24,7 +24,6 @@ to work around silently.
 - "App's own output" uses the same Windows setting as Settings > Sound >
   Volume mixer. The interface behind it is undocumented, so on an
   unusual Windows build it can report that it's unavailable.
-- The reverb wet level is not yet tuned by ear — adjust to taste.
 
 ## Common problems
 
@@ -32,17 +31,18 @@ to work around silently.
 
 A warning banner appears if the main device's input and output are two
 different Windows devices, because their clocks drift and that crackles.
-The banner explains the fix — use one device for both, or let OpenMix
+The banner explains the fix: use one device for both, or let OpenMix
 resample the extra device (which adds about 10–25 ms on that device
 only).
 
-### A plugin was skipped or blacklisted
+### A plugin was skipped
 
 Plugins are scanned in the background, each in its own process, so a
 plugin that crashes while being scanned is skipped instead of taking
 OpenMix down. Try again from Settings > Retry skipped plugins. The
-crash-safe loading probe also blacklists a plugin that crashes or hangs
-while starting; retry it the same way.
+crash-safe loading probe also skips a plugin that crashes while starting;
+retry it the same way. A plugin that is only slow to start is not
+skipped: OpenMix asks whether to load it anyway.
 
 ### A plugin outputs bad audio
 

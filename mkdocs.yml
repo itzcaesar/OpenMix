@@ -1,10 +1,10 @@
-# OpenMix documentation site — built with MkDocs Material (free, open source)
+# OpenMix documentation site, built with MkDocs Material (free, open source)
 # and published free on GitHub Pages (see .github/workflows/docs.yml).
 # Site URL once Pages is enabled: https://itzcaesar.github.io/OpenMix/
 
 site_name: OpenMix
 site_url: https://itzcaesar.github.io/OpenMix/
-site_description: A virtual audio mixer for Windows — documentation for OpenMix 0.1.0.
+site_description: A virtual audio mixer for Windows: documentation for OpenMix 0.1.0.
 site_author: Muhammad Caesar Rifqi
 repo_url: https://github.com/itzcaesar/OpenMix
 repo_name: itzcaesar/OpenMix
@@ -53,7 +53,7 @@ nav:
   - Getting started: docs/getting-started.md
   - Strips & voice processing: docs/strips.md
   - Buses & outputs: docs/buses.md
-  - Plugins & built-in effects: docs/plugins.md
+  - Plugins: docs/plugins.md
   - Remote control: docs/remote.md
   - Scenes, hotkeys & creator tools: docs/creator.md
   - Interface & themes: docs/interface.md

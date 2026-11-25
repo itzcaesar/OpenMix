@@ -52,18 +52,27 @@ private:
     int dividerX = 0, groupDividerX = 0, groupDividerTop = 0, groupDividerBottom = 0, deskBottom = 0;
 };
 
-// The bottom status bar: audio device, sample rate, buffer size, engine CPU%,
-// and a LIVE indicator.
+// The bottom status bar: a LIVE indicator, the engine's CPU and background work on the left,
+// and a lamp per remote-control service that is switched on (OSC, phone remote, MIDI) on
+// the right, lit while it is actually listening.
 class StatusBar : public juce::Component
 {
 public:
+    struct Service
+    {
+        juce::String name, detail;
+        bool running = false;
+    };
+
     StatusBar() = default;
-    void setSegments (const juce::StringArray& s) { segments = s; repaint(); }
+    void setSegments (const juce::StringArray& s) { if (s != segments) { segments = s; repaint(); } }
+    void setServices (std::vector<Service> s);
     void setLive (bool live) { if (live != isLive) { isLive = live; repaint(); } }
     void paint (juce::Graphics&) override;
 
 private:
     juce::StringArray segments;
+    std::vector<Service> services;
     bool isLive = false;
 };
 

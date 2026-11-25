@@ -21,6 +21,7 @@ public:
     bool start (int port, juce::String& error);
     void stop();
     bool isRunning() const noexcept { return running; }
+    int getPort() const noexcept { return running ? port : 0; }
 
     std::function<void (bool)> onRecord;   // UI decides what to record
     std::function<void()> onSaveReplay;
@@ -31,4 +32,5 @@ private:
 
     MixerEngine& engine;
     bool running = false;
+    int port = 0;
 };

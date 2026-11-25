@@ -29,4 +29,7 @@ bool applyRemoteCommand (MixerEngine&, const juce::String& path, float value,
 // The mixer's state as JSON, for the phone remote and the WebSocket API.
 // Strips and buses carry their fader, mute and (for strips) solo; the
 // soundboard carries which pads are playing; scenes are listed by name.
-juce::String remoteStateJson (MixerEngine&);
+// includeMeters = false leaves out the peak levels, which change on every block:
+// that version is what the server compares to decide whether the mix changed.
+// Message thread only (it reads strip and scene names).
+juce::String remoteStateJson (MixerEngine&, bool includeMeters = true);

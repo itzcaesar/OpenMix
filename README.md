@@ -11,25 +11,23 @@ to your headphones, speakers, stream and calls.
   de-esser and ducking on every strip, plus a VoicePad (XY pad with voice, pan, colour and
   space modes).
 - **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning, bypass without
-  clicks, wet/dry, A/B compare, presets, latency compensation. **Built-in effects** too:
-  Reverb, tempo-synced Delay and Chorus as insert slots, with their own settings panels —
-  no plugin to install. Every strip also has post-fader **FX sends** (Reverb/Delay/Chorus)
-  into shared global effects, driven by the **tap tempo** in the status bar.
+  clicks, wet/dry, A/B compare, presets, latency compensation, and crash-safe loading (each
+  plugin is test-started in a separate process first).
 - **Outputs:** up to 6 buses (A1-A3 hardware, B1-B3 virtual), each to an output pair of the
   main device or to any Windows output device, with EQ, compressor, plugins and a safety
   limiter. Buses are grouped **Hardware** / **Virtual** on the desk, and each bus can have a
   custom name (its group never changes when you rename it).
-- **Status bar** along the bottom: audio device, sample rate, buffer size, engine CPU%,
-  a LIVE indicator, and tap tempo with the BPM next to it.
+- **Status bar** along the bottom: LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
 - **Creator tools:** multitrack recorder, replay buffer, soundboard, spectrum and LUFS
   loudness on every bus.
 - **Scenes and global hotkeys:** save whole mixes and switch between them; mute, push to
   talk, soundboard, recording and scenes on hotkeys that work while a game has focus.
-- **Control:** keyboard throughout, OSC remote control, tray icon, start with Windows.
+- **Control:** keyboard throughout, OSC, a phone/browser remote with a WebSocket API, MIDI
+  controller mapping, tray icon, start with Windows.
 
 Built with C++20 and JUCE 9.0.5. Licensed under the GNU AGPLv3.
 
-**Documentation:** the [OpenMix wiki](https://itzcaesar.github.io/OpenMix/docs/) covers getting started, strips, buses, plugins and built-in effects, remote control, scenes and hotkeys, troubleshooting, the changelog and the roadmap.
+**Documentation:** the [OpenMix wiki](https://itzcaesar.github.io/OpenMix/docs/) covers getting started, strips, buses, plugins, remote control, scenes and hotkeys, troubleshooting, the changelog and the roadmap.
 
 ## Download
 
@@ -86,9 +84,7 @@ Everything is saved automatically.
   next to the section names. The bus row is split into **Hardware** (A1-A3) and **Virtual**
   (B1-B3) groups with a divider between them; **+ Bus** asks for the group first, then an
   optional custom name, and takes the next free slot in that group.
-- The **status bar** along the bottom shows the audio device, sample rate, buffer size,
-  engine CPU% and a LIVE indicator, plus **Tap** tempo with the BPM next to it (click the
-  BPM to type one, 40-240). Tapping sets the tempo for every tempo-synced delay.
+- The **status bar** along the bottom shows LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
 - Every strip and bus ends in the same **fader bay**, so faders, meters and mute rows line
   up across the desk. The number above each meter is the held peak; a red bar under it marks
   0 dBFS or more.
@@ -98,18 +94,19 @@ Everything is saved automatically.
 
 ## Strips
 
-Top to bottom, in the order the audio flows — INPUT, PROCESSING, INSERTS,
-VOICE PAD, FADER, with the sends beside the fader. There is no PRESET or FILTER section on the strip:
+Top to bottom, in the order the audio flows: INPUT, PROCESSING, INSERTS, VOICE PAD,
+SENDS, then the fader. There is no PRESET or FILTER section on the strip:
 presets and solo-safe live in the strip's three-dot menu, and HPF/LPF live
 in the EQ panel.
 
 1. **Name plate** (double-click, Enter or F2 to rename) and the three-dot menu: rename,
    colour, mono, invert polarity, solo-safe, strip presets, remove the strip.
    A strip preset saves the strip's sound under a name and recalls it here (or on any
-   other strip). It carries gain, fader, processing, inserts, sends and the VoicePad —
-   never the name, source, mute or solo state. If a preset's plugins are missing on
-   recall, those slots are skipped and you are told how many. A preset does not store
-   plugin state blobs.
+   other strip). It carries gain, fader, processing, inserts, sends and the VoicePad, and
+   never the name, source, mute or solo state. If a preset's plugins are missing on recall
+   (or are on the crash skip list), those slots are skipped and you are told how many.
+   Open plugin windows on the strip close first. A preset does not store plugin state, and
+   a preset never makes a strip duck under itself.
 2. **Source**, then the **input gain slider** directly under the source name (-24 to
    +24 dB, value readout, double-click or Home for 0 dB), then **Ø** (invert polarity) and
    **MONO** below the slider. Sources:
@@ -134,30 +131,25 @@ in the EQ panel.
    - **HPF / LPF** live in the EQ panel, not as their own strip section: an on/off key
      and a cutoff slider each (HPF 20 Hz-1 kHz, LPF 1-20 kHz). The filters sit before the
      EQ in the signal path and switch on/off without clicks.
-4. **Inserts:** up to 6 slots, VST3 plugins or built-in effects (Reverb, tempo-synced Delay,
-   Chorus), see [Plugins](#plugins).
+4. **Inserts:** up to 6 VST3 plugins, see [Plugins](#plugins).
 5. **Voice pad** (double-click or Home resets the puck):
    - *Voice*: X = tone tilt (dark to bright), Y = presence and echo.
    - *Pan*: X = constant-power pan, Y = stereo width (100-200%).
    - *Color*: corners Warm, Bright, Radio and Close; the puck blends them.
    - *Space*: X = pan, Y = distance (quieter, darker, with early reflections).
-6. **Sends**, beside the fader in the fader bay: bus send keys in a
-   two-column grid, with the three **FX sends** underneath.
-   - Click a bus send key to switch it. Right-click (or M) for its level and **pre-fader**
+6. **Sends**: one key per active bus, in a row above the fader.
+   - Click a send key to switch it. Right-click (or M) for its level and **pre-fader**
      (the send ignores the strip fader, for example a separate mix for a call). A level
      other than 0 dB and "P" for pre-fader are printed on the key. Send keys show the bus's
      own name, so a renamed bus reads correctly here.
-   - Three small **FX sends** (REV / DLY / CHO) feed the shared global
-     reverb, delay and chorus; the effect return is mixed into every bus the strip is routed
-     to. The Delay send follows the tap tempo. FX sends ignore solo.
-7. **Fader bay:** fader and meter, with the sends beside them, **Mute** and **Solo**, and a solid-colour **name bar**
+7. **Fader bay:** fader and meter, **Mute** and **Solo**, and a solid-colour **name bar**
    along the bottom of the strip. There is no per-strip latency readout on the desk.
    - **Solo** plays the strip alone on the **monitor bus** (A1 unless you choose another in a
      bus menu). **SAFE** (solo-safe, in the strip's three-dot menu) keeps the strip playing
      on the monitor bus while another strip is soloed. Stream and call buses are not affected.
    - Latency is compensated, not displayed per strip: each strip is delayed to match the
      slowest one (noise removal + plugins), so sends stay aligned. The overall device
-     latency is shown in the status bar.
+     latency is shown in the header readout.
 
 Signal path: gain, polarity/mono, DC blocker, noise removal, gate, HPF/LPF, EQ, compressor,
 de-esser, inserts, voice pad, ducking, latency alignment, mute, fader, sends.
@@ -177,24 +169,20 @@ a plugin that crashes while being scanned is skipped instead of taking OpenMix d
   save or load a **preset** (`.omxpreset`), replace, remove.
 - A plugin that outputs invalid audio (NaN/Inf) is stopped automatically and marked, instead
   of breaking the mix. "Try again" in its menu restarts it.
-- **Built-in effects** (no plugin to install): **Reverb**, **Delay** and **Chorus** are in the
-  "+ Add plugin" menu under **Built-in effect**, in any insert slot on a strip or a bus.
-  Click one to open its settings panel; it has the same bypass, wet/dry mix, move and remove
-  as a VST slot, and it is saved in sessions and strip presets. A Delay added this way is
-  tempo-synced from the start: it follows the tap-tempo BPM (change the note value in its
-  panel, or switch tempo sync off and set the time directly). Built-ins have zero latency.
 - **Crash-safe loading** (on by default, Settings): before a plugin is loaded into the mixer,
-  it is started in a separate test process — created, prepared and run through one silent
-  block. A plugin that crashes or hangs while starting is skipped and blacklisted instead of
-  taking OpenMix down (Settings > Retry skipped plugins tries it again). This protects
-  *loading*; a plugin that crashes later, while processing audio, can still take the mixer
-  down — full out-of-process audio hosting is not done yet (see ROADMAP Phase 5).
+  it is started in a separate test process: created, prepared and run through one silent
+  block. A plugin that crashes there is skipped and put on the skip list instead of taking
+  OpenMix down (Settings > Retry skipped plugins tries it again). A plugin that is only slow
+  to start (over 30 s, for example a licence window) is not skipped: you're asked whether to
+  load it anyway. This protects *loading*; a plugin that crashes later, while processing
+  audio, can still take the mixer down. Full out-of-process audio hosting is not done yet
+  (see ROADMAP Phase 5).
 
 ### VST2 plugins (opt-in, local build only)
 
 VST2 hosting is **off by default** and is not in the released builds. JUCE 9 still
 contains the VST2 host code, but it needs `aeffect.h` / `aeffectx.h` from the VST2 SDK,
-which JUCE no longer bundles — and Steinberg stopped issuing new VST2 licences in
+which JUCE no longer bundles, and Steinberg stopped issuing new VST2 licences in
 October 2018, so a new developer cannot legally distribute a VST2 host. Only enable
 this if you already hold a VST2 licence and SDK. The SDK is never committed to this
 repo, never fetched by CMake, and CI builds with VST2 off.
@@ -213,8 +201,8 @@ the usual VST2 locations (`C:\Program Files\Steinberg\VstPlugins`,
 plugins, in the same crash-safe child process as VST3. VST2 plugins then appear in
 "+ Add plugin" alongside VST3 ones and use the same slots, bypass, wet/dry, presets
 and latency compensation. Session files already store the plugin's format, so a
-session saved with a VST2 plugin loads it back when built with VST2 on — and that
-slot will be empty on a default (VST2-off) build.
+session saved with a VST2 plugin loads it back when built with VST2 on; that slot is
+empty on a default (VST2-off) build.
 
 ## Buses
 
@@ -222,7 +210,7 @@ slot will be empty on a default (VST2-off) build.
   (internal only, still available to recording and replay). Each bus can use a different device:
   A1 headphones, A2 speakers, B1 a virtual cable for Discord or OBS. Extra devices run on their
   own clocks; OpenMix resamples them and corrects the drift, which adds about 10-25 ms on those
-  devices only. Adding buses does not require separate drivers per bus — only exposing a B bus
+  devices only. Adding buses does not require separate drivers per bus; only exposing a B bus
   as a microphone to other apps needs a virtual endpoint (a virtual cable today, or one
   multi-endpoint OpenMix driver in Phase 7; see `docs/VIRTUAL_DRIVER.md`).
 - **Custom names:** rename a bus from its three-dot menu (empty = the default A1..A3 /
@@ -231,20 +219,22 @@ slot will be empty on a default (VST2-off) build.
   **Hardware**, B1-B3 always **Virtual**.
 - **LIMITER:** the lamp lights while the safety limiter (-0.3 dBFS ceiling) is reducing gain,
   and the gain-reduction meter next to it shows how much (in dB). The **monitor bus** is
-  shown only by a thin accent-coloured outline around the strip and its name bar lit in the
-  accent colour — there is no "monitor" text on the strip. **Loudness** is the short-term
-  LUFS (the number streaming platforms normalise to), with the normalisation target and gain
-  when normalisation is on. The bus strip shows the live spectrum only; the full analyser
+  shown only by a thin amber outline around the strip and its name bar lit in amber; there is
+  no "monitor" text on the strip. **Loudness** is the short-term LUFS (the number streaming
+  platforms normalise to), with the normalisation target and gain when normalisation is on. The bus strip shows the live spectrum only; the full analyser
   (see below) has the momentary and integrated numbers.
 - **Meters** show peak (the LED ladder) and RMS (the solid bar inside it): peak catches
   transients, RMS shows how loud the bus actually sounds. The same RMS bar is on every
   strip and on the soundboard.
 - **Loudness normalisation** (a bus's three-dot menu): a slow gain that pulls the bus towards
-  -14 LUFS (streaming), -16 or -23 (broadcast), clamped to ±12 dB and smoothed so it never
-  pumps on a drum hit. It holds its gain in silence instead of turning the noise floor up.
-  It is saved with the session and with scenes.
-- **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip (VST3 or built-in
-  effects). Bus path: sum, EQ, compressor, inserts, fader, loudness normalisation, safety limiter.
+  -14 LUFS (streaming), -16 or -23 (broadcast), clamped to +/-12 dB and smoothed so it never
+  pumps on a drum hit. It measures the bus the way the LUFS readout does (K-weighted, about a
+  3 s window), so the target and the readout agree. It sits before the bus fader, so the
+  fader still turns the result up or down. It holds its gain in silence instead of turning
+  the noise floor up, and glides back to unity when you switch it off. It is saved with the
+  session and with scenes.
+- **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip. Bus path: sum, EQ,
+  compressor, inserts, loudness normalisation, fader, safety limiter.
 - **Analyser:** a live spectrum on the bus strip. Click it for the full **analyser**: spectrum plus
   momentary, short-term and integrated loudness.
 - The three-dot menu: rename the bus, analyser, loudness normalisation, monitor bus (where
@@ -298,7 +288,7 @@ use (for example with Ctrl+Alt).
 
 ## Settings
 
-Light or dark theme, an accent colour for the lamps, compact mode, hotkeys, start with Windows, start minimized, keep running in the tray when the
+Light or dark theme, compact mode, hotkeys, start with Windows, start minimized, keep running in the tray when the
 window closes, plugin scanning and crash-safe loading, presets and VST3 folders, the update check, OSC,
 phone / WebSocket and MIDI remote control, and the log folder. In the tray, double-click opens the mixer; right-click to quit.
 
@@ -311,19 +301,22 @@ page. It doesn't download or install anything.
 All three remotes speak the same paths, so a fader moved from a phone, a MIDI knob or a
 Stream Deck does exactly what the same OSC address does. They are off by default (Settings);
 while one is on, anyone on your network can control the mixer, so only turn them on at home
-or on a network you trust. There is no password: the LAN is the trust boundary.
+or on a network you trust. There is no password: the LAN is the trust boundary. Web pages
+are a different matter: the phone remote refuses any browser request that comes from
+another website, so a page you have open can't reach the mixer through `localhost`.
 
 ### Phone / browser remote and WebSocket API
 
 Settings > "Phone / browser remote and WebSocket API" (TCP port 8080 unless you change it).
 Open `http://<this PC>:8080/` on your phone: faders, mutes, soundboard pads and scenes, live
-over the WebSocket, with HTTP polling as a fallback if the WebSocket can't connect.
+over the WebSocket (changes made in the app, from MIDI or from another phone show up too),
+with HTTP polling as a fallback if the WebSocket can't connect.
 
 The same port is the API:
 
-- `GET /api/state` — the mixer's state as JSON (strips, buses, soundboard, scenes, recording).
-- `POST /api/command` with `{"path": "/openmix/strip/1/fader", "value": -6}` — one command.
-- `ws://<this PC>:8080/ws` — send `{"path": ..., "value": ...}`, receive
+- `GET /api/state`: the mixer's state as JSON (strips, buses, soundboard, scenes, recording).
+- `POST /api/command` with `{"path": "/openmix/strip/1/fader", "value": -6}`: one command.
+- `ws://<this PC>:8080/ws`: send `{"path": ..., "value": ...}`, receive
   `{"type": "state", "state": {...}}` whenever the mix changes, plus `{"type": "ok"}` or
   `{"type": "error", ...}` for each command.
 
@@ -349,15 +342,23 @@ network you trust. Values are dB unless noted; strips and pads count from 1.
 
 ### MIDI controllers
 
-Settings > "MIDI controller": pick a device, then pick a target (a strip fader or mute, a bus
-fader, a soundboard pad, Record), press **Learn...**, and move a knob or press a key on the
-controller. A CC moves a fader across its range; a note toggles a mute, plays a pad or starts
-recording. Mappings are saved in the app settings.
+Settings > "MIDI controller": pick a device, then pick a target, press **Learn...**, and
+move a knob or press a key on the controller. Targets: each strip's fader, gain, mute, solo,
+send on/off and send level per bus; each bus's fader, mute and loudness normalisation;
+soundboard pads, Record, Save replay and scenes 1-8.
+
+- A CC moves a fader, gain or send level across its range.
+- A note, or a CC crossing the middle (64) upwards, toggles a mute, solo, send or
+  normalisation. It flips whatever the mixer has now, so it stays in step with changes made
+  in the app. It also plays a pad, starts or stops recording, saves the replay or switches
+  scene.
+- A learned mapping is saved straight away. If the controller is unplugged, OpenMix opens it
+  again when it's back.
 
 ### Stream Deck
 
 There is no native OpenMix Stream Deck plugin. Use the Stream Deck software's OSC plugin
-with the addresses above, or a WebSocket plugin against the phone-remote port — both speak
+with the addresses above, or a WebSocket plugin against the phone-remote port; both speak
 the same paths, so a button that sends `/openmix/strip/1/mute` with 1 works either way.
 
 ## Keyboard
@@ -423,10 +424,10 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 | `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `RemoteCommands` (one remote language for OSC, WebSocket and MIDI), `RemoteServer` (phone page, HTTP and WebSocket API), `MidiControl` (learnable MIDI mappings), `UpdateChecker` |
 | `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `TapTempo`, `CpuMeter` |
 | `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
-| `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, loudness normaliser); plus `Denoiser` (RNNoise at any sample rate) and `BuiltInFx` (Reverb, Delay, Chorus) |
+| `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, K-weighted loudness normaliser); plus `Denoiser` (RNNoise at any sample rate) |
 | `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send, wet/dry and global FX pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |
 | `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |
-| `tests/` | `CoreTests.cpp`, `BuiltInFxTests.cpp`, `AppTests.cpp` (run via `ctest`) |
+| `tests/` | `CoreTests.cpp` (DSP, no JUCE), `AppTests.cpp` (engine, remote, MIDI), run via `ctest` |
 | `resources/` | App icon: `make_icon.py` draws `icon.png` and `icon.ico` |
 | `installer/OpenMix.iss` | Inno Setup installer, built by CI for version tags |
 | `docs/` & `website/` | UI design direction (`docs/DESIGN.md`), Phase 7 virtual driver guide (`docs/VIRTUAL_DRIVER.md`), and MkDocs user wiki (`mkdocs.yml`, `website/docs/`) |

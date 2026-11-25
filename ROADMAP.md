@@ -80,7 +80,7 @@ VB-Cable at the same time, for hours, with no drift clicks.
 - [x] **Virtual input strips** (stereo) that read desktop or app audio: a strip can take a
       virtual cable's output as a Windows input device, or use device loopback (below)
 - [x] Stereo hardware strips (L/R input pair), selectable per strip
-- [x] Configurable strip count (add or remove strips at runtime — pure user-mode slots, so inputs scale without a driver)
+- [x] Configurable strip count (add or remove strips at runtime: pure user-mode slots, so inputs scale without a driver)
 - [x] WASAPI loopback capture as a strip source (what a device plays, without a cable)
 - [x] **Per-app routing**: list running audio apps and assign each to a strip. Either use
       Windows' per-app output device setting (the same mechanism EarTrumpet uses) to send
@@ -110,9 +110,6 @@ Built-in so the basics work without third-party plugins:
 - [x] Soundboard: 8 pads (WAV/MP3/FLAC/Ogg), keys 1-8, own volume and bus sends
 - [x] Spectrum analyzer per bus (FFT on a UI-side FIFO copy, never on the audio thread)
 - [x] Per-strip HPF/LPF (20 Hz-1 kHz / 1-20 kHz) with on/off, before the EQ; saved in sessions and strip presets
-- [x] Built-in effects as insert slots: Reverb, tempo-synced Delay and Chorus, with settings panels (zero latency, saved in sessions and strip presets)
-- [x] FX sends per strip (post-fader Reverb/Delay/Chorus) into shared global effects
-- [x] Tap tempo (40-240 BPM) driving tempo-synced delays, with a Tap button and BPM readout in the status bar
 - [x] Per-strip presets: save/recall a strip's sound under a name (missing plugins skipped on recall)
 - [x] Solo-safe per strip (in the strip menu); latency compensation, with no per-strip latency readout on the desk
 
@@ -125,7 +122,7 @@ Built-in so the basics work without third-party plugins:
 - [x] **Latency compensation**: read `getLatencySamples()` and delay the other strips so
       sends that reach the same bus stay aligned
 - [x] Plugin presets: save and load per slot, A/B compare
-- [x] Optional VST2 hosting, opt-in only (`-DOPENMIX_ENABLE_VST2=ON -DVST2_SDK_DIR=...`): JUCE_PLUGINHOST_VST on, PluginScanner scans VST + VST3, same slots/presets/latency handling. OFF by default and off in CI; the SDK is never in the repo. Only usable if you already own the old SDK / licence — Steinberg stopped issuing new VST2 licences in Oct 2018, so this cannot be shipped in a release build for new developers.
+- [x] Optional VST2 hosting, opt-in only (`-DOPENMIX_ENABLE_VST2=ON -DVST2_SDK_DIR=...`): JUCE_PLUGINHOST_VST on, PluginScanner scans VST + VST3, same slots/presets/latency handling. OFF by default and off in CI; the SDK is never in the repo. Only usable if you already own the old SDK / licence: Steinberg stopped issuing new VST2 licences in Oct 2018, so this cannot be shipped in a release build for new developers.
 - [x] **Crash-safe plugin loading**: before a plugin is loaded into the mixer, it is started
       in a child process (`OpenMix.exe --probe-plugin <file>`, create + prepare + one silent
       block). A plugin that crashes or hangs while starting is blacklisted instead of taking
@@ -148,7 +145,7 @@ Built-in so the basics work without third-party plugins:
 
 This removes the need for VB-Cable on virtual (`B`) buses (and optionally adds
 VoiceMeeter-style virtual playback inputs). **One** installed driver exposes a
-set of virtual endpoints—adding buses in the mixer never requires adding extra
+set of virtual endpoints; adding buses in the mixer never requires adding extra
 drivers per bus. Full architecture and engineering checklist:
 [`docs/VIRTUAL_DRIVER.md`](docs/VIRTUAL_DRIVER.md).
 
@@ -185,7 +182,7 @@ drivers per bus. Full architecture and engineering checklist:
 
 ### 7b. Virtual ASIO driver (optional; lets a DAW connect to OpenMix)
 - [ ] User-mode COM DLL implementing `IASIO`, registered under
-      `HKLM\SOFTWARE\ASIO` (plus WOW6432Node for 32-bit hosts if needed) — no
+      `HKLM\SOFTWARE\ASIO` (plus WOW6432Node for 32-bit hosts if needed), no
       kernel code required
 - [ ] Exchanges audio with `OpenMix.exe` via shared memory
       (`CreateFileMapping` / `MapViewOfFile`) and named events, in step with the
@@ -199,11 +196,11 @@ drivers per bus. Full architecture and engineering checklist:
 - [x] Scenes: save and recall the mix (levels, mutes, sends, processing), OSC recall
 - [x] MIDI controller mapping (learnable CC/note to fader, mute, soundboard, record), WebSocket API + phone remote (built-in page at `http://<PC>:8080/`, `GET /api/state`, `POST /api/command`, `ws://.../ws`), Stream Deck via its OSC plugin or a WebSocket plugin against the same paths
 - [x] Dark/light themes, resizable UI (laptop to desktop), channel names and colours, settings window
-- [x] Accent colour (amber default, plus sky, green, violet, cyan) and a compact mode with narrower strips and buses
+- [x] Compact mode with narrower strips and buses (one accent colour, amber)
 - [x] Desk UI: labelled sections on strips (Input / Filter / Processing / Preset / Inserts / Voice pad / Sends) and buses (Output / Limiter / Loudness / Processing / Inserts / Analyser); gain slider under the source name, Ø/MONO keys, solid-colour name bar at the bottom of each strip
 - [x] Bus groups: Hardware (A1-A3) and Virtual (B1-B3) with group labels and a divider; custom bus names (group stays slot-based); "+ Bus" asks for the group, then an optional name
 - [x] Limiter gain-reduction meter per bus; monitor bus shown only by a 1 px accent outline and a lit name bar
-- [x] Bottom status bar: device, sample rate, buffer size, engine CPU%, LIVE indicator, tap tempo
+- [x] Bottom status bar: LIVE, engine CPU%, scan/recording progress, remote-service lamps
 - [x] Crash handler + log file; "safe mode" start that skips plugins
 - [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)
 - [x] Update check (opt-in, GitHub releases)

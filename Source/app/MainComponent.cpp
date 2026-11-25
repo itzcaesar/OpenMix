@@ -313,6 +313,18 @@ void StatusDisplay::paintButton (juce::Graphics& g, bool highlighted, bool down)
 //==============================================================================
 // StatusBar
 
+void StatusBar::setServices (std::vector<Service> s)
+{
+    const bool same = s.size() == services.size()
+        && std::equal (s.begin(), s.end(), services.begin(), [] (const Service& a, const Service& b)
+                       { return a.name == b.name && a.detail == b.detail && a.running == b.running; });
+    if (same)
+        return;
+    services = std::move (s);
+    setTitle ("Status");
+    repaint();
+}
+
 void StatusBar::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
@@ -337,18 +349,45 @@ void StatusBar::paint (juce::Graphics& g)
     g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
     area.removeFromLeft (Theme::s3);
 
+    // Right: one lamp per switched-on remote service, lit while it is listening.
+    {
+        const auto nameFont = Theme::ui (11.5f, true), detailFont = Theme::mono (11.0f);
+        for (int i = (int) services.size(); --i >= 0;)
+        {
+            const auto& s = services[(size_t) i];
+            const int nameW = juce::GlyphArrangement::getStringWidthInt (nameFont, s.name);
+            const int detailW = juce::jmin (160, juce::GlyphArrangement::getStringWidthInt (detailFont, s.detail));
+            const int w = 10 + 5 + nameW + 6 + detailW;
+            if (w > area.getWidth() - 120)
+                break;   // the left side keeps room for the engine readout
+
+            auto cell = area.removeFromRight (w);
+            area.removeFromRight (Theme::s4);
+            g.setColour (s.running ? t.meterLow : t.mute);
+            g.fillEllipse (cell.removeFromLeft (10).withSizeKeepingCentre (7, 7).toFloat());
+            cell.removeFromLeft (5);
+            g.setFont (nameFont);
+            g.setColour (t.text);
+            g.drawText (s.name, cell.removeFromLeft (nameW), juce::Justification::centredLeft);
+            cell.removeFromLeft (6);
+            g.setFont (detailFont);
+            g.setColour (t.textDim);
+            g.drawText (s.detail, cell, juce::Justification::centredLeft, true);
+        }
+    }
+
     const auto font = Theme::mono (12.0f);
     g.setFont (font);
     for (int i = 0; i < segments.size(); ++i)
     {
         const auto& seg = segments[i];
-        const bool isDevice = i == 0;
+        const bool isFirst = i == 0;
         const int natural = juce::GlyphArrangement::getStringWidthInt (font, seg);
-        const int w = isDevice ? juce::jmin (natural, area.getWidth()) : natural;
+        const int w = isFirst ? juce::jmin (natural, area.getWidth()) : natural;
         if (w > area.getWidth() || w <= 0)
             break;
 
-        g.setColour (isDevice ? t.text : t.textDim);
+        g.setColour (isFirst ? t.text : t.textDim);
         g.drawText (seg, area.removeFromLeft (w), juce::Justification::centredLeft, true);
 
         if (i < segments.size() - 1 && area.getWidth() > 30)
@@ -1150,10 +1189,11 @@ void MainComponent::updateStatus()
         const double latencyMs = sr > 0 ? 1000.0 * (bs + device->getInputLatencyInSamples() + device->getOutputLatencyInSamples()) / sr : 0.0;
         const int dropouts = juce::jmax (0, device->getXRunCount()) + engine.getLinkDropouts();
 
+        // The header readout is the audio device's own numbers; CPU lives in the bottom bar
+        // (the engine's measurement), so the two never show different CPU figures.
         statusSegments.add (device->getTypeName() + "  " + device->getName());
         statusSegments.add (juce::String (sr / 1000.0, 1) + " kHz / " + juce::String (bs) + " smp");
         statusSegments.add (juce::String (latencyMs, 1) + " ms");
-        statusSegments.add ("CPU " + juce::String (juce::roundToInt (dm.getCpuUsage() * 100.0)) + "%");
         statusSegments.add (juce::String (dropouts) + (dropouts == 1 ? " dropout" : " dropouts"));
     }
     else
@@ -1163,10 +1203,6 @@ void MainComponent::updateStatus()
 
     if (note.isNotEmpty() && juce::Time::getMillisecondCounter() < noteUntilMs)
         statusSegments.insert (0, note);
-
-    auto& scanner = engine.getScanner();
-    if (scanner.isScanning() && scanner.getNumToScan() > 0)
-        statusSegments.add ("Scanning plugins " + juce::String (scanner.getNumDone()) + "/" + juce::String (scanner.getNumToScan()));
 
     const bool split = engine.mainDeviceHasSplitClocks();
     if (split != showBanner)
@@ -1180,22 +1216,33 @@ void MainComponent::updateStatus()
     statusDisplay.setTitle ("Audio settings. " + statusSegments.joinIntoString (", "));
     repaint (bannerArea);
 
-    // Bottom status bar: device, sample rate, buffer size, engine CPU%, LIVE.
+    // Bottom status bar: LIVE, the engine's CPU, background work, and which remote-control
+    // services are listening (the device itself is in the header readout).
     juce::StringArray bottom;
-    if (auto* device = dm.getCurrentAudioDevice())
-    {
-        bottom.add (device->getTypeName() + "  " + device->getName());
-        bottom.add (juce::String (device->getCurrentSampleRate() / 1000.0, 1) + " kHz");
-        bottom.add (juce::String (device->getCurrentBufferSizeSamples()) + " smp buffer");
-        bottom.add ("CPU " + juce::String (engine.getCpuUsagePercent(), 0) + "%");
-        statusBar.setLive (true);
-    }
-    else
-    {
-        bottom.add ("No audio device. Open Audio settings to choose one.");
-        statusBar.setLive (false);
-    }
+    const bool live = dm.getCurrentAudioDevice() != nullptr;
+    statusBar.setLive (live);
+    bottom.add (live ? "Engine CPU " + juce::String (juce::roundToInt (engine.getCpuUsagePercent())) + "%"
+                     : juce::String ("No audio device. Click the readout in the header to choose one."));
+
+    auto& scanner = engine.getScanner();
+    if (scanner.isScanning() && scanner.getNumToScan() > 0)
+        bottom.add ("Scanning plugins " + juce::String (scanner.getNumDone()) + " of " + juce::String (scanner.getNumToScan()));
+    if (engine.getRecorder().isRecording())
+        bottom.add ("Recording " + juce::String ((int) engine.getRecorder().getElapsedSeconds() / 60) + ":"
+                    + juce::String ((int) engine.getRecorder().getElapsedSeconds() % 60).paddedLeft ('0', 2));
     statusBar.setSegments (bottom);
+
+    auto& settings = AppSettings::get();
+    std::vector<StatusBar::Service> services;
+    if (settings.oscEnabled())
+        services.push_back ({ "OSC", osc.isRunning() ? "UDP " + juce::String (osc.getPort()) : juce::String ("port in use"), osc.isRunning() });
+    if (settings.wsEnabled())
+        services.push_back ({ "Phone", remoteServer.isRunning() ? "TCP " + juce::String (remoteServer.getPort()) : juce::String ("port in use"),
+                              remoteServer.isRunning() });
+    if (settings.midiEnabled())
+        services.push_back ({ "MIDI", midiControl.isRunning() ? midiControl.getDeviceName() : juce::String ("not connected"),
+                              midiControl.isRunning() });
+    statusBar.setServices (std::move (services));
 }
 
 void MainComponent::timerCallback()
@@ -1224,6 +1271,7 @@ void MainComponent::timerCallback()
 
     if (ticks % 60 == 0)
     {
+        midiControl.maintain();   // reopens the MIDI controller after it was unplugged
         engine.maintainSources();
         for (auto& s : console->strips) s->refreshDevice();
         for (auto& b : console->buses)  b->refreshDevice();
@@ -1496,6 +1544,8 @@ void MainComponent::applyOsc()
 
 void MainComponent::applyRemote()
 {
+    // Each start() is a no-op when that service already runs with the same setting, so
+    // changing one setting doesn't drop the others (phones stay connected, for example).
     auto& settings = AppSettings::get();
 
     if (! settings.oscEnabled())
@@ -1824,7 +1874,7 @@ void MainComponent::resized()
         bannerArea = {};
     }
 
-    // Bottom status bar: device, rate, buffer, engine CPU, LIVE, tap tempo.
+    // Bottom status bar: LIVE, engine CPU, background work, remote services.
     statusBar.setBounds (r.removeFromBottom (28));
     r.removeFromBottom (Theme::s2);
 

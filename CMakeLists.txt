@@ -140,6 +140,7 @@ if(OPENMIX_BUILD_TESTS)
 
     add_executable(OpenMixAppTests
         tests/AppTests.cpp
+        Source/app/AppSettings.cpp
         Source/app/Session.cpp
         Source/app/RemoteCommands.cpp
         Source/app/MidiControl.cpp

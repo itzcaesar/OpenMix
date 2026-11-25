@@ -9,9 +9,9 @@ The full design direction lives in the repo at `docs/DESIGN.md`.
 
 ## Layout
 
-- **Identity motif — the aligned fader bay.** Every column (strips and
-  buses) ends in the same bay at the same height: fader, meter, and the
-  column's keys beside it, mute along the bottom. Faders line up across
+- **Identity motif: the aligned fader bay.** Every column (strips and
+  buses) ends in the same bay at the same height: fader and meter, mute
+  along the bottom. Faders line up across
   the whole desk, as on a real console.
 - **Name plate:** a recessed field with the channel's colour as a thin cap
   along its top edge. The same colour returns as a solid name bar along
@@ -24,21 +24,19 @@ The full design direction lives in the repo at `docs/DESIGN.md`.
   live in the strip's three-dot menu.
 - **Bus groups** HARDWARE (A1–A3) and VIRTUAL (B1–B3) with group labels
   and a divider; the master section is separated by a gap and a divider.
-- **Monitor bus:** a 1 px accent outline plus the name bar lit in the
-  accent colour, and no text.
+- **Monitor bus:** a 1 px amber outline plus the name bar lit in amber,
+  and no text.
 - **Soundboard** as a bar under the whole desk, so pads stay in reach
   without breaking the fader line.
-- **Bottom status bar:** device, sample rate, buffer size, engine CPU%,
-  LIVE, tap tempo. The header readout opens Audio settings; the bottom
+- **Bottom status bar:** LIVE, engine CPU%, scan and recording progress, and remote-service lamps. The header readout opens Audio settings; the bottom
   bar is the always-visible health check. CPU% is the engine's own usage,
   not the device's.
 
-## Themes and accent colours
+## Themes
 
 - Dark and light themes, both first-class and switchable in Settings.
-- **Five accent colours:** Amber (default), Sky, Green, Violet, Cyan,
-  picked from swatches in Settings, saved and applied at startup. Every
-  accent is light enough for dark text on it, so "on" states stay
+- **One accent colour, lamp amber**, for "on" lamps, the pad puck and the
+  monitor bus. It is light enough for dark text on it, so "on" states stay
   readable.
 - **Compact mode:** narrower strips and buses, tighter gaps, shorter
   plugin rows and soundboard bar, so more channels fit on a laptop

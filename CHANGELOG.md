@@ -4,9 +4,9 @@ All notable changes to OpenMix will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] — Unreleased (first release)
+## [0.1.0] - Unreleased (first release)
 
-This is OpenMix's first public release. There was no earlier release —
+This is OpenMix's first public release. There was no earlier release:
 `0.1.0` is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 
 ### Added
@@ -37,39 +37,32 @@ This is OpenMix's first public release. There was no earlier release —
   with Ø invert polarity and MONO below it.
 - **Per-strip presets**: save a strip's sound under a name and recall it on
   any strip. A preset carries gain, fader, processing, inserts, sends and
-  the VoicePad — never the name, source, mute or solo state.
+  the VoicePad, never the name, source, mute or solo state.
 - **Solo-safe (SAFE)**: keeps a strip playing on the monitor bus while
   another strip is soloed.
 - **Latency compensation**: each strip is delayed to match the slowest strip
   (noise removal + plugins), so sends stay aligned. The overall device
-  latency is shown in the status bar; there is no per-strip latency readout
+  latency is shown in the header readout; there is no per-strip latency readout
   on the desk.
 
-**Plugins and built-in effects**
+**Plugins**
 
 - VST3 plugins on every strip and bus: 6 slots each, drag to reorder,
   wet/dry, per-slot bypass, A/B compare, presets, latency compensation.
 - Crash-safe plugin loading (on by default): a plugin is started in a
   separate test process before it is loaded into the mixer. A plugin that
-  crashes or hangs while starting is skipped and blacklisted instead of
-  taking OpenMix down.
+  crashes while starting is skipped and put on the skip list instead of
+  taking OpenMix down; one that is only slow to start asks before loading.
 - VST2 hosting, opt-in only and OFF by default. It needs a licensed VST2 SDK
-  supplied separately — the SDK is not included in the repo, and Steinberg
+  supplied separately: the SDK is not included in the repo, and Steinberg
   stopped issuing new VST2 licences in October 2018.
-- **Built-in effects, no plugin to install**: Reverb, tempo-synced Delay and
-  Chorus as insert slots on a strip or a bus, with their own settings panels,
-  bypass, wet/dry, move and remove, saved in sessions and strip presets.
-- **FX sends**: post-fader REV / DLY / CHO sends on every strip into shared
-  global effects. The Delay send follows the tap tempo.
 
 **Meters, loudness and status**
 
-- RMS meters and loudness normalisation, spectrum analyser and LUFS loudness
-  on every bus.
-- Status bar along the bottom: audio device, sample rate, buffer size,
-  engine CPU%, a LIVE indicator, and tap tempo with the BPM next to it
-  (click the BPM to type one, 40–240). Tapping sets the tempo for every
-  tempo-synced delay.
+- RMS meters, spectrum analyser and LUFS loudness on every bus.
+- Loudness normalisation per bus (-14, -16 or -23 LUFS), K-weighted like the
+  LUFS readout, before the bus fader.
+- Status bar along the bottom: LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
 
 **Creator tools, scenes and control**
 
@@ -77,24 +70,22 @@ This is OpenMix's first public release. There was no earlier release —
 - Scenes: snapshot the whole mixer and switch with a hotkey.
 - Global hotkeys that work while a game has focus: mute, push-to-talk,
   soundboard, recording and scenes.
-- Remote control: OSC, phone / browser remote over WebSocket, MIDI mappings,
-  and Stream Deck via OSC / WebSocket plugins.
+- Remote control: OSC, phone / browser remote over WebSocket, MIDI mappings
+  (learned, saved straight away, reconnecting when the controller is plugged
+  back in), and Stream Deck via OSC / WebSocket plugins.
 - Session save / restore and autosave every 10 seconds (only when something
   changed) and on exit.
 
 **Interface**
 
 - Resizable UI with light and dark themes, channel colours and names.
-- Five accent colours (Amber default, Sky, Green, Violet, Cyan) picked from
-  swatches in Settings, saved and applied at startup.
 - Compact mode: narrower strips and buses, tighter gaps, shorter plugin rows
   and soundboard bar, so more channels fit on a laptop screen.
-- Gain slider under the source name, monitor bus shown by a 1px accent
+- Gain slider under the source name, monitor bus shown by a 1px amber
   outline and a lit name bar, and the bus row split into Hardware / Virtual
   groups with a divider.
-- Sends beside the fader in the fader bay: bus send keys in a two-column
-  grid, with the FX send sliders underneath, so the strip reads top to
-  bottom as INPUT, PROCESSING, INSERTS, VOICE PAD, FADER.
+- The strip reads top to bottom as INPUT, PROCESSING, INSERTS, VOICE PAD,
+  SENDS (one key per bus, in a row), then the fader bay.
 
 ### Known limits
 
@@ -109,6 +100,7 @@ This is OpenMix's first public release. There was no earlier release —
   meanwhile.
 - The phone / WebSocket remote has no password: anyone on the same network
   can control the mixer while it is on. Only enable it on a network you trust.
+  (Web pages from other sites are refused.)
 - Global hotkeys use a keyboard hook that only listens. A game with strict
   anti-cheat could in principle object to any keyboard hook; Discord and OBS
   use the same mechanism.

@@ -4,6 +4,10 @@
 #include "engine/MixerEngine.h"
 #include "app/RemoteCommands.h"
 
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 // Phone / browser remote and WebSocket API. Off by default.
 //
 //   http://<this PC>:<port>/            phone remote (faders, mutes, soundboard, scenes)
@@ -15,7 +19,12 @@
 // The same paths work over OSC and MIDI mapping (see RemoteCommands.h), so a
 // Stream Deck can use its OSC plugin, or a WebSocket plugin, against this API.
 // Only enable it on a network you trust: anyone on it can move faders and
-// start recordings while it is on.
+// start recordings while it is on. Browsers are held to the page this server
+// serves: a request carrying an Origin from any other site is refused, so a
+// web page open on this PC can't drive the mixer through localhost.
+//
+// Threads: one listener thread plus one thread per connection. stop() closes
+// every socket and waits for all of them, so none outlives the server.
 class RemoteServer
 {
 public:
@@ -27,8 +36,8 @@ public:
     bool isRunning() const noexcept { return running.load(); }
     int getPort() const noexcept { return port; }
 
-    // Called from the UI timer: sends the state to every WebSocket client
-    // when something outside the UI changed the mix.
+    // Called from the UI timer: sends the state to every WebSocket client when the
+    // mix changed, wherever it changed (desktop UI, OSC, MIDI, hotkeys, another phone).
     void broadcastStateIfChanged();
 
     std::function<void (bool)> onRecord;
@@ -43,8 +52,18 @@ private:
         bool isWebSocket = false;
     };
 
+    // Connection threads still running. Shared with the threads themselves, so the last
+    // thread can sign off safely even while the server is being destroyed.
+    struct ThreadCount
+    {
+        std::mutex lock;
+        std::condition_variable done;
+        int active = 0;
+    };
+
     void listenLoop();
     void handleClient (std::shared_ptr<Client>);
+    static bool originAllowed (const juce::String& head);
     void removeClient (const std::shared_ptr<Client>&);
     void refreshCachedState();
     juce::String getCachedState() const;
@@ -66,6 +85,8 @@ private:
     std::thread listenerThread;
     std::mutex clientsLock;
     std::vector<std::shared_ptr<Client>> clients;
+    std::shared_ptr<ThreadCount> threads = std::make_shared<ThreadCount>();
     mutable std::mutex stateLock;
     juce::String cachedStateJson;
+    juce::String lastBroadcastMix;   // state without meters, as last sent (message thread)
 };

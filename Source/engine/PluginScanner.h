@@ -34,7 +34,14 @@ public:
     // a child process and returns true only if it survived. A plugin that
     // crashes while loading is caught here, in the child, instead of killing
     // the mixer. Call from a background thread: it blocks for up to 30 s.
-    static bool probePluginFile (const juce::String& file, juce::String& error);
+    enum class ProbeResult
+    {
+        ok,            // started fine in the test process
+        crashed,       // crashed or failed to start: don't load it into the mixer
+        timedOut,      // still busy after 30 s (a slow first start, a licence dialog...)
+        unavailable    // the test process itself couldn't run: no verdict on the plugin
+    };
+    static ProbeResult probePluginFile (const juce::String& file, juce::String& error);
 
     // Entry point for the child process. Returns the process exit code.
     static int runChildScan (const juce::String& fileOrIdentifier, const juce::File& output);
@@ -60,5 +67,6 @@ private:
     std::atomic<bool> retry { false };
     std::atomic<int> numDone { 0 }, numToScan { 0 };
     mutable juce::CriticalSection nameLock;
+    juce::CriticalSection cacheLock;   // saveCache() from two threads
     juce::String currentName;
 };

@@ -460,7 +460,18 @@ int MixerEngine::applyStripPreset (int presetIndex, int strip)
         || ! juce::isPositiveAndBelow (strip, kNumStrips))
         return -1;
 
-    return getStrip (strip).loadPreset (stripPresets[(size_t) presetIndex].preset, formatManager);
+    auto& target = getStrip (strip);
+    const int missing = target.loadPreset (stripPresets[(size_t) presetIndex].preset, formatManager,
+                                           [this] (const juce::String& file) { return scanner != nullptr && scanner->isBlacklisted (file); });
+
+    // A preset saved on another strip may duck under this very strip: a strip can't
+    // duck under itself, so that part is dropped.
+    if (target.fx.duckSource.load() == strip)
+    {
+        target.fx.duckSource.store (-1);
+        target.fx.duckOn.store (false);
+    }
+    return missing;
 }
 
 bool MixerEngine::deleteStripPreset (const juce::String& name)
@@ -895,6 +906,20 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         int busLatency = 0;
         bus.inserts.process (L, R, n, busLatency);
 
+        // Loudness normalisation, before the fader so the fader still trims the result.
+        // Always measured; when off it glides back to unity instead of jumping.
+        {
+            auto& norm = busNorm[(size_t) b];
+            const float normStart = norm.currentGain();
+            const float normEnd = norm.process (L, R, n, bus.normTargetLufs.load(), bus.normOn.load());
+            bus.normGain.store (normEnd);
+            if (normStart != 1.0f || normEnd != 1.0f)
+            {
+                busBuffer.applyGainRamp (b * 2,     0, n, normStart, normEnd);
+                busBuffer.applyGainRamp (b * 2 + 1, 0, n, normStart, normEnd);
+            }
+        }
+
         auto& g = busGain[(size_t) b];
         g.setTargetValue (bus.mute.load() ? 0.0f : dbToGain (bus.faderDb.load()));
 
@@ -904,25 +929,9 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         busBuffer.applyGainRamp (b * 2,     0, n, start, end);
         busBuffer.applyGainRamp (b * 2 + 1, 0, n, start, end);
 
-        // RMS meters (sustained level) and loudness normalisation, before the limiter
-        // so the limiter still caps the final output at -0.3 dBFS.
-        const float rmsL = busRmsL[(size_t) b].push (L, n);
-        const float rmsR = busRmsR[(size_t) b].push (R, n);
-        bus.rmsL.store (rmsL);
-        bus.rmsR.store (rmsR);
-        if (bus.normOn.load())
-        {
-            const float rms = std::sqrt (0.5f * (rmsL * rmsL + rmsR * rmsR));
-            const float norm = busNorm[(size_t) b].process (rms, bus.normTargetLufs.load(), n);
-            bus.normGain.store (norm);
-            busBuffer.applyGain (b * 2,     0, n, norm);
-            busBuffer.applyGain (b * 2 + 1, 0, n, norm);
-        }
-        else
-        {
-            busNorm[(size_t) b].reset();
-            bus.normGain.store (1.0f);
-        }
+        // RMS meters (sustained level, post-fader).
+        bus.rmsL.store (busRmsL[(size_t) b].push (L, n));
+        bus.rmsR.store (busRmsR[(size_t) b].push (R, n));
 
         // Guard against any non-finite samples from bus EQ / comp / inserts / norm before the limiter.
         if (AudioSafety::containsNonFinite (L, n) || AudioSafety::containsNonFinite (R, n))

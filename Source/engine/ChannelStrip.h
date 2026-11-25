@@ -127,7 +127,10 @@ public:
     // state blobs are stored). Never touches name, colour, source, mute, solo or
     // active state. Safe to call with a preset whose plugins are missing.
     omx::StripPreset savePreset() const;
-    int loadPreset (const omx::StripPreset&, juce::AudioPluginFormatManager& formats);
+    // isBlocked (optional): plugin files known to crash (the scanner's skip list) are
+    // skipped and counted as missing instead of being loaded into the mixer.
+    int loadPreset (const omx::StripPreset&, juce::AudioPluginFormatManager& formats,
+                    const std::function<bool (const juce::String& file)>& isBlocked = {});
 
     // Audio thread. Writes the post-fader signal into `out` and the pre-fader (post-mute) signal
     // into `preOut` (both 2 channels). inL/inR may be the same pointer (mono source) or nullptr.

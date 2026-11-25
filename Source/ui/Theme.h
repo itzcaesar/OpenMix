@@ -7,7 +7,7 @@
 //
 // Contrast (WCAG, checked with the antislop contrast script):
 //   dark:  text/panel 13.9, textDim/panel 7.5, textFaint/panel 5.0, textFaint/window 5.7,
-//          onAccent/accent 8.2 (amber; the other accents are 6.3-8.2), tapeText/tape 12.5,
+//          onAccent/accent 8.2 (amber, the only accent), tapeText/tape 12.5,
 //          white/mute 4.5, controlEdge/panel 3.8 (3:1 bar)
 //   light: text/panel 14.3, textDim/panel 8.1, textFaint/panel 5.7, textFaint/window 4.7,
 //          onAccent/accent 8.2, tapeText/tape 15.4, white/mute 4.5, controlEdge/panel 3.6 (3:1 bar)

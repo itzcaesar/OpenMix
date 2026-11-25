@@ -54,10 +54,10 @@ BusView::BusView (MixerEngine& e, int i)
 
     // Loudness normalisation, in the LOUDNESS section (mockup style): a slow gain
     // that pulls this bus towards the target. Same choices as the bus menu.
-    normCombo.addItem ("Off", 1);
-    normCombo.addItem ("-23 LUFS", 2);
-    normCombo.addItem ("-16 LUFS", 3);
-    normCombo.addItem ("-14 LUFS", 4);
+    normCombo.addItem ("No normalisation", 1);
+    normCombo.addItem ("Target -23 LUFS", 2);
+    normCombo.addItem ("Target -16 LUFS", 3);
+    normCombo.addItem ("Target -14 LUFS", 4);
     normCombo.setTitle ("Loudness normalisation for bus " + engine.getBusName (i));
     normCombo.setTooltip ("Pull this bus towards a loudness target (streaming level). Off leaves it alone.");
     makeClickable (normCombo);
@@ -182,12 +182,12 @@ void BusView::refreshNormGainLabel()
     if (! bus.normOn.load())
     {
         normGainLabel.setColour (juce::Label::textColourId, Theme::p().textDim);
-        normGainLabel.setText (juce::String::fromUTF8 ("Gain applied \xe2\x80\x94"), juce::dontSendNotification);
+        normGainLabel.setText ({}, juce::dontSendNotification);   // the box already says it's off
         return;
     }
     normGainLabel.setColour (juce::Label::textColourId, Theme::p().accent);
     const float normDb = juce::Decibels::gainToDecibels (bus.normGain.load(), -100.0f);
-    normGainLabel.setText ("Gain applied " + juce::String (normDb > 0.05f ? "+" : "")
+    normGainLabel.setText ("Normalising " + juce::String (normDb > 0.05f ? "+" : "")
                            + juce::String (normDb, 1) + " dB", juce::dontSendNotification);
 }
 

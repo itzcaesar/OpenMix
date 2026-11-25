@@ -11,8 +11,8 @@
 Download the release from the
 [releases page](https://github.com/itzcaesar/OpenMix/releases):
 
-- `OpenMix-windows-x64.zip` — the app, README and licence, in a zip.
-- `OpenMix-0.1.0-setup.exe` — the installer (first release, v0.1.0).
+- `OpenMix-windows-x64.zip`: the app, README and licence, in a zip.
+- `OpenMix-0.1.0-setup.exe`: the installer (first release, v0.1.0).
 
 Or, for the latest `main` build, open the latest run under **Actions** in
 the repository and download the `OpenMix-windows-x64` artifact.
@@ -48,10 +48,7 @@ ctest --test-dir build -C Release
   **Hardware** (A1–A3) and **Virtual** (B1–B3) groups with a divider
   between them; **+ Bus** asks for the group first, then an optional
   custom name, and takes the next free slot in that group.
-- The **status bar** along the bottom shows the audio device, sample rate,
-  buffer size, engine CPU% and a LIVE indicator, plus **Tap** tempo with
-  the BPM next to it (click the BPM to type one, 40–240). Tapping sets the
-  tempo for every tempo-synced delay.
+- The **status bar** along the bottom shows LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
 - Every strip and bus ends in the same **fader bay**, so faders, meters and
   mute rows line up across the desk. The number above each meter is the held
   peak; a red bar under it marks 0 dBFS or more.
@@ -68,8 +65,7 @@ B1 to a virtual cable for Discord or OBS.
 
 ## Settings
 
-Settings holds: light or dark theme, an accent colour for the lamps,
-compact mode, hotkeys, start with Windows, start minimized, keep running
+Settings holds: light or dark theme, compact mode, hotkeys, start with Windows, start minimized, keep running
 in the tray when the window closes, plugin scanning and crash-safe loading,
 presets and VST3 folders, the update check, OSC, phone / WebSocket and MIDI
 remote control, and the log folder. In the tray, double-click opens the

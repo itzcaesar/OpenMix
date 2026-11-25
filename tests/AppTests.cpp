@@ -105,6 +105,46 @@ int main()
         midi.applyMapping (maps[2], juce::MidiMessage::noteOn (1, 61, (juce::uint8) 127));
     });
 
+    run ("MidiControl: CC toggles follow the mixer, send and send-level targets work", []
+    {
+        MixerEngine engine;
+        MidiControl midi (engine);
+        engine.getBus (3).active.store (true);   // B1
+
+        // A CC mute flips what the mixer has now, even after a mute made elsewhere.
+        const MidiControl::Mapping mute { false, 1, 20, "strip/1/mute" };
+        engine.getStrip (0).mute.store (true);   // muted in the app
+        midi.applyMapping (mute, juce::MidiMessage::controllerEvent (1, 20, 127));
+        CHECK (! engine.getStrip (0).mute.load(), "CC press should unmute a strip muted in the app");
+        midi.applyMapping (mute, juce::MidiMessage::controllerEvent (1, 20, 127));
+        CHECK (! engine.getStrip (0).mute.load(), "holding the CC above 64 should not flip again");
+        midi.applyMapping (mute, juce::MidiMessage::controllerEvent (1, 20, 0));
+        midi.applyMapping (mute, juce::MidiMessage::controllerEvent (1, 20, 127));
+        CHECK (engine.getStrip (0).mute.load(), "release and press again should mute");
+
+        // Send on/off and send level (strip/<n>/sendlevel/<bus>).
+        const MidiControl::Mapping send { true, 1, 62, "strip/1/send/B1" };
+        const bool before = engine.getStrip (0).busOn[3].load();
+        midi.applyMapping (send, juce::MidiMessage::noteOn (1, 62, (juce::uint8) 127));
+        CHECK (engine.getStrip (0).busOn[3].load() != before, "send note should toggle the B1 send");
+
+        const MidiControl::Mapping level { false, 1, 21, "strip/1/sendlevel/B1" };
+        midi.applyMapping (level, juce::MidiMessage::controllerEvent (1, 21, 0));
+        CHECK (std::abs (engine.getStrip (0).sendDb[3].load() - (-60.0f)) < 0.1f, "CC 0 should set the send to -60 dB, got %f",
+               engine.getStrip (0).sendDb[3].load());
+    });
+
+    run ("RemoteCommands: state without meters stays the same while levels move", []
+    {
+        MixerEngine engine;
+        const auto a = remoteStateJson (engine, false);
+        engine.getStrip (0).peakL.store (0.5f);
+        CHECK (remoteStateJson (engine, false) == a, "meter-free state changed with a peak level");
+        CHECK (remoteStateJson (engine, true).contains ("peakDb"), "full state should carry meters");
+        applyRemoteCommand (engine, "/openmix/strip/1/fader", -3.0f);
+        CHECK (remoteStateJson (engine, false) != a, "a fader move should change the state");
+    });
+
     run ("Soundboard: very short clip (< 8 samples) resamples safely without crash", []
     {
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("openmix-short-test.wav");

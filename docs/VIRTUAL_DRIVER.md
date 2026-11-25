@@ -28,7 +28,7 @@ adding one driver per bus:
   driver can expose **multiple virtual endpoints** (e.g., `B1–B3` virtual
   capture devices and optional virtual render devices for VoiceMeeter-style
   virtual speaker inputs). Adding a bus in the mixer uses one of those
-  endpoints—it never installs a new driver.
+  endpoints; it never installs a new driver.
 
 ## 2. Driver Framework: ACX (Modern) vs. SysVAD (Legacy)
 
@@ -74,7 +74,7 @@ or `Remove bus`**:
     access or BSOD.
 - **Behaviour when `OpenMix.exe` is closed or stalled:**
   - **Virtual capture endpoints (`B` buses):** Emit clean **digital silence
-    (`0`)** if OpenMix stops feeding frames—never let stale audio keep looping
+    (`0`)** if OpenMix stops feeding frames: never let stale audio keep looping
     in the ring buffer.
   - **Virtual render endpoints (virtual inputs):** Keep advancing the WaveRT
     read cursor on the kernel period timer even when OpenMix is not reading,
@@ -98,7 +98,7 @@ Two compatible driver clocking models:
    Windows' audio engine if `OpenMix.exe` hiccups.
 2. **Master-clock slaved mode (lowest latency):**
    Once stable, `OpenMix.exe`'s main callback can drive/nudge the ring buffer
-   period to match the master device—**with a mandatory kernel QPC watchdog
+   period to match the master device, **with a mandatory kernel QPC watchdog
    timer fallback** so loading a slow VST3 plugin or killing `OpenMix.exe`
    never freezes Windows audio.
 
@@ -130,7 +130,7 @@ require kernel code:
 ## 7. Testing, Signing & Installer Pipeline
 
 - **Kernel debugging in a VM:** Develop and debug exclusively in a VM (Hyper-V
-  or VMware) with WinDbg attached—a single IRQL or paging bug in kernel audio
+  or VMware) with WinDbg attached: a single IRQL or paging bug in kernel audio
   code causes a BSOD.
 - **Validation & stress testing:** Enable **Driver Verifier** (Pool Tracking,
   Deadlock Detection, Special Pool) and test repeated `OpenMix.exe` kills/restarts,

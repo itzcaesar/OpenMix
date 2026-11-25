@@ -12,16 +12,20 @@ OscControl::~OscControl()
     removeListener (this);
 }
 
-bool OscControl::start (int port, juce::String& error)
+bool OscControl::start (int newPort, juce::String& error)
 {
+    if (running && newPort == port)
+        return true;   // already listening there
+
     stop();
-    if (! connect (port))
+    if (! connect (newPort))
     {
-        error = "Couldn't listen on UDP port " + juce::String (port) + ". Another program may be using it.";
+        error = "Couldn't listen on UDP port " + juce::String (newPort) + ". Another program may be using it.";
         return false;
     }
     running = true;
-    juce::Logger::writeToLog ("OSC remote control listening on UDP " + juce::String (port));
+    port = newPort;
+    juce::Logger::writeToLog ("OSC remote control listening on UDP " + juce::String (newPort));
     return true;
 }
 

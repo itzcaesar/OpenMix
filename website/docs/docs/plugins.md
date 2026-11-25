@@ -1,4 +1,4 @@
-# Plugins & built-in effects
+# Plugins
 
 ## VST3 plugins
 
@@ -22,42 +22,24 @@ OpenMix down (Settings > Retry skipped plugins tries them again).
 ## Crash-safe loading
 
 **Crash-safe loading** (on by default, Settings): before a plugin is
-loaded into the mixer, it is started in a separate test process —
+loaded into the mixer, it is started in a separate test process:
 created, prepared and run through one silent block. A plugin that crashes
-or hangs while starting is skipped and blacklisted instead of taking
-OpenMix down (Settings > Retry skipped plugins tries it again).
+there is skipped and put on the skip list instead of taking OpenMix down
+(Settings > Retry skipped plugins tries it again). A plugin that is only
+slow to start (over 30 s, for example a licence window) is not skipped:
+you're asked whether to load it anyway. If the test process itself can't
+run, the plugin loads as normal.
 
 !!! warning
     This protects *loading*. A plugin that crashes later, while processing
-    audio, can still take the mixer down — full out-of-process audio
+    audio, can still take the mixer down. Full out-of-process audio
     hosting is not done yet. See [Known limits](troubleshooting.md).
-
-## Built-in effects
-
-No plugin to install. **Reverb**, **Delay** and **Chorus** are in the
-"+ Add plugin" menu under **Built-in effect**, in any insert slot on a
-strip or a bus. Click one to open its settings panel; it has the same
-bypass, wet/dry mix, move and remove as a VST slot, and it is saved in
-sessions and strip presets. A Delay added this way is tempo-synced from
-the start: it follows the tap-tempo BPM (change the note value in its
-panel, or switch tempo sync off and set the time directly). Built-ins
-have zero latency.
-
-The reverb wet level is not yet tuned by ear — treat it as a starting
-point and adjust to taste.
-
-## FX sends
-
-Under the bus sends on every strip, three small **FX sends**
-(REV / DLY / CHO) feed the shared global reverb, delay and chorus; the
-effect return is mixed into every bus the strip is routed to. The Delay
-send follows the tap tempo. FX sends ignore solo.
 
 ## VST2 plugins (opt-in, local build only)
 
 VST2 hosting is **off by default** and is not in the released builds.
 JUCE 9 still contains the VST2 host code, but it needs `aeffect.h` /
-`aeffectx.h` from the VST2 SDK, which JUCE no longer bundles — and
+`aeffectx.h` from the VST2 SDK, which JUCE no longer bundles, and
 Steinberg stopped issuing new VST2 licences in October 2018, so a new
 developer cannot legally distribute a VST2 host. Only enable this if you
 already hold a VST2 licence and SDK. The SDK is never committed to this
@@ -79,5 +61,5 @@ for `.dll` plugins, in the same crash-safe child process as VST3. VST2
 plugins then appear in "+ Add plugin" alongside VST3 ones and use the
 same slots, bypass, wet/dry, presets and latency compensation. Session
 files already store the plugin's format, so a session saved with a VST2
-plugin loads it back when built with VST2 on — and that slot will be
-empty on a default (VST2-off) build.
+plugin loads it back when built with VST2 on; that slot is empty on a
+default (VST2-off) build.

@@ -17,7 +17,7 @@ their own clocks; OpenMix resamples them and corrects the drift, which
 adds about 10–25 ms on those devices only.
 
 !!! note "Adding buses vs. drivers"
-    Output buses are software mixing buses inside OpenMix—adding or
+    Output buses are software mixing buses inside OpenMix: adding or
     activating a bus does **not** require a separate audio driver per bus.
     **Hardware (`A`)** buses route to physical outputs or extra channels on
     your main interface. **Virtual (`B`)** buses only need a virtual
@@ -39,9 +39,9 @@ slots A1–A3 are always **Hardware**, B1–B3 always **Virtual**.
 - **LIMITER:** the lamp lights while the safety limiter (-0.3 dBFS
   ceiling) is reducing gain, and the gain-reduction meter next to it
   shows how much (in dB).
-- The **monitor bus** is shown only by a thin accent-coloured outline
-  around the strip and its name bar lit in the accent colour — there is no
-  "monitor" text on the strip.
+- The **monitor bus** is shown only by a thin amber outline around the
+  strip and its name bar lit in amber; there is no "monitor" text on the
+  strip.
 - **Loudness** is the short-term LUFS (the number streaming platforms
   normalise to), with the normalisation target and gain when normalisation
   is on. The bus strip shows the live spectrum only; the full analyser
@@ -51,17 +51,19 @@ slots A1–A3 are always **Hardware**, B1–B3 always **Virtual**.
   sounds. The same RMS bar is on every strip and on the soundboard.
 - **Loudness normalisation** (a bus's three-dot menu): a slow gain that
   pulls the bus towards -14 LUFS (streaming), -16 or -23 (broadcast),
-  clamped to ±12 dB and smoothed so it never pumps on a drum hit. It holds
-  its gain in silence instead of turning the noise floor up. It is saved
-  with the session and with scenes.
+  clamped to +/-12 dB and smoothed so it never pumps on a drum hit. It
+  measures the bus the way the LUFS readout does (K-weighted, about a 3 s
+  window), so the target and the readout agree, and it sits before the bus
+  fader, so the fader still trims the result. It holds its gain in silence
+  instead of turning the noise floor up, and glides back to unity when you
+  switch it off. It is saved with the session and with scenes.
 
 ## Processing and inserts
 
-**EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip
-(VST3 or built-in effects).
+**EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip.
 
-**Bus path:** sum, EQ, compressor, inserts, fader, loudness
-normalisation, safety limiter.
+**Bus path:** sum, EQ, compressor, inserts, loudness normalisation,
+fader, safety limiter.
 
 ## Analyser
 

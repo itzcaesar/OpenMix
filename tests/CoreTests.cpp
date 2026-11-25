@@ -633,37 +633,59 @@ int main()
 
     run ("Loudness normaliser: quiet bus is turned up, loud bus down, clamped to +/-12 dB", []
     {
-        // A -26 LUFS bus (RMS ~0.05) normalised to -14 LUFS wants +12 dB, clamped there.
+        // Stereo 1 kHz sines: at 1 kHz K-weighting is ~0 dB, so a sine with peak -N dBFS on
+        // both channels reads -N LUFS (the EBU reference case). 10 s of 10 ms blocks lets the
+        // 3 s measurement and the 0.5 s gain settle.
+        auto runTone = [] (omx::LoudnessNormaliser& n, float peakDbfs, float targetLufs, bool active)
+        {
+            const float amp = std::pow (10.0f, peakDbfs / 20.0f);
+            std::vector<float> l (480), r (480);
+            float g = 1.0f;
+            for (int block = 0; block < 1000; ++block)
+            {
+                for (int i = 0; i < 480; ++i)
+                    l[(size_t) i] = r[(size_t) i] = amp * std::sin (2.0f * std::numbers::pi_v<float> * 1000.0f * (float) (block * 480 + i) / 48000.0f);
+                g = n.process (l.data(), r.data(), 480, targetLufs, active);
+            }
+            return g;
+        };
+
+        // A -30 LUFS bus normalised to -14 LUFS wants +16 dB: clamped to +12.
         omx::LoudnessNormaliser norm;
         norm.prepare (48000.0);
-        float gain = 1.0f;
-        for (int i = 0; i < 200; ++i)   // ~2 s of blocks, let the 0.5 s smoothing settle
-            gain = norm.process (0.05f, -14.0f, 480);
+        float gain = runTone (norm, -30.0f, -14.0f, true);
         CHECK (std::abs (20.0 * std::log10 (gain) - 12.0) < 0.5, "quiet bus gain %+.2f dB", 20.0 * std::log10 (gain));
 
-        // A -2 LUFS bus (RMS ~0.9) normalised to -14 wants -12 dB, clamped there.
+        // A -1 LUFS bus normalised to -14 wants -13 dB: clamped to -12.
         omx::LoudnessNormaliser loud;
         loud.prepare (48000.0);
-        for (int i = 0; i < 200; ++i)
-            gain = loud.process (0.9f, -14.0f, 480);
+        gain = runTone (loud, -1.0f, -14.0f, true);
         CHECK (std::abs (20.0 * std::log10 (gain) - (-12.0)) < 0.5, "loud bus gain %+.2f dB", 20.0 * std::log10 (gain));
 
         // Silence holds the last gain instead of turning the noise floor up.
-        const float held = loud.process (0.0f, -14.0f, 480);
+        std::vector<float> zeros (480, 0.0f);
+        float held = gain;
+        for (int i = 0; i < 100; ++i)
+            held = loud.process (zeros.data(), zeros.data(), 480, -14.0f, true);
         CHECK (std::abs (held - gain) < 0.01f, "silence changed the gain to %f", held);
 
-        // reset() clears targetGain too, so silence right after reset stays at unity.
+        // Switched off, the gain glides back to unity.
+        float off = held;
+        for (int i = 0; i < 500; ++i)
+            off = loud.process (zeros.data(), zeros.data(), 480, -14.0f, false);
+        CHECK (std::abs (off - 1.0f) < 0.01f, "switched off, gain stayed at %f", off);
+
+        // reset() clears the target too, so silence right after reset stays at unity.
         loud.reset();
-        const float afterReset = loud.process (0.0f, -14.0f, 480);
+        const float afterReset = loud.process (zeros.data(), zeros.data(), 480, -14.0f, true);
         CHECK (std::abs (afterReset - 1.0f) < 1e-6f, "reset left stale targetGain (%f)", afterReset);
 
-        // A bus already at target stays at unity.
+        // A bus already at target stays at unity, and the reading matches BS.1770.
         omx::LoudnessNormaliser flat;
         flat.prepare (48000.0);
-        const float rmsAtMinus14 = (float) std::pow (10.0, (-14.0 + 0.691) / 20.0);
-        for (int i = 0; i < 200; ++i)
-            gain = flat.process (rmsAtMinus14, -14.0f, 480);
-        CHECK (std::abs (gain - 1.0f) < 0.05f, "on-target bus gain %f", gain);
+        gain = runTone (flat, -14.0f, -14.0f, true);
+        CHECK (std::abs (20.0 * std::log10 (gain)) < 0.4, "on-target bus gain %+.2f dB", 20.0 * std::log10 (gain));
+        CHECK (std::abs (flat.measuredLufs() - (-14.0)) < 0.4, "measured %.2f LUFS for a -14 LUFS tone", flat.measuredLufs());
     });
 
     run ("SafetyLimiter: sanitises NaN/Inf inputs without propagating them", []

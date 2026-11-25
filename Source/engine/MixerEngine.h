@@ -36,7 +36,8 @@ struct Bus
     std::atomic<float> normTargetLufs { -14.0f };
     std::atomic<float> normGain { 1.0f };
 
-    // Bus processing, in order: EQ -> compressor -> VST3 inserts -> fader -> safety limiter.
+    // Bus processing, in order: EQ -> compressor -> VST3 inserts -> loudness normalisation
+    // -> fader -> safety limiter.
     // Only the EQ and compressor fields of `fx` are used on a bus.
     ProcessingParams fx;
     PluginChain inserts;

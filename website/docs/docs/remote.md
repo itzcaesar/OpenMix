@@ -7,22 +7,25 @@ They are off by default (Settings).
 !!! warning
     While one is on, anyone on your network can control the mixer, so only
     turn them on at home or on a network you trust. **There is no password:
-    the LAN is the trust boundary.**
+    the LAN is the trust boundary.** Web pages are kept out: the phone
+    remote refuses any browser request that comes from another website, so
+    a page you have open can't reach the mixer through `localhost`.
 
 ## Phone / browser remote and WebSocket API
 
 Settings > "Phone / browser remote and WebSocket API" (TCP port 8080
 unless you change it). Open `http://<this PC>:8080/` on your phone:
-faders, mutes, soundboard pads and scenes, live over the WebSocket, with
-HTTP polling as a fallback if the WebSocket can't connect.
+faders, mutes, soundboard pads and scenes, live over the WebSocket
+(changes made in the app, from MIDI or from another phone show up too),
+with HTTP polling as a fallback if the WebSocket can't connect.
 
 The same port is the API:
 
-- `GET /api/state` — the mixer's state as JSON (strips, buses, soundboard,
+- `GET /api/state`: the mixer's state as JSON (strips, buses, soundboard,
   scenes, recording).
-- `POST /api/command` with `{"path": "/openmix/strip/1/fader", "value": -6}`
-  — one command.
-- `ws://<this PC>:8080/ws` — send `{"path": ..., "value": ...}`, receive
+- `POST /api/command` with `{"path": "/openmix/strip/1/fader", "value": -6}`:
+  one command.
+- `ws://<this PC>:8080/ws`: send `{"path": ..., "value": ...}`, receive
   `{"type": "state", "state": {...}}` whenever the mix changes, plus
   `{"type": "ok"}` or `{"type": "error", ...}` for each command.
 
@@ -48,15 +51,23 @@ count from 1.
 
 ## MIDI controllers
 
-Settings > "MIDI controller": pick a device, then pick a target (a strip
-fader or mute, a bus fader, a soundboard pad, Record), press **Learn...**,
-and move a knob or press a key on the controller. A CC moves a fader
-across its range; a note toggles a mute, plays a pad or starts recording.
-Mappings are saved in the app settings.
+Settings > "MIDI controller": pick a device, then pick a target, press
+**Learn...**, and move a knob or press a key on the controller. Targets:
+each strip's fader, gain, mute, solo, send on/off and send level per bus;
+each bus's fader, mute and loudness normalisation; soundboard pads,
+Record, Save replay and scenes 1-8.
+
+- A CC moves a fader, gain or send level across its range.
+- A note, or a CC crossing the middle (64) upwards, toggles a mute, solo,
+  send or normalisation. It flips whatever the mixer has now, so it stays
+  in step with changes made in the app. It also plays a pad, starts or
+  stops recording, saves the replay or switches scene.
+- A learned mapping is saved straight away. If the controller is
+  unplugged, OpenMix opens it again when it's back.
 
 ## Stream Deck
 
 There is no native OpenMix Stream Deck plugin. Use the Stream Deck
 software's OSC plugin with the addresses above, or a WebSocket plugin
-against the phone-remote port — both speak the same paths, so a button
+against the phone-remote port; both speak the same paths, so a button
 that sends `/openmix/strip/1/mute` with 1 works either way.

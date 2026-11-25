@@ -152,7 +152,8 @@ omx::StripPreset ChannelStrip::savePreset() const
     return p;
 }
 
-int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormatManager& formats)
+int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormatManager& formats,
+                              const std::function<bool (const juce::String&)>& isBlocked)
 {
     gainDb.store (p.gainDb);   faderDb.store (p.faderDb);
     mono.store (p.mono);       invertPolarity.store (p.invertPolarity);
@@ -191,7 +192,7 @@ int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormat
     for (int s = 0; s < n; ++s)
     {
         const auto& slot = p.slots[(size_t) s];
-        if (slot.identifier.empty())
+        if (slot.identifier.empty() || (isBlocked && isBlocked (juce::String (slot.identifier))))
         {
             ++missing;
             continue;

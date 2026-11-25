@@ -4,7 +4,7 @@ A virtual audio mixer for Windows. Bring in mics, other devices, single apps
 (Spotify, a game, Discord) or everything an output device plays, process them,
 and send separate mixes to your headphones, speakers, stream and calls.
 
-This is the documentation for **OpenMix 0.1.0 — the first public release**.
+This is the documentation for **OpenMix 0.1.0, the first public release**.
 There was no earlier release. OpenMix is built with C++20 and JUCE 9.0.5 and
 is licensed under the GNU AGPLv3.
 
@@ -18,18 +18,14 @@ is licensed under the GNU AGPLv3.
   with voice, pan, colour and space modes). HPF/LPF per strip, per-strip
   presets, solo-safe, and latency compensation.
 - **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning,
-  bypass without clicks, wet/dry, A/B compare, presets, latency compensation.
-  **Built-in effects** too: Reverb, tempo-synced Delay and Chorus as insert
-  slots, with their own settings panels — no plugin to install. Every strip
-  also has post-fader **FX sends** (Reverb/Delay/Chorus) into shared global
-  effects, driven by the **tap tempo** in the status bar.
+  bypass without clicks, wet/dry, A/B compare, presets, latency compensation,
+  crash-safe loading.
 - **Outputs:** up to 6 buses (A1–A3 hardware, B1–B3 virtual), each to an
   output pair of the main device or to any Windows output device, with EQ,
   compressor, plugins and a safety limiter. Buses are grouped
   **Hardware / Virtual** on the desk, and each bus can have a custom name
   (its group never changes when you rename it).
-- **Status bar** along the bottom: audio device, sample rate, buffer size,
-  engine CPU%, a LIVE indicator, and tap tempo with the BPM next to it.
+- **Status bar** along the bottom: LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
 - **Creator tools:** multitrack recorder, replay buffer, soundboard, spectrum
   and LUFS loudness on every bus.
 - **Scenes and global hotkeys:** save whole mixes and switch between them;
@@ -69,16 +65,15 @@ Everything is saved automatically.
 
 ## Where to go next
 
-- [Getting started](getting-started.md) — install, build it yourself,
+- [Getting started](getting-started.md): install, build it yourself,
   and the first mix.
-- [Strips & voice processing](strips.md) — sources, filters, processing,
+- [Strips & voice processing](strips.md): sources, filters, processing,
   VoicePad, presets, sends.
-- [Buses & outputs](buses.md) — Hardware / Virtual buses, limiter,
+- [Buses & outputs](buses.md): Hardware / Virtual buses, limiter,
   loudness, analyser.
-- [Plugins & built-in effects](plugins.md) — VST3, crash-safe loading,
-  VST2 (opt-in), Reverb / Delay / Chorus.
-- [Remote control](remote.md) — OSC, phone / WebSocket, MIDI, Stream Deck.
-- [Scenes, hotkeys & creator tools](creator.md) — scenes, global hotkeys,
+- [Plugins](plugins.md): VST3, crash-safe loading, VST2 (opt-in).
+- [Remote control](remote.md): OSC, phone / WebSocket, MIDI, Stream Deck.
+- [Scenes, hotkeys & creator tools](creator.md): scenes, global hotkeys,
   recording, replay, soundboard.
-- [Troubleshooting & known limits](troubleshooting.md) — read this before
+- [Troubleshooting & known limits](troubleshooting.md): read this before
   using OpenMix live.

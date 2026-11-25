@@ -89,7 +89,7 @@ bool applyRemoteCommand (MixerEngine& engine, const juce::String& path, float v,
     return changed;
 }
 
-juce::String remoteStateJson (MixerEngine& engine)
+juce::String remoteStateJson (MixerEngine& engine, bool includeMeters)
 {
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
 
@@ -106,7 +106,8 @@ juce::String remoteStateJson (MixerEngine& engine)
         o->setProperty ("gainDb", (double) strip.gainDb.load());
         o->setProperty ("mute", strip.mute.load());
         o->setProperty ("solo", strip.solo.load());
-        o->setProperty ("peakDb", (double) juce::Decibels::gainToDecibels (juce::jmax (strip.peakL.load(), strip.peakR.load()), -100.0f));
+        if (includeMeters)
+            o->setProperty ("peakDb", (double) juce::Decibels::gainToDecibels (juce::jmax (strip.peakL.load(), strip.peakR.load()), -100.0f));
         strips.add (juce::var (o.get()));
     }
     root->setProperty ("strips", strips);
@@ -122,7 +123,8 @@ juce::String remoteStateJson (MixerEngine& engine)
         o->setProperty ("displayName", engine.getBusName (b));
         o->setProperty ("faderDb", (double) bus.faderDb.load());
         o->setProperty ("mute", bus.mute.load());
-        o->setProperty ("peakDb", (double) juce::Decibels::gainToDecibels (juce::jmax (bus.peakL.load(), bus.peakR.load()), -100.0f));
+        if (includeMeters)
+            o->setProperty ("peakDb", (double) juce::Decibels::gainToDecibels (juce::jmax (bus.peakL.load(), bus.peakR.load()), -100.0f));
         o->setProperty ("normOn", bus.normOn.load());
         o->setProperty ("normTargetLufs", (double) bus.normTargetLufs.load());
         buses.add (juce::var (o.get()));

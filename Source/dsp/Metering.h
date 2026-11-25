@@ -7,16 +7,18 @@
 // transients; RMS shows how loud something actually sounds, which is what
 // a streamer checks when a mic and music need to sit together.
 //
-// Loudness normalisation: a slow gain that pulls a bus towards a target
-// short-term loudness (streaming platforms normalise to about -14 LUFS).
-// Measured loudness is approximated from the RMS as 20*log10(rms) - 0.691
-// (the BS.1770 -0.691 offset, without K-weighting: close enough for a gain
-// target, and deliberately not a precision loudness meter). The gain is
-// clamped to +/-12 dB and smoothed over ~0.5 s, so it never pumps on a
-// drum hit and never chases silence: below -60 dBFS it holds its last gain.
+// Loudness normalisation: a slow gain that pulls a bus towards a target loudness
+// (streaming platforms normalise to about -14 LUFS). The bus is measured the way
+// BS.1770 does it: K-weighted (a high shelf and a high-pass), both channels summed,
+// over a ~3 s window, so the target matches the LUFS readout and the analyser. It
+// measures its own input (before the bus fader), so the fader still trims the result.
+// The gain is clamped to +/-12 dB and moves with a ~0.5 s time constant, so it never
+// pumps on a drum hit; below -60 LUFS it holds its last gain instead of turning the
+// noise floor up. Switched off, it glides back to unity rather than jumping.
 
 #include <algorithm>
 #include <cmath>
+#include "dsp/Loudness.h"   // KWeighting
 
 namespace omx
 {
@@ -58,44 +60,69 @@ namespace omx
         double levelSq = 0.0;
     };
 
-    // Slow gain that pulls a signal towards a target loudness. Audio thread only.
+    // Slow gain that pulls a stereo signal towards a target loudness. Audio thread only.
     class LoudnessNormaliser
     {
     public:
         void prepare (double sampleRate) noexcept
         {
             fs = sampleRate > 0.0 ? sampleRate : 48000.0;
+            kWeighting.prepare (fs);   // the same BS.1770 filters as the LUFS meter
             reset();
         }
 
-        void reset() noexcept { gain = 1.0f; targetGain = 1.0f; }
-
-        // rms: smoothed RMS level (linear) of the bus, as measured this block.
-        // targetLufs: e.g. -14 for streaming, -23 for broadcast (EBU R128).
-        // Returns the gain to apply this block (linear, clamped to +/-12 dB).
-        float process (float rms, float targetLufs, int numSamples) noexcept
+        void reset() noexcept
         {
-            // Below -60 dBFS there is no usable signal: hold the last gain
-            // instead of turning the noise floor up.
-            if (rms > 1e-3f)
+            gain = 1.0f;
+            targetGain = 1.0f;
+            meanSquare = 0.0;
+            kWeighting.reset();
+        }
+
+        // Measures this block (left/right, before the gain is applied) and returns the gain
+        // for the end of the block; the caller ramps from currentGain() (read before this
+        // call) to it. active = false glides the gain back to unity but keeps measuring, so
+        // switching it back on starts from a warm reading.
+        // targetLufs: e.g. -14 for streaming, -23 for broadcast (EBU R128).
+        float process (const float* left, const float* right, int numSamples, float targetLufs, bool active) noexcept
+        {
+            if (numSamples <= 0)
+                return gain;
+
+            double sum = 0.0;
+            for (int i = 0; i < numSamples; ++i)
             {
-                const double measuredLufs = 20.0 * std::log10 ((double) rms) - 0.691;
-                const double wantedDb = std::clamp (targetLufs - measuredLufs, -12.0, 12.0);
-                targetGain = (float) std::pow (10.0, wantedDb / 20.0);
+                const double l = kWeighting.process (left[i], 0);
+                const double r = kWeighting.process (right[i], 1);
+                sum += l * l + r * r;   // channels are summed, as in BS.1770
             }
 
-            // ~0.5 s smoothing: fast enough to follow a scene change, slow
-            // enough not to pump on individual words or drum hits.
+            // Only blocks with real signal (above -60 LUFS) count, like BS.1770's absolute
+            // gate: pauses and silence neither lower the reading nor push the gain up.
             const double blockSeconds = numSamples / fs;
-            const double alpha = 1.0 - std::exp (-blockSeconds / 0.5);
-            gain = (float) (gain + alpha * (targetGain - gain));
+            const double blockMeanSquare = sum / numSamples;
+            if (toLufs (blockMeanSquare) > -60.0)
+                meanSquare += (1.0 - std::exp (-blockSeconds / 3.0)) * (blockMeanSquare - meanSquare);   // ~short-term window
+
+            if (! active)
+                targetGain = 1.0f;
+            else if (const double lufs = measuredLufs(); lufs > -60.0)
+                targetGain = (float) std::pow (10.0, std::clamp (targetLufs - lufs, -12.0, 12.0) / 20.0);
+            // else: no signal measured yet, hold the last target
+
+            gain = (float) (gain + (1.0 - std::exp (-blockSeconds / 0.5)) * (targetGain - gain));
             return gain;
         }
 
         float currentGain() const noexcept { return gain; }
+        double measuredLufs() const noexcept { return toLufs (meanSquare); }
 
     private:
+        static double toLufs (double ms) noexcept { return ms > 0.0 ? -0.691 + 10.0 * std::log10 (ms) : -100.0; }
+
         double fs = 48000.0;
+        KWeighting kWeighting;
+        double meanSquare = 0.0;
         float gain = 1.0f, targetGain = 1.0f;
     };
 }

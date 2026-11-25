@@ -1,4 +1,13 @@
 #include "app/MidiControl.h"
+#include "app/AppSettings.h"
+
+static int busIndexFromName (const juce::String& name)
+{
+    for (int b = 0; b < kNumBuses; ++b)
+        if (name.equalsIgnoreCase (kBusNames[b]))
+            return b;
+    return -1;
+}
 
 MidiControl::MidiControl (MixerEngine& e) : engine (e) {}
 MidiControl::~MidiControl()
@@ -14,27 +23,66 @@ juce::Array<juce::MidiDeviceInfo> MidiControl::getDevices()
 
 bool MidiControl::start (const juce::String& deviceIdentifier, juce::String& error)
 {
+    if (input != nullptr && deviceIdentifier == deviceId)
+        return true;   // already listening there
+
     stop();
-    input = juce::MidiInput::openDevice (deviceIdentifier, this);
-    if (input == nullptr)
+    deviceId = deviceIdentifier;
+    if (! open())
     {
         error = "Couldn't open MIDI device " + deviceIdentifier;
         return false;
     }
+    return true;
+}
+
+bool MidiControl::open()
+{
+    input = juce::MidiInput::openDevice (deviceId, this);
+    if (input == nullptr)
+        return false;
     input->start();
     juce::Logger::writeToLog ("MIDI control listening on " + input->getName());
     return true;
 }
 
-void MidiControl::stop()
+void MidiControl::close()
 {
     if (input != nullptr)
     {
         input->stop();
         input.reset();
     }
+}
+
+void MidiControl::stop()
+{
+    close();
+    deviceId.clear();
     const juce::ScopedLock sl (mappingsLock);
     learningTarget.clear();
+}
+
+void MidiControl::maintain()
+{
+    // Windows doesn't tell an open MIDI input that its device was unplugged: compare with
+    // the device list instead. Gone: close it. Back: open it again.
+    if (deviceId.isEmpty())
+        return;
+
+    bool present = false;
+    for (const auto& d : getDevices())
+        present = present || d.identifier == deviceId;
+
+    if (! present && input != nullptr)
+    {
+        close();
+        juce::Logger::writeToLog ("MIDI controller disconnected");
+    }
+    else if (present && input == nullptr)
+    {
+        open();
+    }
 }
 
 juce::String MidiControl::getDeviceName() const
@@ -148,8 +196,19 @@ void MidiControl::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiM
                                                 [&m] (const Mapping& x) { return x.target == m.target; }),
                                 mappings.end());
                 mappings.push_back (m);
-                return;
             }
+        }
+
+        if (learnedFor.isNotEmpty())
+        {
+            // Saved right away, whether or not the Settings window is still open.
+            auto a = alive;
+            juce::MessageManager::callAsync ([this, a]
+            {
+                if (a->load())
+                    AppSettings::get().setMidiMappings (mappingsToJson (getMappings()));
+            });
+            return;
         }
     }
 
@@ -167,6 +226,33 @@ void MidiControl::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiM
         else if (m.isNote && message.isNoteOn() && message.getNoteNumber() == m.number)
             applyMapping (m, message);
     }
+}
+
+bool MidiControl::currentToggle (const juce::StringArray& p) const
+{
+    // Strip and bus atomics are safe to read from the MIDI thread.
+    if (p[0] == "strip" && p.size() >= 3)
+    {
+        const int s = p[1].getIntValue() - 1;
+        if (! juce::isPositiveAndBelow (s, kNumStrips))
+            return false;
+        auto& strip = engine.getStrip (s);
+        if (p[2] == "mute") return strip.mute.load();
+        if (p[2] == "solo") return strip.solo.load();
+        if (p[2] == "send")
+        {
+            const int b = busIndexFromName (p[3]);
+            return b >= 0 && strip.busOn[b].load();
+        }
+    }
+    else if (p[0] == "bus" && p.size() >= 3)
+    {
+        const int b = busIndexFromName (p[1]);
+        if (b < 0)
+            return false;
+        return p[2] == "norm" ? engine.getBus (b).normOn.load() : engine.getBus (b).mute.load();
+    }
+    return false;
 }
 
 void MidiControl::applyMapping (const Mapping& m, const juce::MidiMessage& message)
@@ -206,22 +292,34 @@ void MidiControl::applyMapping (const Mapping& m, const juce::MidiMessage& messa
         return;
     }
 
-    if (target.endsWith ("/fader") || target.endsWith ("/gain") || target.endsWith ("/sendlevel"))
+    juce::StringArray p;
+    p.addTokens (target, "/", {});
+    p.removeEmptyStrings();
+
+    // Continuous controls: CC 0..127 across the control's range. Paths: strip/<n>/fader,
+    // strip/<n>/gain, bus/<name>/fader, strip/<n>/sendlevel/<bus>.
+    const bool isLevel = (p.size() == 3 && (p[2] == "fader" || p[2] == "gain"))
+                      || (p.size() == 4 && p[2] == "sendlevel");
+    if (isLevel)
     {
-        // CC 0..127 across the control's range.
-        const float lo = target.endsWith ("/gain") ? -24.0f : -60.0f;
-        const float hi = target.endsWith ("/gain") ? 24.0f : 12.0f;
+        const bool gain = p[2] == "gain";
+        const float lo = gain ? -24.0f : -60.0f, hi = gain ? 24.0f : 12.0f;
         const float value = lo + (hi - lo) * (message.getControllerValue() / 127.0f);
         applyRemoteCommand (engine, target, value, cb);
         return;
     }
 
-    if (target.endsWith ("/mute") || target.endsWith ("/solo") || target.endsWith ("/norm"))
+    // On/off controls: strip/<n>/mute, strip/<n>/solo, strip/<n>/send/<bus>, bus/<name>/mute,
+    // bus/<name>/norm. Each press flips what the mixer has now, so a mute made in the app (or
+    // anywhere else) is never out of step with the controller.
+    const bool isToggle = (p.size() == 3 && (p[2] == "mute" || p[2] == "solo" || p[2] == "norm"))
+                       || (p.size() == 4 && p[2] == "send");
+    if (isToggle)
     {
         if (! m.isNote)
         {
-            // CC: flip once when the control crosses 64 upwards, not on
-            // every message while it sits above 64.
+            // CC: act once when the control crosses 64 upwards, not on every message
+            // while it sits above 64.
             const juce::ScopedLock sl (mappingsLock);
             const bool high = message.getControllerValue() >= 64;
             bool& last = ccToggleState[target];
@@ -230,31 +328,8 @@ void MidiControl::applyMapping (const Mapping& m, const juce::MidiMessage& messa
             last = high;
             if (! high)
                 return;
-            bool& on = ccToggleState[target + ":state"];
-            on = ! on;
-            applyRemoteCommand (engine, target, on ? 1.0f : 0.0f, cb);
-            return;
         }
-        // Note on toggles: read the current mute/solo/norm from the engine.
-        // (Strip/bus atomics are safe to read from the MIDI thread.)
-        float current = 0.0f;
-        juce::StringArray p;
-        p.addTokens (target, "/", {});
-        if (p[0] == "strip" && p.size() >= 3)
-        {
-            const int s = p[1].getIntValue() - 1;
-            if (juce::isPositiveAndBelow (s, kNumStrips))
-                current = p[2] == "mute" ? (engine.getStrip (s).mute.load() ? 1.0f : 0.0f)
-                                         : (engine.getStrip (s).solo.load() ? 1.0f : 0.0f);
-        }
-        else if (p[0] == "bus" && p.size() >= 3)
-        {
-            for (int b = 0; b < kNumBuses; ++b)
-                if (juce::String (kBusNames[b]).equalsIgnoreCase (p[1]))
-                    current = p[2] == "norm" ? (engine.getBus (b).normOn.load() ? 1.0f : 0.0f)
-                                             : (engine.getBus (b).mute.load() ? 1.0f : 0.0f);
-        }
-        applyRemoteCommand (engine, target, current > 0.5f ? 0.0f : 1.0f, cb);
+        applyRemoteCommand (engine, target, currentToggle (p) ? 0.0f : 1.0f, cb);
         return;
     }
 

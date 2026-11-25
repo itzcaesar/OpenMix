@@ -71,15 +71,15 @@ void PluginScanner::blacklistFile (const juce::String& file)
     saveCache();
 }
 
-bool PluginScanner::probePluginFile (const juce::String& file, juce::String& error)
+PluginScanner::ProbeResult PluginScanner::probePluginFile (const juce::String& file, juce::String& error)
 {
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
 
     juce::ChildProcess child;
     if (! child.start (juce::StringArray { exe.getFullPathName(), probeFlag, file }, 0))
     {
-        error = "couldn't start the probe process";
-        return false;
+        error = "couldn't start the test process";
+        return ProbeResult::unavailable;
     }
 
     for (int waited = 0; child.isRunning(); waited += 100)
@@ -87,19 +87,24 @@ bool PluginScanner::probePluginFile (const juce::String& file, juce::String& err
         if (waited > childTimeoutMs)
         {
             child.kill();
-            error = "timed out while loading (over 30 s)";
-            return false;
+            error = "was still starting after 30 s";
+            return ProbeResult::timedOut;
         }
         juce::Thread::sleep (100);
     }
 
     const auto exitCode = child.getExitCode();
+    if (exitCode == 2)
+    {
+        error = "isn't a plugin this build can host";
+        return ProbeResult::crashed;
+    }
     if (exitCode != 0)
     {
-        error = "crashed or failed to load (exit code " + juce::String ((int) exitCode) + ")";
-        return false;
+        error = "crashed or failed to start (exit code " + juce::String ((int) exitCode) + ")";
+        return ProbeResult::crashed;
     }
-    return true;
+    return ProbeResult::ok;
 }
 
 int PluginScanner::runChildProbe (const juce::String& fileOrIdentifier)
@@ -263,6 +268,8 @@ bool PluginScanner::scanOneInChildProcess (const juce::String& file, juce::Strin
 
 void PluginScanner::saveCache()
 {
+    // Called from the scan thread and (blacklistFile) the message thread: one writer at a time.
+    const juce::ScopedLock sl (cacheLock);
     if (auto xml = known.createXml())
     {
         cacheFile.getParentDirectory().createDirectory();

@@ -382,35 +382,63 @@ void InsertRack::loadPluginAsync (int slot, const juce::PluginDescription& desc,
     // Crash-safe loading (on by default): a plugin that crashes while starting
     // is caught in a child process first, in a background thread so the UI
     // stays responsive. Only if the child survived does the mixer load it
-    // in-process. A plugin that fails the probe is blacklisted, like a plugin
-    // that crashed while scanning, until "Retry skipped plugins".
+    // in-process. A plugin that crashes in the test is skipped (blacklisted,
+    // like a plugin that crashed while scanning) until "Retry skipped plugins".
+    // A slow start is not a crash: you're asked whether to load it anyway.
+    // If the test process itself can't run, the plugin loads as normal.
     // This protects loading, not the audio thread: a plugin that crashes
     // while processing audio can still take the mixer down. Full
     // out-of-process audio hosting is still open (ROADMAP Phase 5).
     if (AppSettings::get().pluginProbeEnabled())
     {
+        using Probe = PluginScanner::ProbeResult;
         juce::Component::SafePointer<InsertRack> safe (this);
         std::thread ([safe, desc, then]
         {
             juce::String error;
-            const bool ok = PluginScanner::probePluginFile (desc.fileOrIdentifier, error);
-            juce::MessageManager::callAsync ([safe, desc, then, ok, error]
+            const auto result = PluginScanner::probePluginFile (desc.fileOrIdentifier, error);
+            juce::MessageManager::callAsync ([safe, desc, then, result, error]
             {
                 if (safe == nullptr)
                     return;
-                if (! ok)
+
+                if (result == Probe::ok || result == Probe::unavailable)
                 {
-                    safe->loadingSlot = -1;
-                    safe->updateRows();
-                    safe->engine.getScanner().blacklistFile (desc.fileOrIdentifier);
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                                            "Couldn't load " + desc.name,
-                                                            "The plugin " + error + " in a test process, so it was "
-                                                            "skipped instead of loading it into the mixer. "
-                                                            "Use Settings > Retry skipped plugins to try it again.");
+                    safe->startAsyncLoad (desc, then);
                     return;
                 }
-                safe->startAsyncLoad (desc, then);
+
+                if (result == Probe::timedOut)
+                {
+                    juce::AlertWindow::showAsync (
+                        juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon)
+                            .withTitle (desc.name + " is slow to start")
+                            .withMessage ("In a test process it " + error + ". Some plugins take that long the first time "
+                                          "(or show a licence window). Load it anyway? If it hangs, OpenMix will hang with it.")
+                            .withButton ("Load anyway", 1).withButton ("Cancel", 0).withAssociatedComponent (safe.getComponent()),
+                        [safe, desc, then] (int choice)
+                        {
+                            if (safe == nullptr)
+                                return;
+                            if (choice == 1)
+                                safe->startAsyncLoad (desc, then);
+                            else
+                            {
+                                safe->loadingSlot = -1;
+                                safe->updateRows();
+                            }
+                        });
+                    return;
+                }
+
+                safe->loadingSlot = -1;
+                safe->updateRows();
+                safe->engine.getScanner().blacklistFile (desc.fileOrIdentifier);
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                        "Couldn't load " + desc.name,
+                                                        "In a test process the plugin " + error + ", so it was "
+                                                        "skipped instead of loading it into the mixer. "
+                                                        "Use Settings > Retry skipped plugins to try it again.");
             });
         }).detach();
         return;

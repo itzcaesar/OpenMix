@@ -93,6 +93,9 @@ RemoteServer::~RemoteServer()
 
 bool RemoteServer::start (int newPort, juce::String& error)
 {
+    if (running.load() && newPort == port)
+        return true;   // already serving there: connected phones stay connected
+
     stop();
     refreshCachedState();
     listener = std::make_unique<juce::StreamingSocket>();
@@ -129,20 +132,47 @@ void RemoteServer::stop()
         listenerThread.join();
     if (listener != nullptr)
         listener->close();
+
+    // Close every connection (that unblocks their reads), then wait for their threads:
+    // they use this object, so none may still be running once stop() returns.
+    std::vector<std::shared_ptr<Client>> open;
     {
         const std::lock_guard<std::mutex> sl (clientsLock);
-        for (auto& c : clients)
-            if (c->socket != nullptr)
-                c->socket->close();
-        clients.clear();
+        open.swap (clients);
+    }
+    for (auto& c : open)
+    {
+        const std::lock_guard<std::mutex> wl (c->sendLock);
+        if (c->socket != nullptr)
+            c->socket->close();
+    }
+    {
+        std::unique_lock<std::mutex> lk (threads->lock);
+        if (! threads->done.wait_for (lk, std::chrono::seconds (5), [this] { return threads->active == 0; }))
+            juce::Logger::writeToLog ("Remote server: a connection didn't close in time");
     }
     listener.reset();
 }
 
+bool RemoteServer::originAllowed (const juce::String& head)
+{
+    // Non-browser clients (Stream Deck plugins, scripts, curl) send no Origin. A browser
+    // always does: only the page this server serves itself may talk to it.
+    const auto origin = headerValue (head, "Origin");
+    if (origin.isEmpty())
+        return true;
+    const auto host = headerValue (head, "Host");
+    const auto originHost = origin.fromFirstOccurrenceOf ("://", false, false).upToFirstOccurrenceOf ("/", false, false);
+    return host.isNotEmpty() && originHost.equalsIgnoreCase (host);
+}
+
 void RemoteServer::removeClient (const std::shared_ptr<Client>& client)
 {
-    if (client->socket != nullptr)
-        client->socket->close();
+    {
+        const std::lock_guard<std::mutex> wl (client->sendLock);   // stop() may be closing it too
+        if (client->socket != nullptr)
+            client->socket->close();
+    }
     const std::lock_guard<std::mutex> sl (clientsLock);
     clients.erase (std::remove (clients.begin(), clients.end(), client), clients.end());
 }
@@ -218,7 +248,22 @@ void RemoteServer::listenLoop()
             }
             clients.push_back (client);
         }
-        std::thread ([this, client] { handleClient (client); }).detach();
+
+        // The thread is counted, and stop() waits for the count to reach zero. The count
+        // lives in a shared object, so signing off never touches this server.
+        {
+            const std::lock_guard<std::mutex> lk (threads->lock);
+            ++threads->active;
+        }
+        std::thread ([this, client, t = threads]
+        {
+            handleClient (client);
+            {
+                const std::lock_guard<std::mutex> lk (t->lock);
+                --t->active;
+            }
+            t->done.notify_all();
+        }).detach();
     }
 }
 
@@ -267,23 +312,28 @@ void RemoteServer::broadcastStateIfChanged()
     if (! running.load())
         return;
 
+    // Refresh at ~10 Hz, or at once after a remote change. Broadcast whenever the mix
+    // itself changed (not just the meters), so a fader moved in the desktop app shows up
+    // on every phone too, not only changes made remotely.
     const int changes = engine.externalChanges.load();
     const bool externalChanged = changes != lastExternalChanges;
-    if (externalChanged || ++stateRefreshTicks >= 3)
-    {
-        stateRefreshTicks = 0;
-        refreshCachedState();
-    }
-
-    if (! externalChanged)
+    if (! externalChanged && ++stateRefreshTicks < 3)
         return;
+
+    stateRefreshTicks = 0;
     lastExternalChanges = changes;
+    refreshCachedState();
+
+    const auto mix = remoteStateJson (engine, false);
+    if (mix == lastBroadcastMix)
+        return;
+    lastBroadcastMix = mix;
     broadcast ("{\"type\":\"state\",\"state\":" + getCachedState() + "}");
 }
 
 juce::String RemoteServer::httpResponse (int code, const juce::String& contentType, const juce::String& body) const
 {
-    const juce::String status = code == 200 ? "OK" : code == 404 ? "Not Found" : "Bad Request";
+    const juce::String status = code == 200 ? "OK" : code == 404 ? "Not Found" : code == 403 ? "Forbidden" : "Bad Request";
     return "HTTP/1.1 " + juce::String (code) + " " + status + "\r\n"
          + "Content-Type: " + contentType + "\r\n"
          + "Content-Length: " + juce::String (body.getNumBytesAsUTF8()) + "\r\n"
@@ -301,21 +351,34 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
 
     auto& socket = *client->socket;
 
-    // Read the HTTP request head (up to 8 KB).
-    juce::String head;
+    // Read the HTTP request head (up to 8 KB) as raw bytes; whatever arrived after the
+    // blank line is the start of the body. Text is decoded as UTF-8 (names can be any
+    // language).
+    std::string raw;
+    size_t headEnd = std::string::npos;
     {
         char buf[1024];
-        while (head.length() < 8192 && ! head.contains ("\r\n\r\n"))
+        while (raw.size() < 8192 && (headEnd = raw.find ("\r\n\r\n")) == std::string::npos)
         {
-            const int n = socket.read (buf, (int) sizeof (buf) - 1, true);
+            const int n = socket.read (buf, (int) sizeof (buf), false);
             if (n <= 0)
                 return;
-            buf[n] = '\0';
-            head += juce::String (buf, (size_t) n);
+            raw.append (buf, (size_t) n);
         }
     }
-    if (! head.contains ("\r\n\r\n"))
+    if (headEnd == std::string::npos)
         return;
+    const auto head = juce::String::fromUTF8 (raw.data(), (int) headEnd + 4);
+    std::string bodyBytes = raw.substr (headEnd + 4);
+
+    // Browsers: only the page this server serves. Anything else gets nothing.
+    if (! originAllowed (head))
+    {
+        const auto response = httpResponse (403, "text/plain", "Forbidden: requests from other websites are refused.");
+        const std::lock_guard<std::mutex> wl (client->sendLock);
+        socket.write (response.toRawUTF8(), (int) response.getNumBytesAsUTF8());
+        return;
+    }
 
     const auto firstLine = head.upToFirstOccurrenceOf ("\r\n", false, false);
     const auto method = firstLine.upToFirstOccurrenceOf (" ", false, false);
@@ -391,7 +454,7 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
             if (opcode != 1)
                 continue;
 
-            const juce::String text ((const char*) payload.data(), payload.size());
+            const auto text = juce::String::fromUTF8 ((const char*) payload.data(), (int) payload.size());
             juce::var parsed;
             if (juce::JSON::parse (text, parsed).failed() || ! parsed.isObject())
                 continue;
@@ -435,15 +498,14 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
         }
         else
         {
-            juce::String jsonBody = head.fromFirstOccurrenceOf ("\r\n\r\n", false, false);
-            while ((int) jsonBody.getNumBytesAsUTF8() < contentLength)
+            while ((int) bodyBytes.size() < contentLength)
             {
                 char buf[1024];
-                const int n = socket.read (buf, (int) sizeof (buf) - 1, true);
+                const int n = socket.read (buf, juce::jmin ((int) sizeof (buf), contentLength - (int) bodyBytes.size()), false);
                 if (n <= 0) break;
-                buf[n] = '\0';
-                jsonBody += juce::String (buf, (size_t) n);
+                bodyBytes.append (buf, (size_t) n);
             }
+            const auto jsonBody = juce::String::fromUTF8 (bodyBytes.data(), juce::jmin ((int) bodyBytes.size(), contentLength));
             juce::var parsed;
             bool ok = false;
             if (! juce::JSON::parse (jsonBody, parsed).failed() && parsed.isObject())

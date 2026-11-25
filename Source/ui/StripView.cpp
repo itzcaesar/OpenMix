@@ -213,6 +213,9 @@ void StripView::applyPreset (const juce::String& name)
         return;
 
     selectedPreset = name;
+    // The preset replaces the insert chain: close the plugin windows first, or they would
+    // keep pointing at plugins that are about to be deleted.
+    inserts.closeAllEditors();
     const int missing = engine.applyStripPreset (name, index);
     refreshFromStrip();
     Session::save (engine);
