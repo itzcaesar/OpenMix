@@ -134,12 +134,6 @@ omx::StripPreset ChannelStrip::savePreset() const
         p.padModeY[(size_t) m] = pad.modeY[(size_t) m].load();
     }
 
-    p.padX = pad.x.load();
-    p.padY = pad.y.load();
-    p.padMode = pad.mode.load();
-    for (int m = 0; m < VoicePadParams::numModes; ++m)
-        pad.getModePosition (m, p.padModeX[(size_t) m], p.padModeY[(size_t) m]);
-
     p.numSlots = inserts.getNumPlugins();
     for (int s = 0; s < p.numSlots; ++s)
     {

@@ -267,7 +267,7 @@ namespace
     //==========================================================================
     // Interactive EQ visual (RBJ biquads + draggable band nodes + overview)
 
-    class EqVisual final : public juce::Component
+    class EqVisual final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
         EqVisual (MixerEngine& e, ProcessingParams& p, bool hasFilters, std::function<void()> onEdit)
@@ -578,7 +578,7 @@ namespace
     //==========================================================================
     // Interactive Compressor visual (transfer curve + threshold/ratio + live GR)
 
-    class CompVisual final : public juce::Component
+    class CompVisual final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
         CompVisual (ProcessingParams& p, std::function<float()> grFn, std::function<void()> onEdit)
@@ -794,7 +794,7 @@ namespace
     //==========================================================================
     // Interactive Gate visual (hysteresis band + range floor + open/closed state)
 
-    class GateVisual final : public juce::Component
+    class GateVisual final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
         GateVisual (ProcessingParams& p, std::function<float()> grFn, std::function<void()> onEdit)
@@ -979,7 +979,7 @@ namespace
     //==========================================================================
     // Interactive De-esser visual (6.5k detector window + dynamic 4.5k high shelf)
 
-    class DeEssVisual final : public juce::Component
+    class DeEssVisual final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
         DeEssVisual (MixerEngine& e, ProcessingParams& p, std::function<float()> grFn, std::function<void()> onEdit)
@@ -1195,7 +1195,7 @@ namespace
     //==========================================================================
     // Interactive Ducking visual (sidechain trigger curve + live sidechain input)
 
-    class DuckVisual final : public juce::Component
+    class DuckVisual final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
         DuckVisual (MixerEngine& e, ProcessingParams& p, std::function<float()> grFn, std::function<void()> onEdit)
@@ -1356,7 +1356,7 @@ namespace
     //==========================================================================
     // Interactive Noise Removal visual (live voice-activity sparkline + amount)
 
-    class DenoiseVisual final : public juce::Component
+    class DenoiseVisual final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
         DenoiseVisual (ProcessingParams& p, std::function<void()> onEdit)
