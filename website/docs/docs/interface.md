@@ -17,9 +17,11 @@ The full design direction lives in the repo at `docs/DESIGN.md`.
   along its top edge. The same colour returns as a solid name bar along
   the bottom of the strip.
 - **Labelled sections** with small-caps legends on every strip (INPUT,
-  FILTER, PROCESSING, PRESET, INSERTS, VOICE PAD, SENDS, FX SENDS) and
+  PROCESSING, INSERTS, VOICE PAD, SENDS) and
   bus (OUTPUT, LIMITER, LOUDNESS, PROCESSING, INSERTS, ANALYSER), in
-  signal-flow order top to bottom.
+  signal-flow order top to bottom. There is no FILTER or PRESET section
+  on a strip: HPF/LPF live in the EQ panel, and presets and solo-safe
+  live in the strip's three-dot menu.
 - **Bus groups** HARDWARE (A1–A3) and VIRTUAL (B1–B3) with group labels
   and a divider; the master section is separated by a gap and a divider.
 - **Monitor bus:** a 1 px accent outline plus the name bar lit in the

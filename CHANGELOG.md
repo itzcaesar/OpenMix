@@ -30,8 +30,9 @@ This is OpenMix's first public release. There was no earlier release —
 - Built-in voice processing on every strip: RNNoise noise removal, gate,
   3-band EQ, compressor, de-esser and ducking (any strip as sidechain).
 - VoicePad XY pad with Voice, Pan, Colour and Space modes.
-- **HPF / LPF per strip**, with a cutoff knob each (HPF 20 Hz–1 kHz,
-  LPF 1–20 kHz), sitting before the EQ, switchable without clicks.
+- **HPF / LPF per strip**, in the EQ panel, with an on/off key and a cutoff
+  slider each (HPF 20 Hz–1 kHz, LPF 1–20 kHz), sitting before the EQ in the
+  signal path, switchable without clicks.
 - Input gain as a slider directly under the source name (-24 to +24 dB),
   with Ø invert polarity and MONO below it.
 - **Per-strip presets**: save a strip's sound under a name and recall it on
@@ -39,9 +40,10 @@ This is OpenMix's first public release. There was no earlier release —
   the VoicePad — never the name, source, mute or solo state.
 - **Solo-safe (SAFE)**: keeps a strip playing on the monitor bus while
   another strip is soloed.
-- **Per-channel latency readout**: each strip's total latency in
-  milliseconds (noise removal + plugins); other strips are delayed to match,
-  so sends stay aligned.
+- **Latency compensation**: each strip is delayed to match the slowest strip
+  (noise removal + plugins), so sends stay aligned. The overall device
+  latency is shown in the status bar; there is no per-strip latency readout
+  on the desk.
 
 **Plugins and built-in effects**
 

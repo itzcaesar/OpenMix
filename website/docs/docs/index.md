@@ -16,7 +16,7 @@ is licensed under the GNU AGPLv3.
 - **Voice processing built in:** AI noise removal (RNNoise), gate, 3-band EQ,
   compressor, de-esser and ducking on every strip, plus a VoicePad (XY pad
   with voice, pan, colour and space modes). HPF/LPF per strip, per-strip
-  presets, solo-safe, and a per-channel latency readout.
+  presets, solo-safe, and latency compensation.
 - **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning,
   bypass without clicks, wet/dry, A/B compare, presets, latency compensation.
   **Built-in effects** too: Reverb, tempo-synced Delay and Chorus as insert
@@ -61,8 +61,8 @@ Version tags publish a GitHub release with the zip and an installer,
    cable (for example VB-Audio Virtual Cable's "CABLE Input"), then choose
    the cable's other end ("CABLE Output") as the microphone in Discord
    or OBS.
-6. On each strip, the send keys beside the fader decide where it goes: mic
-   on A1 and B1, music on A1 only (or on B1 too, if the call should hear
+6. On each strip, the send keys in the SENDS section decide where it goes:
+   mic on A1 and B1, music on A1 only (or on B1 too, if the call should hear
    it). Right-click a send key to set its level or make it pre-fader.
 
 Everything is saved automatically.

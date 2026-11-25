@@ -1,14 +1,17 @@
 # Strips & voice processing
 
 Up to 8 input strips, added and removed at runtime with **+ Strip**.
-Each strip, top to bottom, in the order the audio flows:
+Each strip, top to bottom, in the order the audio flows — INPUT,
+PROCESSING, INSERTS, VOICE PAD, SENDS, FADER. There is no PRESET or
+FILTER section on the strip: presets and solo-safe live in the strip's
+three-dot menu, and HPF/LPF live in the EQ panel.
 
 ## 1. Name plate
 
 Double-click, Enter or F2 to rename. The three-dot menu holds rename,
-colour, mono, invert polarity, and remove the strip. The strip's colour
-shows as a thin cap on the name plate and as a solid name bar along the
-bottom of the strip.
+colour, mono, invert polarity, solo-safe, strip presets, and remove the
+strip. The strip's colour shows as a thin cap on the name plate and as a
+solid name bar along the bottom of the strip.
 
 ## 2. Source and gain
 
@@ -31,13 +34,7 @@ Sources:
   without a virtual cable. Devices OpenMix itself plays into are greyed
   out, because capturing them would feed the sound back into itself.
 
-## 3. Filter: HPF / LPF
-
-**HPF** and **LPF** keys with a cutoff knob each (HPF 20 Hz–1 kHz,
-LPF 1–20 kHz). The filters sit before the EQ and switch on/off without
-clicks.
-
-## 4. Processing
+## 3. Processing
 
 Processing keys, lit when on. Click for settings, Space switches on or off.
 
@@ -50,26 +47,30 @@ Processing keys, lit when on. Click for settings, Space switches on or off.
   strip has signal (music under your voice).
 - Gate, compressor, de-esser and ducking show a gain-reduction meter in
   their panel.
+- **HPF / LPF** live in the EQ panel, not as their own strip section: an
+  on/off key and a cutoff slider each (HPF 20 Hz–1 kHz, LPF 1–20 kHz).
+  The filters sit before the EQ in the signal path and switch on/off
+  without clicks.
 
-## 5. Preset
+## 4. Strip presets
 
-Save the strip's sound under a name and recall it here (or on any other
-strip). A preset carries gain, fader, processing, inserts, sends and the
-VoicePad — never the name, source, mute or solo state. If a preset's
-plugins are missing on recall, those slots are skipped and you are told
-how many.
+Save the strip's sound under a name and recall it from the strip's
+three-dot menu (or on any other strip). A preset carries gain, fader,
+processing, inserts, sends and the VoicePad — never the name, source,
+mute or solo state. If a preset's plugins are missing on recall, those
+slots are skipped and you are told how many.
 
 !!! note
     A strip preset does not store plugin state blobs — a recalled preset
     restores the plugin choice and the strip settings, not a plugin's
     internal saved state.
 
-## 6. Inserts
+## 5. Inserts
 
 Up to 6 slots, VST3 plugins or built-in effects (Reverb, tempo-synced
 Delay, Chorus). See [Plugins & built-in effects](plugins.md).
 
-## 7. VoicePad
+## 6. VoicePad
 
 Double-click or Home resets the puck:
 
@@ -78,28 +79,33 @@ Double-click or Home resets the puck:
 - *Color*: corners Warm, Bright, Radio and Close; the puck blends them.
 - *Space*: X = pan, Y = distance (quieter, darker, with early reflections).
 
-## 8. Fader bay
+## 7. Sends
 
-Fader and meter, the **send keys** beside them, **Mute**, **Solo** and
-**SAFE**, a per-channel **latency** readout, and a solid-colour **name
-bar** along the bottom of the strip.
+Sends live in their own full-width section above the fader, not beside it.
 
-- Click a send key to switch it. Right-click (or M) for its level and
+- Click a bus send key to switch it. Right-click (or M) for its level and
   **pre-fader** (the send ignores the strip fader, for example a separate
   mix for a call). A level other than 0 dB and "P" for pre-fader are
   printed on the key. Send keys show the bus's own name, so a renamed bus
   reads correctly here.
-- Under the bus sends, three small **FX sends** (REV / DLY / CHO) feed
-  the shared global reverb, delay and chorus; the effect return is mixed
-  into every bus the strip is routed to. The Delay send follows the tap
-  tempo. FX sends ignore solo.
+- Three small **FX sends** (REV / DLY / CHO) feed the shared global
+  reverb, delay and chorus; the effect return is mixed into every bus the
+  strip is routed to. The Delay send follows the tap tempo. FX sends
+  ignore solo.
+
+## 8. Fader bay
+
+Fader and meter, **Mute** and **Solo**, and a solid-colour **name bar**
+along the bottom of the strip. There is no per-strip latency readout on
+the desk.
+
 - **Solo** plays the strip alone on the **monitor bus** (A1 unless you
-  choose another in a bus menu). **SAFE** (solo-safe) keeps the strip
-  playing on the monitor bus while another strip is soloed. Stream and
-  call buses are not affected.
-- **Latency** is the strip's total (noise removal + plugins) in
-  milliseconds; the other strips are delayed to match it, so sends stay
-  aligned.
+  choose another in a bus menu). **SAFE** (solo-safe, in the strip's
+  three-dot menu) keeps the strip playing on the monitor bus while another
+  strip is soloed. Stream and call buses are not affected.
+- Latency is compensated, not displayed per strip: each strip is delayed
+  to match the slowest one (noise removal + plugins), so sends stay
+  aligned. The overall device latency is shown in the status bar.
 
 **Signal path:** gain, polarity/mono, DC blocker, noise removal, gate,
 HPF/LPF, EQ, compressor, de-esser, inserts, voice pad, ducking, latency

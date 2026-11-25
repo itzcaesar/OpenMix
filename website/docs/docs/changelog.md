@@ -15,8 +15,9 @@ is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 - **Core mixer:** up to 8 strips and 6 buses at runtime; per-app routing;
   multi-device I/O with drift-correcting resampling.
 - **Voice and strips:** RNNoise noise removal, gate, 3-band EQ, compressor,
-  de-esser, ducking, VoicePad; HPF/LPF per strip; per-strip presets;
-  solo-safe; per-channel latency readout; gain slider under the source name.
+  de-esser, ducking, VoicePad; HPF/LPF per strip (in the EQ panel);
+  per-strip presets (in the strip menu); solo-safe; latency compensation;
+  gain slider under the source name.
 - **Plugins and effects:** VST3 (6 slots per strip/bus) with crash-safe
   loading; VST2 opt-in only; built-in Reverb, tempo-synced Delay and
   Chorus as inserts, plus REV / DLY / CHO FX sends driven by tap tempo.

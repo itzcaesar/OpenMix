@@ -114,7 +114,7 @@ Built-in so the basics work without third-party plugins:
 - [x] FX sends per strip (post-fader Reverb/Delay/Chorus) into shared global effects
 - [x] Tap tempo (40-240 BPM) driving tempo-synced delays, with a Tap button and BPM readout in the status bar
 - [x] Per-strip presets: save/recall a strip's sound under a name (missing plugins skipped on recall)
-- [x] Solo-safe per strip; per-channel latency readout in the fader bay
+- [x] Solo-safe per strip (in the strip menu); latency compensation, with no per-strip latency readout on the desk
 
 ## Phase 5 - Plugin hosting hardening  *(~2 weeks)*
 

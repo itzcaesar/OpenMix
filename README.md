@@ -71,7 +71,7 @@ ctest --test-dir build -C Release
 5. Bus **B1** is for apps that need a microphone: point it at a virtual cable (for example
    VB-Audio Virtual Cable's "CABLE Input"), then choose the cable's other end ("CABLE
    Output") as the microphone in Discord or OBS.
-6. On each strip, the send keys beside the fader decide where it goes: mic on A1 and B1,
+6. On each strip, the send keys in the SENDS section decide where it goes: mic on A1 and B1,
    music on A1 only (or on B1 too, if the call should hear it). Right-click a send key to set
    its level or make it pre-fader.
 
@@ -98,10 +98,18 @@ Everything is saved automatically.
 
 ## Strips
 
-Top to bottom, in the order the audio flows:
+Top to bottom, in the order the audio flows — INPUT, PROCESSING, INSERTS,
+VOICE PAD, SENDS, FADER. There is no PRESET or FILTER section on the strip:
+presets and solo-safe live in the strip's three-dot menu, and HPF/LPF live
+in the EQ panel.
 
 1. **Name plate** (double-click, Enter or F2 to rename) and the three-dot menu: rename,
-   colour, mono, invert polarity, remove the strip.
+   colour, mono, invert polarity, solo-safe, strip presets, remove the strip.
+   A strip preset saves the strip's sound under a name and recalls it here (or on any
+   other strip). It carries gain, fader, processing, inserts, sends and the VoicePad —
+   never the name, source, mute or solo state. If a preset's plugins are missing on
+   recall, those slots are skipped and you are told how many. A preset does not store
+   plugin state blobs.
 2. **Source**, then the **input gain slider** directly under the source name (-24 to
    +24 dB, value readout, double-click or Home for 0 dB), then **Ø** (invert polarity) and
    **MONO** below the slider. Sources:
@@ -115,9 +123,7 @@ Top to bottom, in the order the audio flows:
    - **Windows output (loopback):** everything one output device plays, without a virtual
      cable. Devices OpenMix itself plays into are greyed out, because capturing them would
      feed the sound back into itself.
-3. **Filter:** **HPF** and **LPF** keys with a cutoff knob each (HPF 20 Hz-1 kHz, LPF
-   1-20 kHz). The filters sit before the EQ and switch on/off without clicks.
-4. **Processing** keys, lit when on. Click for settings, Space switches on or off.
+3. **Processing** keys, lit when on. Click for settings, Space switches on or off.
    - **NR** noise removal: fans, hum and keyboard noise. Adds 20 ms at 48 kHz (RNNoise's own
      rate); at other rates it resamples to 48 kHz and back, about 1 ms more. Other strips are
      delayed to match.
@@ -125,32 +131,32 @@ Top to bottom, in the order the audio flows:
      shelf. **Comp** evens out loud and quiet parts. **DS** softens harsh S sounds.
      **Duck** lowers this strip while another strip has signal (music under your voice).
    - Gate, compressor, de-esser and ducking show a gain-reduction meter in their panel.
-5. **Preset:** save the strip's sound under a name and recall it here (or on any other
-   strip). A preset carries gain, fader, processing, inserts, sends and the VoicePad — never
-   the name, source, mute or solo state. If a preset's plugins are missing on recall, those
-   slots are skipped and you are told how many.
-6. **Inserts:** up to 6 slots, VST3 plugins or built-in effects (Reverb, tempo-synced Delay,
+   - **HPF / LPF** live in the EQ panel, not as their own strip section: an on/off key
+     and a cutoff slider each (HPF 20 Hz-1 kHz, LPF 1-20 kHz). The filters sit before the
+     EQ in the signal path and switch on/off without clicks.
+4. **Inserts:** up to 6 slots, VST3 plugins or built-in effects (Reverb, tempo-synced Delay,
    Chorus), see [Plugins](#plugins).
-7. **Voice pad** (double-click or Home resets the puck):
+5. **Voice pad** (double-click or Home resets the puck):
    - *Voice*: X = tone tilt (dark to bright), Y = presence and echo.
    - *Pan*: X = constant-power pan, Y = stereo width (100-200%).
    - *Color*: corners Warm, Bright, Radio and Close; the puck blends them.
    - *Space*: X = pan, Y = distance (quieter, darker, with early reflections).
-8. **Fader bay:** fader and meter, the **send keys** beside them, **Mute**, **Solo** and
-   **SAFE**, a per-channel **latency** readout, and a solid-colour **name bar** along the
-   bottom of the strip.
-   - Click a send key to switch it. Right-click (or M) for its level and **pre-fader**
+6. **Sends**, in their own full-width section above the fader, not beside it:
+   - Click a bus send key to switch it. Right-click (or M) for its level and **pre-fader**
      (the send ignores the strip fader, for example a separate mix for a call). A level
      other than 0 dB and "P" for pre-fader are printed on the key. Send keys show the bus's
      own name, so a renamed bus reads correctly here.
-   - Under the bus sends, three small **FX sends** (REV / DLY / CHO) feed the shared global
+   - Three small **FX sends** (REV / DLY / CHO) feed the shared global
      reverb, delay and chorus; the effect return is mixed into every bus the strip is routed
-     to. The Delay send follows the tap tempo.
+     to. The Delay send follows the tap tempo. FX sends ignore solo.
+7. **Fader bay:** fader and meter, **Mute** and **Solo**, and a solid-colour **name bar**
+   along the bottom of the strip. There is no per-strip latency readout on the desk.
    - **Solo** plays the strip alone on the **monitor bus** (A1 unless you choose another in a
-     bus menu). **SAFE** (solo-safe) keeps the strip playing on the monitor bus while another
-     strip is soloed. Stream and call buses are not affected.
-   - **Latency** is the strip's total (noise removal + plugins) in milliseconds; the other
-     strips are delayed to match it, so sends stay aligned.
+     bus menu). **SAFE** (solo-safe, in the strip's three-dot menu) keeps the strip playing
+     on the monitor bus while another strip is soloed. Stream and call buses are not affected.
+   - Latency is compensated, not displayed per strip: each strip is delayed to match the
+     slowest one (noise removal + plugins), so sends stay aligned. The overall device
+     latency is shown in the status bar.
 
 Signal path: gain, polarity/mono, DC blocker, noise removal, gate, HPF/LPF, EQ, compressor,
 de-esser, inserts, voice pad, ducking, latency alignment, mute, fader, sends.
