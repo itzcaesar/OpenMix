@@ -42,43 +42,59 @@ public:
         auto r = getLocalBounds().toFloat().reduced (0.5f);
         const bool empty = name.isEmpty();
 
-        // Empty pads are recessed slots (nothing to press yet but "load"); loaded pads are raised keys.
-        auto fill = empty ? t.well : t.raised;
-        if (down)             fill = fill.darker (0.12f);
-        else if (highlighted) fill = t.dark ? fill.brighter (0.10f) : fill.darker (0.04f);
-        g.setColour (fill);
-        g.fillRoundedRectangle (r, Theme::controlRadius);
+        static constexpr juce::uint32 padAccents[] {
+            0xfff0a23b, 0xffe5484d, 0xff3ec46d, 0xff5b9ef0,
+            0xffefb3c6, 0xfff3d36b, 0xffa7d7a0, 0xff8f8f9a
+        };
+        const auto padColour = juce::Colour (padAccents[(size_t) juce::jlimit (0, 7, index)]);
 
         if (empty)
         {
+            auto fill = t.well;
+            if (down)             fill = fill.darker (0.12f);
+            else if (highlighted) fill = t.dark ? fill.brighter (0.08f) : fill.darker (0.04f);
+            g.setColour (fill);
+            g.fillRoundedRectangle (r, Theme::controlRadius);
             g.setColour (highlighted ? t.controlEdge : t.line);
             g.drawRoundedRectangle (r, Theme::controlRadius, 1.0f);
+
             auto inner = getLocalBounds().reduced (8, 6);
             g.setColour (t.textFaint);
-            g.setFont (Theme::mono (11.0f));
+            g.setFont (Theme::mono (10.5f));
             g.drawText (juce::String (index + 1), inner.removeFromTop (14), juce::Justification::centredRight);
             g.setColour (highlighted ? t.text : t.textDim);
-            g.setFont (Theme::ui (12.5f));
+            g.setFont (Theme::ui (12.0f));
             g.drawText ("+ Load", inner, juce::Justification::centred);
         }
         else
         {
+            auto fill = playing ? t.accent : t.selBg;
+            if (down)                      fill = fill.darker (0.12f);
+            else if (highlighted && ! playing) fill = t.dark ? fill.brighter (0.10f) : fill.darker (0.04f);
+
+            g.setColour (fill);
+            g.fillRoundedRectangle (r, Theme::controlRadius);
+
+            // Bottom colour bar (mockup .pb-bar style), clipped cleanly inside the radius.
+            auto stripeArea = r.withTop (r.getBottom() - 4.0f);
+            juce::Path stripe;
+            stripe.addRoundedRectangle (stripeArea.getX(), stripeArea.getY(), stripeArea.getWidth(), stripeArea.getHeight(),
+                                        Theme::controlRadius, Theme::controlRadius, false, false, true, true);
+            g.setColour (playing ? t.onAccent.withAlpha (0.28f) : padColour);
+            g.fillPath (stripe);
+
             g.setColour (playing ? t.accentEdge : t.controlEdge);
-            g.drawRoundedRectangle (r, Theme::controlRadius, playing ? 2.0f : 1.0f);
+            g.drawRoundedRectangle (r, Theme::controlRadius, playing ? 1.5f : 1.0f);
 
-            auto inner = getLocalBounds().reduced (8, 6);
-            auto top = inner.removeFromTop (14);
-            OpenMixLookAndFeel::drawLamp (g, top.removeFromLeft (10).withSizeKeepingCentre (9, 9).toFloat(), playing, t.accent);
-            g.setColour (t.textFaint);
-            g.setFont (Theme::mono (11.0f));
-            g.drawText (juce::String (index + 1), top.removeFromRight (16), juce::Justification::centredRight);
-
-            g.setColour (t.text);
-            g.setFont (Theme::ui (13.0f, true));
-            g.drawFittedText (name, inner.removeFromTop (inner.getHeight() - 14), juce::Justification::centredLeft, 2, 0.8f);
-            g.setColour (t.textDim);
-            g.setFont (Theme::mono (11.0f));
-            g.drawText (juce::String (seconds, 1) + " s", inner, juce::Justification::centredLeft);
+            auto inner = getLocalBounds().reduced (8, 5).withTrimmedBottom (4);
+            g.setColour (playing ? t.onAccent : t.text);
+            g.setFont (Theme::ui (12.0f, true));
+            g.drawFittedText (name, inner.removeFromTop (juce::jmax (14, inner.getHeight() - 14)),
+                              juce::Justification::centredLeft, 2, 0.85f);
+            g.setColour (playing ? t.onAccent.withAlpha (0.8f) : t.textFaint);
+            g.setFont (Theme::mono (10.0f));
+            g.drawText (juce::String (seconds, 1) + " s \xc2\xb7 Key " + juce::String (index + 1),
+                        inner, juce::Justification::centredLeft);
         }
 
         if (hasKeyboardFocus (false))

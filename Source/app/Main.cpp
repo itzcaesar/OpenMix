@@ -105,7 +105,7 @@ public:
 
             const auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
             const auto area = display != nullptr ? display->userBounds.toNearestInt() : juce::Rectangle<int> (1366, 728);
-            centreWithSize (juce::jmin (1320, area.getWidth() - 40), juce::jmin (980, area.getHeight() - 40));
+            centreWithSize (juce::jmin (1480, area.getWidth() - 40), juce::jmin (940, area.getHeight() - 40));
             setVisible (visible);
         }
 

@@ -48,10 +48,19 @@ void MiniSpectrum::update()
 void MiniSpectrum::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
-    auto r = getLocalBounds().toFloat();
+    auto outer = getLocalBounds().toFloat();
     g.setColour (t.meterWell);
-    g.fillRoundedRectangle (r, Theme::controlRadius);
-    r.reduce (3.0f, 3.0f);
+    g.fillRoundedRectangle (outer, Theme::controlRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (outer.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+    auto r = outer.reduced (4.0f, 4.0f);
+    g.setColour (t.line.withAlpha (0.45f));
+    for (int gy = 1; gy < 4; ++gy)
+    {
+        const float y = r.getY() + r.getHeight() * (float) gy * 0.25f;
+        g.drawHorizontalLine (juce::roundToInt (y), r.getX(), r.getRight());
+    }
 
     // Bars, -72 .. 0 dB, in the meters' green (it is a level display, like the meters).
     const float bw = r.getWidth() / numBands;

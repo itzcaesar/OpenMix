@@ -35,7 +35,7 @@ public:
     // pad, sends) plus the fader bay need ~950 px of console height (900 compact)
     // before anything squeezes. Shorter windows scroll instead of crushing the
     // strips -- the inserts are the only part that shrinks, and they scroll.
-    int minimumHeight() const { return (Theme::isCompact() ? 770 : 820) + (soundboard.isVisible() ? SoundboardPanel::barHeight() + Theme::s3 : 0); }
+    int minimumHeight() const { return (Theme::isCompact() ? 690 : 740) + (soundboard.isVisible() ? SoundboardPanel::barHeight() + Theme::s2 : 0); }
 
     std::array<std::unique_ptr<StripView>, kNumStrips> strips;
     std::array<std::unique_ptr<BusView>, kNumBuses> buses;
@@ -44,7 +44,7 @@ public:
 private:
     void showAddBusMenu();
     void askBusName (bool virtualGroup);   // group first, then a custom name, then the next free slot
-    static int groupGap() { return Theme::isCompact() ? 14 : 20; }   // gap + divider between the bus groups
+    static int groupGap() { return Theme::isCompact() ? 10 : 12; }   // gap + divider between the bus groups
 
     MixerEngine& engine;
     juce::TextButton addStripButton { "+" }, addBusButton { "+" };

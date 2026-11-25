@@ -579,31 +579,66 @@ void StripView::showSourceMenu()
 //==============================================================================
 // Paint + layout
 
+static void drawStripIcon (juce::Graphics& g, juce::Rectangle<int> area, SourceType type)
+{
+    const float cx = (float) area.getCentreX();
+    const float cy = (float) area.getCentreY();
+    juce::Path p;
+
+    if (type == SourceType::Main || type == SourceType::Device)
+    {
+        p.addRoundedRectangle (cx - 2.5f, cy - 6.5f, 5.0f, 8.0f, 2.5f);
+        p.addArc (cx - 5.0f, cy - 5.5f, 10.0f, 9.0f, 1.570796f, 4.712389f, true);
+        p.startNewSubPath (cx, cy + 3.5f);
+        p.lineTo (cx, cy + 6.5f);
+        p.startNewSubPath (cx - 3.5f, cy + 6.5f);
+        p.lineTo (cx + 3.5f, cy + 6.5f);
+    }
+    else if (type == SourceType::App)
+    {
+        p.addEllipse (cx - 5.5f, cy + 1.5f, 3.5f, 3.0f);
+        p.addEllipse (cx + 1.5f, cy + 0.5f, 3.5f, 3.0f);
+        p.startNewSubPath (cx - 2.0f, cy + 3.0f);
+        p.lineTo (cx - 2.0f, cy - 5.0f);
+        p.lineTo (cx + 5.0f, cy - 6.0f);
+        p.lineTo (cx + 5.0f, cy + 2.0f);
+    }
+    else
+    {
+        p.addEllipse (cx - 6.0f, cy - 6.0f, 12.0f, 12.0f);
+        p.startNewSubPath (cx - 6.0f, cy);
+        p.lineTo (cx + 6.0f, cy);
+        p.addEllipse (cx - 2.8f, cy - 6.0f, 5.6f, 12.0f);
+    }
+
+    g.setColour (Theme::p().textDim);
+    g.strokePath (p, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
 void StripView::paint (juce::Graphics& g)
 {
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
 
-    Theme::drawLegend (g, "Input", inputLegend);
-    Theme::drawLegend (g, "Processing", processLegend);
-    Theme::drawLegend (g, "Inserts", insertsLegend);
-    Theme::drawLegend (g, "Voice pad", padLegend);
-    Theme::drawLegend (g, "Sends", sendsLegend);
-    Theme::drawLegend (g, "FX sends", fxLegend);
+    Theme::drawLegend (g, "Input", inputLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "Processing", processLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "Insert \xc2\xb7 VST3", insertsLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "VoicePad", padLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "Sends", sendsLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "FX sends", fxLegend, juce::Justification::centred);
 
-    // 1 px dividers between the sections (mockup style: sections touch, divided
-    // only by a hairline, with generous padding inside each one).
+    // 1 px edge-to-edge section dividers (mockup style).
     g.setColour (Theme::p().line);
     for (const int y : dividerYs)
-        g.fillRect (7, y, getWidth() - 14, 1);
+        g.fillRect (0, y, getWidth(), 1);
 
     // Gain head: "GAIN" left, the value right; scale under the slider.
     if (! gainHeadArea.isEmpty())
     {
         const double v = strip.gainDb.load();
-        g.setFont (Theme::ui (9.0f, true));
+        g.setFont (Theme::ui (8.5f, true));
         g.setColour (Theme::p().textFaint);
         g.drawText ("GAIN", gainHeadArea, juce::Justification::centredLeft);
-        g.setFont (Theme::mono (11.0f));
+        g.setFont (Theme::mono (10.5f));
         g.setColour (Theme::p().text);
         g.drawText ((v > 0.05 ? "+" : "") + juce::String (v, 1) + " dB",
                     gainHeadArea, juce::Justification::centredRight);
@@ -617,28 +652,24 @@ void StripView::paint (juce::Graphics& g)
         g.drawText ("+24", gainScaleArea, juce::Justification::centredRight);
     }
 
-    // Channel icon row: a small audio mark above the fader bay (the mockup's
-    // per-channel icon row, kept as a quiet divider here).
+    // Channel icon row: source glyph above the fader bay.
     if (! iconRowArea.isEmpty())
-    {
-        const auto cx = iconRowArea.getCentreX();
-        const auto cy = iconRowArea.getCentreY();
-        g.setColour (Theme::p().textFaint);
-        g.fillRect (cx - 9, cy - 4, 3, 8);
-        g.fillRect (cx - 1, cy - 7, 3, 14);
-        g.fillRect (cx + 7, cy - 5, 3, 10);
-    }
+        drawStripIcon (g, iconRowArea, (SourceType) strip.sourceType.load());
 
     // A hairline above the fader bay, the same height on every column.
     g.setColour (Theme::p().line);
-    g.fillRect (7, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth() - 14, 1);
+    g.fillRect (0, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth(), 1);
 
-    // Bold solid-colour name bar along the bottom of the strip, in the strip's
-    // own channel colour with text chosen for contrast (mockup style).
+    // Bold solid-colour name bar flush along the bottom of the strip (mockup style).
     if (! nameBarArea.isEmpty())
     {
+        const auto bar = nameBarArea.withX (1).withWidth (getWidth() - 2).withBottom (getHeight() - 1).toFloat();
+        juce::Path p;
+        const float rad = Theme::panelRadius - 1.0f;
+        p.addRoundedRectangle (bar.getX(), bar.getY(), bar.getWidth(), bar.getHeight(),
+                               rad, rad, false, false, true, true);
         g.setColour (Theme::nameBarColour (strip.colour));
-        g.fillRect (nameBarArea);
+        g.fillPath (p);
         g.setColour (Theme::nameBarTextColour (strip.colour));
         g.setFont (Theme::ui (13.0f, true));
         g.drawText (displayName(), nameBarArea.reduced (Theme::s2, 0), juce::Justification::centred);
@@ -648,33 +679,33 @@ void StripView::paint (juce::Graphics& g)
 void StripView::resized()
 {
     const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);
-    // Mockup proportions: 7 px side padding, sections touching with only a 1 px
-    // divider between them, 14 px legends, 6 px between sections.
+    // Mockup proportions: 7 px side padding, 1 px edge-to-edge dividers,
+    // 13 px centered legends, 5 px between sections.
     constexpr int sidePad = 7;
     auto r = getLocalBounds().reduced (sidePad, sidePad);
     const int split = bayTop > 0 ? bayTop : getHeight() / 2;
     auto top = r.withBottom (split - sidePad);
     auto bay = r.withTop (split);
-    constexpr int legendH = 14, gap = 6;
+    constexpr int legendH = 13, gap = 5;
     dividerYs.clear();
 
     // Header: name, options.
-    auto titleRow = top.removeFromTop (28);
-    menuButton.setBounds (titleRow.removeFromRight (28));
+    auto titleRow = top.removeFromTop (26);
+    menuButton.setBounds (titleRow.removeFromRight (26));
     titleRow.removeFromRight (Theme::s1);
     tape.setBounds (titleRow);
-    dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
+    dividerYs.push_back (top.getY() - 2);
 
     // INPUT: source selector, gain slider under the source name with its value
     // above it, Ø / MONO below it (two equal toggles, mockup style).
     inputLegend = top.removeFromTop (legendH);
-    sourceButton.setBounds (top.removeFromTop (26));
+    sourceButton.setBounds (top.removeFromTop (25));
     top.removeFromTop (gap);
-    gainHeadArea = top.removeFromTop (14);
-    gainSlider.setBounds (top.removeFromTop (24));
+    gainHeadArea = top.removeFromTop (13);
+    gainSlider.setBounds (top.removeFromTop (22));
     gainScaleArea = top.removeFromTop (10);
-    top.removeFromTop (gap);
+    top.removeFromTop (4);
     {
         auto row = top.removeFromTop (24);
         const int bw = (row.getWidth() - Theme::s1) / 2;
@@ -682,30 +713,29 @@ void StripView::resized()
         row.removeFromLeft (Theme::s1);
         monoButton.setBounds (row);
     }
-    dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
+    dividerYs.push_back (top.getY() - 2);
 
-    // PROCESSING keys (NR, Gate, EQ, Comp, DS, Duck).
+    // PROCESSING keys in a crisp 3x2 grid (NR Gate EQ / Comp DS Duck).
     processLegend = top.removeFromTop (legendH);
     {
-        auto row = top.removeFromTop (26);
-        const int n = (int) processKeys.size();
-        const int kw = (row.getWidth() - (n - 1) * 2) / n;
-        for (auto& key : processKeys)
+        auto grid = top.removeFromTop (24 * 2 + 3);
+        const int kw = (grid.getWidth() - 6) / 3;
+        for (int k = 0; k < (int) processKeys.size(); ++k)
         {
-            key.setBounds (row.removeFromLeft (kw));
-            row.removeFromLeft (2);
+            const int col = k % 3, rowIdx = k / 3;
+            processKeys[(size_t) k].setBounds (grid.getX() + col * (kw + 3),
+                                               grid.getY() + rowIdx * (24 + 3), kw, 24);
         }
     }
-    dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
+    dividerYs.push_back (top.getY() - 2);
 
     // The voice pad and icon row sit at the bottom of the top section;
-    // the inserts take whatever is left in the middle (at least one row --
-    // the list scrolls past that, and expands up to all 6 slots on tall windows).
-    const int padH = Theme::isCompact() ? 76 : 94;
+    // the inserts take whatever is left in the middle.
+    const int padH = Theme::isCompact() ? 66 : 82;
     const int padSectionH = legendH + VoicePadComponent::headerHeight + padH;
-    constexpr int iconH = 21;
+    constexpr int iconH = 20;
 
     iconRowArea = top.removeFromBottom (iconH);
     top.removeFromBottom (gap);
@@ -716,21 +746,18 @@ void StripView::resized()
     const int rackH = insertsAvail <= 0 ? 0
         : juce::jlimit (InsertRack::heightForRows (1), InsertRack::heightForRows (kNumSlots), insertsAvail);
     inserts.setBounds (rackH > 0 ? top.removeFromTop (rackH) : juce::Rectangle<int>());
-    dividerYs.push_back (padBlock.getY() - gap);
+    dividerYs.push_back (padBlock.getY() - 3);
 
-    // VOICE PAD: mode buttons + a pad tall enough to read (94 px, 76 compact).
+    // VOICE PAD: mode buttons + pad.
     padLegend = padBlock.removeFromTop (legendH);
     pad.setBounds (padBlock);
-    dividerYs.push_back (iconRowArea.getY());
+    dividerYs.push_back (iconRowArea.getY() - 2);
 
     // Fader bay: name bar along the bottom, Mute / Solo above it, and above
-    // that the fader + meter with the sends beside it -- bus keys in a
-    // 2-column grid, FX send sliders underneath. The sends column takes what
-    // is left after the fader's preferred width (at least 80 px, 64 compact,
-    // so the keys stay readable); the fader track narrows instead of the keys.
-    nameBarArea = bay.removeFromBottom (28);
+    // that the fader + meter with the sends beside it.
+    nameBarArea = bay.removeFromBottom (26);
     bay.removeFromBottom (gap);
-    auto muteRow = bay.removeFromBottom (28);
+    auto muteRow = bay.removeFromBottom (26);
     {
         const int bw = (muteRow.getWidth() - Theme::s1) / 2;
         muteButton.setBounds (muteRow.removeFromLeft (bw));
@@ -739,15 +766,15 @@ void StripView::resized()
     }
     bay.removeFromBottom (gap);
 
-    const int sendsMin = Theme::isCompact() ? 78 : 92;
-    const int sendsW = juce::jlimit (sendsMin, 118, bay.getWidth() - FaderSection::preferredWidth - 6);
+    const int sendsMin = Theme::isCompact() ? 66 : 74;
+    const int sendsW = juce::jlimit (sendsMin, 104, bay.getWidth() - FaderSection::preferredWidth - 5);
     auto sends = bay.removeFromRight (sendsW);
-    bay.removeFromRight (6);
+    bay.removeFromRight (5);
     faderSection.setBounds (bay);
 
     const int activeBuses = engine.getNumActiveBuses();
     const int sendRows = juce::jmax (1, (activeBuses + 1) / 2);
-    const int gridH = sendRows * 25 + (sendRows - 1) * 3;
+    const int gridH = sendRows * 24 + (sendRows - 1) * 3;
     sendsLegend = sends.removeFromTop (legendH);
     {
         auto grid = sends.removeFromTop (gridH);
@@ -759,17 +786,18 @@ void StripView::resized()
                 continue;
             const int col = placed % 2, row = placed / 2;
             sendButtons[(size_t) b].setBounds (grid.getX() + col * (cellW + 3),
-                                               grid.getY() + row * (25 + 3), cellW, 25);
+                                               grid.getY() + row * (24 + 3), cellW, 24);
             ++placed;
         }
     }
     sends.removeFromTop (gap);
     fxLegend = sends.removeFromTop (legendH);
+    const int fxBtnW = Theme::isCompact() ? 28 : 32;
     for (int f = 0; f < omx::kNumFxSends; ++f)
     {
         auto row = sends.removeFromTop (18);
-        fxEditButtons[(size_t) f].setBounds (row.removeFromLeft (34));
-        row.removeFromLeft (3);
+        fxEditButtons[(size_t) f].setBounds (row.removeFromLeft (fxBtnW));
+        row.removeFromLeft (2);
         fxSendSliders[(size_t) f].setBounds (row);
         if (f + 1 < omx::kNumFxSends)
             sends.removeFromTop (2);

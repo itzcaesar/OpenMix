@@ -24,6 +24,9 @@ private:
         AccentSwatch (juce::Colour, std::function<void()> onClick);
         void paint (juce::Graphics&) override;
         void mouseUp (const juce::MouseEvent&) override;
+        bool keyPressed (const juce::KeyPress&) override;
+        void focusGained (FocusChangeType) override { repaint(); }
+        void focusLost (FocusChangeType) override   { repaint(); }
         void setSelected (bool s) { selected = s; repaint(); }
 
     private:
@@ -49,6 +52,7 @@ private:
     void updateMidiText();
     void refreshMidiDevices();
     void updateAccentSwatches();
+    int midiBoxHeight() const;
 
     MixerEngine& engine;
     MidiControl* midiControl;
@@ -85,6 +89,8 @@ private:
     juce::TextButton logsButton { "Open log folder" };
 
     juce::String scanText, midiText;
-    juce::Rectangle<int> startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend,
-                         accentLabelArea, oscNoteArea, scanTextArea, aboutArea, wsNoteArea, midiTextArea;
+    juce::Rectangle<int> startupCard, themeCard, pluginsCard, networkCard, aboutCard,
+                         startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend,
+                         accentLabelArea, oscNoteArea, scanTextArea, aboutArea, wsNoteArea, midiTextArea,
+                         oscPortLabelArea, wsPortLabelArea;
 };

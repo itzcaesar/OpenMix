@@ -20,6 +20,10 @@ public:
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool isHighlighted, bool isDown) override;
 
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool isHighlighted, bool isDown) override;
+    void drawTickBox (juce::Graphics&, juce::Component&, float x, float y, float w, float h,
+                      bool ticked, bool isEnabled, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
+                       int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
 
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPos, float startAngle, float endAngle, juce::Slider&) override;

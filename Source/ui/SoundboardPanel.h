@@ -19,8 +19,8 @@ public:
     void refresh();
     std::function<void()> onChanged;   // something worth saving changed
 
-    static int barHeight() { return Theme::isCompact() ? 92 : 104; }
-    static constexpr int minWidth = 760;
+    static int barHeight() { return Theme::isCompact() ? 86 : 96; }
+    static constexpr int minWidth = 720;
 
 private:
     class Pad;

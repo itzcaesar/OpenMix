@@ -32,9 +32,9 @@ void OpenMixLookAndFeel::applyPalette()
 
     setColour (juce::Label::textColourId, t.text);
     setColour (juce::Label::textWhenEditingColourId, t.text);
-    setColour (juce::Label::backgroundWhenEditingColourId, t.raised);
+    setColour (juce::Label::backgroundWhenEditingColourId, t.selBg);
     setColour (juce::Label::outlineWhenEditingColourId, t.focus);
-    setColour (juce::TextEditor::backgroundColourId, t.raised);
+    setColour (juce::TextEditor::backgroundColourId, t.selBg);
     setColour (juce::TextEditor::textColourId, t.text);
     setColour (juce::TextEditor::outlineColourId, t.controlEdge);
     setColour (juce::TextEditor::focusedOutlineColourId, t.focus);
@@ -48,12 +48,12 @@ void OpenMixLookAndFeel::applyPalette()
     setColour (juce::PopupMenu::highlightedBackgroundColourId, t.text.withAlpha (t.dark ? 0.14f : 0.10f));
     setColour (juce::PopupMenu::highlightedTextColourId, t.text);
 
-    setColour (juce::ComboBox::backgroundColourId, t.raised);
+    setColour (juce::ComboBox::backgroundColourId, t.selBg);
     setColour (juce::ComboBox::textColourId, t.text);
     setColour (juce::ComboBox::outlineColourId, t.controlEdge);
     setColour (juce::ComboBox::arrowColourId, t.textDim);
     setColour (juce::ComboBox::focusedOutlineColourId, t.focus);
-    setColour (juce::ListBox::backgroundColourId, t.well);
+    setColour (juce::ListBox::backgroundColourId, t.selBg);
     setColour (juce::ListBox::textColourId, t.text);
     setColour (juce::ListBox::outlineColourId, t.controlEdge);
     setColour (juce::ScrollBar::thumbColourId, t.controlEdge);
@@ -185,6 +185,57 @@ void OpenMixLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton
     juce::ignoreUnused (isDown);
 }
 
+void OpenMixLookAndFeel::drawTickBox (juce::Graphics& g, juce::Component&, float x, float y, float w, float h,
+                                      bool ticked, bool isEnabled, bool shouldDrawButtonAsHighlighted, bool)
+{
+    const auto& t = Theme::p();
+    const auto box = juce::Rectangle<float> (x, y, w, h).withSizeKeepingCentre (juce::jmin (w, 16.0f), juce::jmin (h, 16.0f));
+
+    auto fill = t.raised;
+    if (shouldDrawButtonAsHighlighted)
+        fill = t.dark ? fill.brighter (0.10f) : fill.darker (0.04f);
+    if (! isEnabled)
+        fill = fill.withMultipliedAlpha (0.5f);
+
+    g.setColour (fill);
+    g.fillRoundedRectangle (box, Theme::controlRadius);
+    g.setColour (ticked ? t.accentEdge : t.controlEdge);
+    g.drawRoundedRectangle (box.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+    if (ticked)
+    {
+        juce::Path tick;
+        tick.startNewSubPath (box.getX() + 3.5f, box.getCentreY());
+        tick.lineTo (box.getX() + 6.8f, box.getBottom() - 4.0f);
+        tick.lineTo (box.getRight() - 3.5f, box.getY() + 4.0f);
+        g.setColour (t.accent);
+        g.strokePath (tick, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+}
+
+void OpenMixLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, bool isButtonDown,
+                                       int, int, int, int, juce::ComboBox& box)
+{
+    const auto& t = Theme::p();
+    const auto r = juce::Rectangle<int> (width, height).toFloat().reduced (0.5f);
+
+    auto fill = t.selBg;
+    if (isButtonDown)              fill = fill.darker (0.10f);
+    else if (box.isMouseOver())    fill = t.dark ? fill.brighter (0.08f) : fill.darker (0.03f);
+    g.setColour (fill);
+    g.fillRoundedRectangle (r, Theme::controlRadius);
+    g.setColour (box.hasKeyboardFocus (false) ? t.focus : t.controlEdge);
+    g.drawRoundedRectangle (r, Theme::controlRadius, box.hasKeyboardFocus (false) ? 1.8f : 1.0f);
+
+    const auto chev = r.withLeft (r.getRight() - 22.0f).withSizeKeepingCentre (8.0f, 4.5f);
+    juce::Path p;
+    p.startNewSubPath (chev.getX(), chev.getY());
+    p.lineTo (chev.getCentreX(), chev.getBottom());
+    p.lineTo (chev.getRight(), chev.getY());
+    g.setColour (box.isEnabled() ? t.textDim : t.textFaint);
+    g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
 //==============================================================================
 // Knob: raised cap with printed tick scale, pointer line.
 
@@ -239,37 +290,75 @@ void OpenMixLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
                                            float sliderPos, float minSliderPos, float maxSliderPos,
                                            juce::Slider::SliderStyle style, juce::Slider& slider)
 {
+    const auto& t = Theme::p();
+    const auto area = juce::Rectangle<int> (x, y, width, height).toFloat();
+
+    if (style == juce::Slider::LinearHorizontal)
+    {
+        const float cy = area.getCentreY();
+        const auto track = juce::Rectangle<float> (area.getX(), cy - 3.0f, area.getWidth(), 6.0f);
+        g.setColour (t.well);
+        g.fillRoundedRectangle (track, 2.5f);
+        g.setColour (t.line);
+        g.drawRoundedRectangle (track.reduced (0.5f), 2.5f, 1.0f);
+
+        const float capW = 12.0f, capH = juce::jmin (18.0f, area.getHeight() - 2.0f);
+        const float cx = juce::jlimit (track.getX() + capW * 0.5f, track.getRight() - capW * 0.5f, sliderPos);
+        const auto cap = juce::Rectangle<float> (capW, capH).withCentre ({ cx, cy });
+        g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.45f : 0.18f));
+        g.fillRoundedRectangle (cap.translated (0.0f, 1.5f), Theme::controlRadius);
+        const auto top = t.dark ? t.raised.brighter (0.16f) : juce::Colours::white;
+        const auto bottom = t.dark ? t.raised.darker (0.06f) : juce::Colour (0xffdcdce0);
+        g.setGradientFill (juce::ColourGradient (top, cap.getX(), cap.getY(), bottom, cap.getX(), cap.getBottom(), false));
+        g.fillRoundedRectangle (cap, Theme::controlRadius);
+        g.setColour (t.controlEdge);
+        g.drawRoundedRectangle (cap.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+        if (slider.hasKeyboardFocus (false))
+            Theme::drawFocusRing (g, cap.expanded (2.5f), Theme::controlRadius + 1.5f);
+        return;
+    }
+
     if (style != juce::Slider::LinearVertical)
     {
         LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
         return;
     }
 
-    const auto& t = Theme::p();
-    const auto area = juce::Rectangle<int> (x, y, width, height).toFloat();
     const float cx = area.getCentreX();
 
-    // Slot
-    const auto slot = juce::Rectangle<float> (cx - 2.5f, area.getY(), 5.0f, area.getHeight());
-    g.setColour (t.dark ? t.well : t.meterWell.withAlpha (0.85f));
-    g.fillRoundedRectangle (slot, 2.5f);
+    // Recessed fader well + subtle ticks + centre groove (mockup style)
+    g.setColour (t.well);
+    g.fillRoundedRectangle (area.reduced (1.0f, 0.0f), Theme::controlRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (area.reduced (1.5f, 0.5f), Theme::controlRadius, 1.0f);
 
-    // Cap
-    const float capW = juce::jmin (38.0f, area.getWidth() - 4.0f), capH = 22.0f;
+    g.setColour (t.line.withAlpha (0.55f));
+    for (float ty = area.getY() + 10.0f; ty < area.getBottom() - 8.0f; ty += 16.0f)
+        g.fillRect (area.getX() + 5.0f, ty, area.getWidth() - 10.0f, 1.0f);
+
+    const auto slot = juce::Rectangle<float> (cx - 2.0f, area.getY() + 6.0f, 4.0f, juce::jmax (4.0f, area.getHeight() - 12.0f));
+    g.setColour (t.meterWell.withAlpha (t.dark ? 0.75f : 0.35f));
+    g.fillRoundedRectangle (slot, 2.0f);
+
+    // Sculpted cap with grip grooves + bright centre index line
+    const float capW = juce::jmin (36.0f, area.getWidth() - 6.0f), capH = 22.0f;
     const auto cap = juce::Rectangle<float> (capW, capH).withCentre ({ cx, sliderPos });
-    g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.5f : 0.2f));
+    g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.55f : 0.22f));
     g.fillRoundedRectangle (cap.translated (0.0f, 2.0f), Theme::controlRadius);
 
-    const auto top = t.dark ? juce::Colour (0xff505050) : juce::Colour (0xffffffff);
-    const auto bottom = t.dark ? juce::Colour (0xff2e2e2e) : juce::Colour (0xffd9d6cf);
+    const auto top = t.dark ? t.raised.brighter (0.18f) : juce::Colours::white;
+    const auto bottom = t.dark ? t.raised.darker (0.08f) : juce::Colour (0xffd9d9de);
     g.setGradientFill (juce::ColourGradient (top, cap.getX(), cap.getY(), bottom, cap.getX(), cap.getBottom(), false));
     g.fillRoundedRectangle (cap, Theme::controlRadius);
     g.setColour (t.controlEdge);
     g.drawRoundedRectangle (cap.reduced (0.5f), Theme::controlRadius, 1.0f);
 
-    // Grip line (the cap's centre is the value)
+    g.setColour (t.controlEdge.withAlpha (0.55f));
+    g.fillRect (cap.getX() + 5.0f, cap.getY() + 5.0f, cap.getWidth() - 10.0f, 1.0f);
+    g.fillRect (cap.getX() + 5.0f, cap.getBottom() - 6.0f, cap.getWidth() - 10.0f, 1.0f);
     g.setColour (t.text);
-    g.fillRect (cap.getX() + 5.0f, cap.getCentreY() - 1.0f, cap.getWidth() - 10.0f, 2.0f);
+    g.fillRect (cap.getX() + 4.0f, cap.getCentreY() - 1.0f, cap.getWidth() - 8.0f, 2.0f);
 
     if (slider.hasKeyboardFocus (false))
         Theme::drawFocusRing (g, cap.expanded (3.0f), Theme::controlRadius + 2.0f);
@@ -279,7 +368,7 @@ juce::Label* OpenMixLookAndFeel::createSliderTextBox (juce::Slider& slider)
 {
     auto* label = LookAndFeel_V4::createSliderTextBox (slider);
     label->setFont (Theme::mono (12.0f));
-    label->setColour (juce::Label::textColourId, Theme::p().textDim);
+    label->setColour (juce::Label::textColourId, Theme::p().text);
     label->setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     label->setColour (juce::Label::outlineColourId, juce::Colours::transparentBlack);
     return label;

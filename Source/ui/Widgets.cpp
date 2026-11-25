@@ -120,6 +120,8 @@ void LevelMeter::paint (juce::Graphics& g)
 
     g.setColour (t.meterWell);
     g.fillRoundedRectangle (area, 2.0f);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (area.reduced (0.5f), 2.0f, 1.0f);
     area.reduce (2.0f, 2.0f);
 
     // Clip lamp
@@ -205,9 +207,9 @@ void FaderSection::resized()
 {
     auto r = getLocalBounds();
     const int availW = r.getWidth();
-    const int scaleW = availW >= 120 ? 30 : availW >= 104 ? 22 : 0;
-    const int meterW = availW >= 112 ? 28 : 20;
-    const int gap = availW >= 112 ? 6 : 4;
+    const int scaleW = availW >= 104 ? 24 : availW >= 78 ? 18 : 0;
+    const int meterW = availW >= 100 ? 26 : 20;
+    const int gap = availW >= 100 ? 5 : 4;
     auto content = r.withSizeKeepingCentre (juce::jmin (availW, preferredWidth), r.getHeight());
 
     content.removeFromLeft (scaleW);
@@ -216,7 +218,7 @@ void FaderSection::resized()
     fader.setTextBoxStyle (juce::Slider::TextBoxAbove, false, juce::jlimit (36, 64, content.getWidth()), 20);
     fader.setBounds (content);
 
-    peakArea = meterArea.removeFromTop (fader.getTextBoxHeight()).expanded (4, 0);
+    peakArea = meterArea.removeFromTop (fader.getTextBoxHeight()).expanded (3, 0);
     meterArea.removeFromTop (4);
     meter.setBounds (meterArea);
 }
@@ -225,10 +227,19 @@ void FaderSection::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
 
+    // Recessed value box behind the fader dB readout (mockup .fader-box style).
+    const float boxW = (float) juce::jlimit (36, 64, fader.getWidth());
+    const auto boxRect = juce::Rectangle<float> (fader.getCentreX() - boxW * 0.5f, (float) fader.getY(),
+                                                 boxW, (float) fader.getTextBoxHeight());
+    g.setColour (t.selBg);
+    g.fillRoundedRectangle (boxRect, Theme::controlRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (boxRect.reduced (0.5f), Theme::controlRadius, 1.0f);
+
     // Held peak. At or above 0 dBFS the number turns full-strength with a red bar under it
     // (the red is a second cue; the text itself keeps 4.5:1).
     const bool over = meter.getPeakHoldDb() >= 0.0f;
-    g.setFont (Theme::mono (11.0f));
+    g.setFont (Theme::mono (10.5f));
     g.setColour (over ? t.text : t.textDim);
     g.drawText (peakText, peakArea, juce::Justification::centred);
     if (over)
@@ -237,27 +248,27 @@ void FaderSection::paint (juce::Graphics& g)
         g.fillRect (peakArea.getX() + 4, peakArea.getBottom() - 2, peakArea.getWidth() - 8, 2);
     }
 
-    const int scaleRight = fader.getX() - 3;
-    if (scaleRight < 22)
+    const int scaleRight = fader.getX() - 2;
+    if (scaleRight < 16)
         return;
 
     const int zeroY = fader.getY() + (int) fader.getPositionOfValue (0.0);
     int lastLabelY = -100;
 
-    g.setFont (Theme::mono (11.0f));
-    for (double db : { 0.0, 12.0, 6.0, -6.0, -12.0, -24.0, -40.0, -60.0 })
+    g.setFont (Theme::mono (9.0f));
+    for (double db : { 0.0, 6.0, -6.0, -15.0, -30.0, -60.0 })
     {
         const int y = fader.getY() + (int) fader.getPositionOfValue (db);
         g.setColour (db == 0.0 ? t.textDim : t.textFaint);
-        g.fillRect (scaleRight - (db == 0.0 ? 8 : 5), y, db == 0.0 ? 8 : 5, 1);
+        g.fillRect (scaleRight - (db == 0.0 ? 6 : 4), y, db == 0.0 ? 6 : 4, 1);
 
-        if (db != 0.0 && (std::abs (y - lastLabelY) < 14 || std::abs (y - zeroY) < 14))
+        if (db != 0.0 && (std::abs (y - lastLabelY) < 13 || std::abs (y - zeroY) < 13))
             continue;
         if (db != 0.0)
             lastLabelY = y;
 
-        const auto label = db <= -60.0 ? juce::String ("-inf") : (db > 0 ? "+" : "") + juce::String ((int) db);
-        g.drawText (label, scaleRight - 38, y - 7, 29, 14, juce::Justification::centredRight);
+        const auto label = db <= -60.0 ? juce::String ("inf") : (db > 0 ? "+" : "") + juce::String ((int) db);
+        g.drawText (label, 0, y - 6, scaleRight - 6, 12, juce::Justification::centredRight);
     }
 }
 
@@ -370,15 +381,15 @@ void ChipButton::paintButton (juce::Graphics& g, bool isHighlighted, bool isDown
     const auto& t = Theme::p();
     auto r = getLocalBounds().toFloat().reduced (0.5f);
 
-    auto fill = t.raised;
-    if (isDown)             fill = fill.darker (0.12f);
+    auto fill = t.selBg;
+    if (isDown)             fill = fill.darker (0.14f);
     else if (isHighlighted) fill = t.dark ? fill.brighter (0.10f) : fill.darker (0.04f);
     g.setColour (fill);
     g.fillRoundedRectangle (r, Theme::controlRadius);
     g.setColour (problem ? t.mute : t.controlEdge);
     g.drawRoundedRectangle (r, Theme::controlRadius, problem ? 1.5f : 1.0f);
 
-    auto content = getLocalBounds().reduced (8, 0);
+    auto content = getLocalBounds().reduced (6, 0);
 
     // Chevron (it opens a menu)
     auto chev = content.removeFromRight (10).toFloat().withSizeKeepingCentre (8.0f, 5.0f);
@@ -596,28 +607,25 @@ void PluginSlotRow::paint (juce::Graphics& g)
 
     if (state == State::Empty)
     {
-        // Empty slot: dashed outline, "+ Add plugin"
+        // Empty slot: recessed selector well, dashed outline, "+ Add plugin"
         const bool hot = hover != Zone::None;
-        if (hot)
-        {
-            g.setColour (t.raised);
-            g.fillRoundedRectangle (r, Theme::controlRadius);
-        }
+        g.setColour (hot ? t.raised : t.well);
+        g.fillRoundedRectangle (r, Theme::controlRadius);
         juce::Path outline, dashed;
         outline.addRoundedRectangle (r, Theme::controlRadius);
         const float dashes[] { 4.0f, 3.0f };
         juce::PathStrokeType (1.0f).createDashedStroke (dashed, outline, dashes, 2);
-        g.setColour (t.controlEdge);
+        g.setColour (hot ? t.controlEdge : t.line);
         g.fillPath (dashed);
 
-        g.setColour (hot ? t.text : t.textDim);
-        g.setFont (Theme::ui (13.0f));
+        g.setColour (hot ? t.text : t.textFaint);
+        g.setFont (Theme::ui (12.0f).italicised());
         g.drawText ("+  Add plugin", r, juce::Justification::centred);
     }
     else
     {
-        auto fill = t.raised;
-        if (hover == Zone::Main || dragging) fill = t.dark ? fill.brighter (0.08f) : fill.darker (0.04f);
+        auto fill = t.selBg;
+        if (hover == Zone::Main || dragging) fill = t.dark ? fill.brighter (0.10f) : fill.darker (0.04f);
         g.setColour (fill);
         g.fillRoundedRectangle (r, Theme::controlRadius);
         g.setColour (faulted ? t.mute : t.controlEdge);
@@ -628,7 +636,7 @@ void PluginSlotRow::paint (juce::Graphics& g)
         if (state == State::Loading)
         {
             g.setColour (t.textDim);
-            g.setFont (Theme::ui (13.0f).italicised());
+            g.setFont (Theme::ui (12.0f).italicised());
             g.drawText ("Loading " + name + "...", nameArea, juce::Justification::centredLeft, true);
         }
         else
@@ -641,15 +649,15 @@ void PluginSlotRow::paint (juce::Graphics& g)
                 g.drawRoundedRectangle (powerArea().expanded (2.5f), 2.0f, 1.0f);
             }
 
-            g.setFont (Theme::mono (11.0f));
+            g.setFont (Theme::mono (10.5f));
             g.setColour (t.textFaint);
-            if (latencyText.isNotEmpty() && ! faulted && nameArea.getWidth() > 106)
-                g.drawText (latencyText, nameArea.removeFromRight (52.0f), juce::Justification::centredRight);
-            if (mixText.isNotEmpty() && ! faulted && nameArea.getWidth() > 86)
-                g.drawText (mixText, nameArea.removeFromRight (36.0f), juce::Justification::centredRight);
+            if (latencyText.isNotEmpty() && ! faulted && nameArea.getWidth() > 100)
+                g.drawText (latencyText, nameArea.removeFromRight (48.0f), juce::Justification::centredRight);
+            if (mixText.isNotEmpty() && ! faulted && nameArea.getWidth() > 80)
+                g.drawText (mixText, nameArea.removeFromRight (34.0f), juce::Justification::centredRight);
 
             g.setColour (faulted || bypassed ? t.textDim : t.text);
-            g.setFont (Theme::ui (13.0f));
+            g.setFont (Theme::ui (12.0f));
             const auto shown = faulted ? name + " (stopped)" : abTag.isNotEmpty() ? name + " (" + abTag + ")" : name;
             g.drawText (shown, nameArea, juce::Justification::centredLeft, true);
 

@@ -21,6 +21,7 @@ namespace Theme
         juce::Colour panel;        // channel faceplate
         juce::Colour well;         // recessed areas: pad, fader slot
         juce::Colour meterWell;    // LED meter window (dark in both themes)
+        juce::Colour selBg;        // recessed readout / selector surface
         juce::Colour raised;       // button / cap body
         juce::Colour line;         // decorative separators (not a control boundary)
         juce::Colour controlEdge;  // control boundary, >= 3:1 against panel
@@ -40,15 +41,15 @@ namespace Theme
     {
         static const Palette p {
             true,
-            juce::Colour (0xff141414), juce::Colour (0xff202020), juce::Colour (0xff0f0f0f),
-            juce::Colour (0xff0b0b0b), juce::Colour (0xff2c2c2c), juce::Colour (0xff333333),
-            juce::Colour (0xff7a7a7a),
-            juce::Colour (0xffededed), juce::Colour (0xffb0b0b0), juce::Colour (0xff8f8f8f),
+            juce::Colour (0xff232327), juce::Colour (0xff2b2b30), juce::Colour (0xff1d1d21),
+            juce::Colour (0xff101013), juce::Colour (0xff1a1a1e), juce::Colour (0xff3a3a41),
+            juce::Colour (0xff3d3d44), juce::Colour (0xff787884),
+            juce::Colour (0xffececf0), juce::Colour (0xffb9b9c2), juce::Colour (0xff9696a1),
             juce::Colour (0xffe6dfcc), juce::Colour (0xff1e1e1e), juce::Colour (0xffe6dfcc),
             juce::Colour (0xfff0a23b), juce::Colour (0xff1a1a1a), juce::Colour (0xfff0a23b),
-            juce::Colour (0xffd93a40), juce::Colour (0xffffffff),
-            juce::Colour (0xffededed),
-            juce::Colour (0xff3ec46d), juce::Colour (0xfff0a23b), juce::Colour (0xffe5484d)
+            juce::Colour (0xffd9383e), juce::Colour (0xffffffff),
+            juce::Colour (0xffececf0),
+            juce::Colour (0xff43d13d), juce::Colour (0xfff5c518), juce::Colour (0xffe5484d)
         };
         return p;
     }
@@ -57,16 +58,16 @@ namespace Theme
     {
         static const Palette p {
             false,
-            juce::Colour (0xffd8d6d1), juce::Colour (0xffeceae5), juce::Colour (0xffd9d6cf),
-            juce::Colour (0xff1c1c1c), juce::Colour (0xfff8f7f4), juce::Colour (0xffc6c3bb),
-            juce::Colour (0xff7d7a73),
-            juce::Colour (0xff1b1b1b), juce::Colour (0xff45443f), juce::Colour (0xff5c5a55),
-            juce::Colour (0xfffbf6e6), juce::Colour (0xff1e1e1e), juce::Colour (0xff7d7a73),
-            // Amber is only 1.9:1 on the light panel, so "on" states also get a dark edge.
-            juce::Colour (0xfff0a23b), juce::Colour (0xff1a1a1a), juce::Colour (0xff1b1b1b),
-            juce::Colour (0xffd93a40), juce::Colour (0xffffffff),
-            juce::Colour (0xff1b1b1b),
-            juce::Colour (0xff3ec46d), juce::Colour (0xfff0a23b), juce::Colour (0xffe5484d)
+            juce::Colour (0xffcfcfd2), juce::Colour (0xffdedee0), juce::Colour (0xffc4c4c8),
+            juce::Colour (0xff16161a), juce::Colour (0xfff4f4f6), juce::Colour (0xffefeff1),
+            juce::Colour (0xffb9b9be), juce::Colour (0xff6d6d76),
+            juce::Colour (0xff1c1c20), juce::Colour (0xff45454c), juce::Colour (0xff55555e),
+            juce::Colour (0xfffbf6e6), juce::Colour (0xff1e1e1e), juce::Colour (0xff6d6d76),
+            // Amber is low-contrast on the light panel, so "on" states also get a dark edge.
+            juce::Colour (0xfff0a23b), juce::Colour (0xff1a1a1a), juce::Colour (0xff1c1c20),
+            juce::Colour (0xffd9383e), juce::Colour (0xffffffff),
+            juce::Colour (0xff1c1c20),
+            juce::Colour (0xff43d13d), juce::Colour (0xfff5c518), juce::Colour (0xffe5484d)
         };
         return p;
     }
@@ -179,7 +180,7 @@ namespace Theme
     // Spacing scale and shapes
     constexpr int s1 = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24;
     constexpr float controlRadius = 3.0f;
-    constexpr float panelRadius = 6.0f;
+    constexpr float panelRadius = 5.0f;
 
     // Typography
     inline juce::Font ui (float size, bool semibold = false)
@@ -197,7 +198,7 @@ namespace Theme
                             juce::Justification just = juce::Justification::centredLeft)
     {
         g.setColour (p().textFaint);
-        g.setFont (ui (11.5f, true).withExtraKerningFactor (0.06f));
+        g.setFont (ui (10.5f, true).withExtraKerningFactor (0.10f));
         g.drawText (label.toUpperCase(), area, just);
     }
 
@@ -214,12 +215,12 @@ namespace Theme
     inline void drawFaceplate (juce::Graphics& g, juce::Rectangle<float> area)
     {
         const auto& t = p();
-        const auto top = t.dark ? t.panel.brighter (0.07f) : t.panel.brighter (0.03f);
-        g.setGradientFill (juce::ColourGradient::vertical (top, area.getY(), t.panel, area.getY() + juce::jmin (area.getHeight(), 260.0f)));
+        const auto top = t.dark ? juce::Colour (0xff303035) : juce::Colour (0xffe6e6e8);
+        g.setGradientFill (juce::ColourGradient::vertical (top, area.getY(), t.panel, area.getY() + juce::jmin (area.getHeight(), 280.0f)));
         g.fillRoundedRectangle (area, panelRadius);
         g.setColour (t.line);
         g.drawRoundedRectangle (area.reduced (0.5f), panelRadius, 1.0f);
-        g.setColour (juce::Colours::white.withAlpha (t.dark ? 0.05f : 0.5f));
+        g.setColour (juce::Colours::white.withAlpha (t.dark ? 0.05f : 0.45f));
         g.fillRect (area.getX() + panelRadius, area.getY() + 1.0f, area.getWidth() - 2.0f * panelRadius, 1.0f);
     }
 }

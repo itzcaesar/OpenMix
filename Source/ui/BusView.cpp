@@ -178,11 +178,14 @@ void BusView::tick()
 
 void BusView::refreshNormGainLabel()
 {
+    normGainLabel.setFont (Theme::mono (10.5f));
     if (! bus.normOn.load())
     {
+        normGainLabel.setColour (juce::Label::textColourId, Theme::p().textDim);
         normGainLabel.setText ("Gain applied —", juce::dontSendNotification);
         return;
     }
+    normGainLabel.setColour (juce::Label::textColourId, Theme::p().accent);
     const float normDb = juce::Decibels::gainToDecibels (bus.normGain.load(), -100.0f);
     normGainLabel.setText ("Gain applied " + juce::String (normDb > 0.05f ? "+" : "")
                            + juce::String (normDb, 1) + " dB", juce::dontSendNotification);
@@ -419,49 +422,84 @@ bool BusView::isVirtualCable (const juce::String& deviceName)
     return n.contains ("cable") || n.contains ("vb-audio") || n.contains ("voicemeeter") || n.contains ("virtual");
 }
 
+static void drawBusIcon (juce::Graphics& g, juce::Rectangle<int> area, bool isVirtualBus)
+{
+    const float cx = (float) area.getCentreX();
+    const float cy = (float) area.getCentreY();
+    juce::Path p;
+
+    if (! isVirtualBus)
+    {
+        // Headphones (hardware output)
+        p.addArc (cx - 6.0f, cy - 6.0f, 12.0f, 11.0f, 4.712389f, 7.853982f, true);
+        p.addRoundedRectangle (cx - 7.5f, cy - 1.0f, 2.8f, 6.0f, 1.0f);
+        p.addRoundedRectangle (cx + 4.7f, cy - 1.0f, 2.8f, 6.0f, 1.0f);
+    }
+    else
+    {
+        // Broadcast tower / virtual stream
+        p.startNewSubPath (cx, cy + 6.5f);
+        p.lineTo (cx, cy - 1.5f);
+        p.addEllipse (cx - 1.5f, cy - 4.0f, 3.0f, 3.0f);
+        p.addArc (cx - 4.5f, cy - 6.0f, 9.0f, 7.0f, 3.7f, 5.7f, true);
+        p.addArc (cx - 4.5f, cy - 6.0f, 9.0f, 7.0f, 0.58f, 2.58f, true);
+    }
+
+    g.setColour (Theme::p().textDim);
+    g.strokePath (p, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
 void BusView::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
 
-    // OUTPUT: the device this bus plays into.
-    Theme::drawLegend (g, "Output", outputLegend);
-    Theme::drawLegend (g, "Processing", processLegend);
-    Theme::drawLegend (g, "Inserts", insertsLegend);
+    // Centered small-caps section legends (mockup style).
+    Theme::drawLegend (g, "Output", outputLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "Processing", processLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "Insert \xc2\xb7 VST3", insertsLegend, juce::Justification::centred);
     if (! spectrumLegend.isEmpty())
-        Theme::drawLegend (g, "Analyser", spectrumLegend);
+        Theme::drawLegend (g, "Analyser", spectrumLegend, juce::Justification::centred);
 
-    // 1 px dividers between the sections (mockup style).
+    // 1 px edge-to-edge dividers between the sections (mockup style).
     g.setColour (t.line);
     for (const int y : dividerYs)
-        g.fillRect (7, y, getWidth() - 14, 1);
+        g.fillRect (0, y, getWidth(), 1);
 
-    // LIMITER: the -0.3 dBFS safety limiter -- lamp + state, then a gain-reduction
-    // meter with its scale (mockup style).
-    Theme::drawLegend (g, "Limiter", limiterLegend);
+    // LIMITER: [LIMIT] lamp badge + safety state + framed gain-reduction meter.
+    Theme::drawLegend (g, "Limiter", limiterLegend, juce::Justification::centred);
     {
         auto la = limiterArea;
-        g.setFont (Theme::ui (11.5f, true));
-        OpenMixLookAndFeel::drawLamp (g, la.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat(), limiting, t.mute);
-        la.removeFromLeft (5);
-        g.setColour (limiting ? t.text : t.textFaint);
-        const auto limitText = limiting ? juce::String ("LIMITING") : juce::String ("LIMIT");
-        g.drawText (limitText, la.removeFromLeft (58), juce::Justification::centredLeft);
-        if (la.getWidth() >= 72)
+        const int pillW = juce::jmin (la.getWidth(), limiting ? 72 : 60);
+        auto pill = la.removeFromLeft (pillW).toFloat();
+        g.setColour (limiting ? t.mute : t.raised);
+        g.fillRoundedRectangle (pill, Theme::controlRadius);
+        g.setColour (limiting ? t.mute : t.line);
+        g.drawRoundedRectangle (pill.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+        auto dotArea = pill.removeFromLeft (16.0f).withSizeKeepingCentre (7.0f, 7.0f);
+        g.setColour (limiting ? juce::Colours::white : t.textFaint.withAlpha (0.45f));
+        g.fillEllipse (dotArea);
+
+        g.setFont (Theme::ui (9.0f, true).withExtraKerningFactor (0.06f));
+        g.setColour (limiting ? juce::Colours::white : t.textDim);
+        g.drawText (limiting ? "LIMITING" : "LIMIT", pill.withTrimmedRight (4.0f), juce::Justification::centredLeft);
+
+        if (la.getWidth() >= 68)
         {
-            g.setFont (Theme::ui (10.0f));
+            g.setFont (Theme::ui (9.5f));
             g.setColour (t.textFaint);
             g.drawText ("Safety limiter", la, juce::Justification::centredRight);
         }
 
-        g.setFont (Theme::ui (9.0f, true));
+        g.setFont (Theme::ui (8.5f, true));
         g.setColour (t.textFaint);
-        g.drawText (grHeadArea.getWidth() < 130 ? "GR" : "GAIN REDUCTION",
-                    grHeadArea.withTrimmedRight (52), juce::Justification::centredLeft);
-        g.setFont (Theme::mono (11.0f));
+        g.drawText (grHeadArea.getWidth() < 126 ? "GR" : "GAIN REDUCTION",
+                    grHeadArea.withTrimmedRight (50), juce::Justification::centredLeft);
+        g.setFont (Theme::mono (10.5f));
         g.setColour (limiterReductionDb > 0.05f ? t.text : t.textFaint);
         g.drawText (limiterReductionDb < 0.05f ? juce::String ("0.0 dB") : "-" + juce::String (limiterReductionDb, 1) + " dB",
-                    grHeadArea.withTrimmedLeft (grHeadArea.getWidth() - 54), juce::Justification::centredRight);
+                    grHeadArea.withTrimmedLeft (grHeadArea.getWidth() - 52), juce::Justification::centredRight);
 
         auto bar = grTrackArea.toFloat();
         g.setColour (t.meterWell);
@@ -469,20 +507,23 @@ void BusView::paint (juce::Graphics& g)
         const float frac = juce::jlimit (0.0f, 1.0f, limiterReductionDb / 12.0f);
         if (frac > 0.0f)
         {
-            juce::ColourGradient grad (juce::Colour (0xfff5c518), bar.getTopLeft(),
-                                       t.meterHigh, bar.getTopRight(), false);
+            auto inner = bar.reduced (1.0f);
+            juce::ColourGradient grad (juce::Colour (0xfff5c518), inner.getTopLeft(),
+                                       t.meterHigh, inner.getTopRight(), false);
             g.setGradientFill (grad);
-            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * frac), 2.0f);
+            g.fillRoundedRectangle (inner.withWidth (inner.getWidth() * frac), 1.5f);
         }
+        g.setColour (t.line);
+        g.drawRoundedRectangle (bar.reduced (0.5f), 2.0f, 1.0f);
 
         g.setFont (Theme::mono (8.0f));
         g.setColour (t.textFaint);
         const int sw = grScaleArea.getWidth();
-        if (sw < 140)
+        if (sw < 136)
         {
-            g.drawText ("0", grScaleArea.withWidth (24), juce::Justification::centredLeft);
+            g.drawText ("0", grScaleArea.withWidth (22), juce::Justification::centredLeft);
             g.drawText ("-6", grScaleArea, juce::Justification::centred);
-            g.drawText ("-12 dB", grScaleArea.withTrimmedLeft (sw - 42), juce::Justification::centredRight);
+            g.drawText ("-12 dB", grScaleArea.withTrimmedLeft (sw - 40), juce::Justification::centredRight);
         }
         else
         {
@@ -493,45 +534,48 @@ void BusView::paint (juce::Graphics& g)
         }
     }
 
-    // LOUDNESS: short-term LUFS (3 s), the number streaming platforms normalise to.
-    // (Momentary / integrated LUFS are deliberately not shown here.)
-    Theme::drawLegend (g, "Loudness", loudnessLegend);
+    // LOUDNESS: short-term LUFS inside a recessed selector-well readout box.
+    Theme::drawLegend (g, "Loudness", loudnessLegend, juce::Justification::centred);
     {
+        auto box = loudnessValueArea.toFloat();
+        g.setColour (t.selBg);
+        g.fillRoundedRectangle (box, Theme::controlRadius);
+        g.setColour (t.line);
+        g.drawRoundedRectangle (box.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+        auto inner = loudnessValueArea.reduced (6, 0);
         const double st = analysis->loudness.shortTerm();
-        const bool narrow = loudnessValueArea.getWidth() < 155;
-        auto labelRect = loudnessValueArea.withWidth (narrow ? 28 : 62);
-        auto valRect = loudnessValueArea.withTrimmedLeft (labelRect.getWidth() + 4);
-        g.setFont (Theme::ui (9.0f, true));
+        const bool narrow = inner.getWidth() < 135;
+        auto labelRect = inner.withWidth (narrow ? 24 : 58);
+        auto valRect = inner.withTrimmedLeft (labelRect.getWidth() + 4);
+        g.setFont (Theme::ui (8.5f, true));
         g.setColour (t.textFaint);
         g.drawText (narrow ? "ST" : "SHORT-TERM", labelRect, juce::Justification::centredLeft);
-        g.setFont (Theme::mono (narrow ? 13.0f : 15.0f));
+        g.setFont (Theme::mono (narrow ? 12.5f : 14.0f));
         g.setColour (std::isfinite (st) ? t.text : t.textFaint);
         g.drawText (std::isfinite (st) ? juce::String (st, 1) + " LUFS" : juce::String ("no signal"),
                     valRect, juce::Justification::centredRight, true);
     }
 
-    // Channel icon row, as on the strips.
+    // Bus icon row, matching input strips.
     if (! iconRowArea.isEmpty())
-    {
-        const auto cx = iconRowArea.getCentreX();
-        const auto cy = iconRowArea.getCentreY();
-        g.setColour (t.textFaint);
-        g.fillRect (cx - 9, cy - 4, 3, 8);
-        g.fillRect (cx - 1, cy - 7, 3, 14);
-        g.fillRect (cx + 7, cy - 5, 3, 10);
-    }
+        drawBusIcon (g, iconRowArea, isVirtual());
 
     // A hairline above the fader bay, the same height on every column.
     g.setColour (t.line);
-    g.fillRect (7, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth() - 14, 1);
+    g.fillRect (0, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth(), 1);
 
-    // Bold solid-colour name bar along the bottom of the bus, in the bus's own
-    // colour; on the monitor bus it is lit in the accent colour instead.
+    // Bold solid-colour name bar flush along the bottom of the bus (mockup style).
     if (! nameBarArea.isEmpty())
     {
         const bool monitor = bus.monitor.load();
+        const auto bar = nameBarArea.withX (1).withWidth (getWidth() - 2).withBottom (getHeight() - 1).toFloat();
+        juce::Path p;
+        const float rad = Theme::panelRadius - 1.0f;
+        p.addRoundedRectangle (bar.getX(), bar.getY(), bar.getWidth(), bar.getHeight(),
+                               rad, rad, false, false, true, true);
         g.setColour (monitor ? t.accent : Theme::busColour (index));
-        g.fillRect (nameBarArea);
+        g.fillPath (p);
         g.setColour (monitor ? t.onAccent : juce::Colours::white);
         g.setFont (Theme::ui (13.0f, true));
         g.drawText (busName(), nameBarArea.reduced (Theme::s2, 0), juce::Justification::centred);
@@ -547,53 +591,53 @@ void BusView::paintOverChildren (juce::Graphics& g)
         return;
 
     g.setColour (Theme::p().accent);
-    g.drawRect (getLocalBounds().toFloat(), 1.0f);
+    g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), Theme::panelRadius, 1.0f);
 }
 
 void BusView::resized()
 {
     const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);
-    // Mockup proportions, as on the strips: 7 px side padding, 14 px legends,
-    // 6 px between sections, 1 px dividers.
+    // Mockup proportions, as on the strips: 7 px side padding, 13 px legends,
+    // 5 px between sections, 1 px edge-to-edge dividers.
     constexpr int pad = 7;
     auto r = getLocalBounds().reduced (pad, pad);
     const int split = bayTop > 0 ? bayTop : getHeight() / 2;
     auto top = r.withBottom (split - pad);
     auto bay = r.withTop (split);
-    constexpr int legendH = 14, gap = 6;
+    constexpr int legendH = 13, gap = 5;
     dividerYs.clear();
 
-    auto titleRow = top.removeFromTop (28);
-    menuButton.setBounds (titleRow.removeFromRight (28));
+    auto titleRow = top.removeFromTop (26);
+    menuButton.setBounds (titleRow.removeFromRight (26));
     titleRow.removeFromRight (Theme::s1);
     tape.setBounds (titleRow);
-    dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
+    dividerYs.push_back (top.getY() - 2);
 
     // OUTPUT: the device this bus plays into.
     outputLegend = top.removeFromTop (legendH);
-    targetButton.setBounds (top.removeFromTop (28));
-    dividerYs.push_back (top.getY());
+    targetButton.setBounds (top.removeFromTop (25));
     top.removeFromTop (gap);
+    dividerYs.push_back (top.getY() - 2);
 
     // PROCESSING: EQ / Comp keys.
     processLegend = top.removeFromTop (legendH);
     {
-        auto row = top.removeFromTop (26);
-        const int kw = (row.getWidth() - 2) / 2;
+        auto row = top.removeFromTop (24);
+        const int kw = (row.getWidth() - 3) / 2;
         eqKey.setBounds (row.removeFromLeft (kw));
-        row.removeFromLeft (2);
+        row.removeFromLeft (3);
         compKey.setBounds (row);
     }
-    dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
+    dividerYs.push_back (top.getY() - 2);
 
     // The analyser, limiter, loudness and icon row are fixed heights pinned to
     // the bottom of the top section; the inserts expand to fill the middle.
-    constexpr int analyserH = legendH + 88;
-    constexpr int limiterH = legendH + 18 + 12 + 12 + 10;
-    constexpr int loudnessH = legendH + 22 + 5 + 28 + 5 + 16;
-    constexpr int iconH = 21;
+    const int analyserH = legendH + (Theme::isCompact() ? 58 : 72);
+    constexpr int limiterH = legendH + 20 + 12 + 11 + 10;
+    constexpr int loudnessH = legendH + 22 + 4 + 26 + 4 + 14;
+    constexpr int iconH = 20;
 
     iconRowArea = top.removeFromBottom (iconH);
     top.removeFromBottom (gap);
@@ -609,38 +653,38 @@ void BusView::resized()
     const int rackH = insertsAvail <= 0 ? 0
         : juce::jlimit (InsertRack::heightForRows (1), InsertRack::heightForRows (kNumSlots), insertsAvail);
     inserts.setBounds (rackH > 0 ? top.removeFromTop (rackH) : juce::Rectangle<int>());
-    dividerYs.push_back (analyserBlock.getY() - gap);
+    dividerYs.push_back (analyserBlock.getY() - 3);
 
     // ANALYSER: live spectrum only (no LUFS boxes here).
     spectrumLegend = analyserBlock.removeFromTop (legendH);
     spectrum.setBounds (analyserBlock);
-    dividerYs.push_back (limiterBlock.getY() - gap);
+    dividerYs.push_back (limiterBlock.getY() - 3);
 
-    // LIMITER: lamp + state, gain-reduction head, track, scale.
+    // LIMITER: lamp badge + state, gain-reduction head, track, scale.
     limiterLegend = limiterBlock.removeFromTop (legendH);
-    limiterArea = limiterBlock.removeFromTop (18);
+    limiterArea = limiterBlock.removeFromTop (20);
     grHeadArea = limiterBlock.removeFromTop (12);
-    grTrackArea = limiterBlock.removeFromTop (12);
+    grTrackArea = limiterBlock.removeFromTop (11);
     grScaleArea = limiterBlock.removeFromTop (10);
     limiterSectionArea = juce::Rectangle<int> (limiterLegend.getX(), limiterLegend.getY(),
                                                limiterLegend.getWidth(),
                                                grScaleArea.getBottom() - limiterLegend.getY());
-    dividerYs.push_back (loudnessBlock.getY() - gap);
+    dividerYs.push_back (loudnessBlock.getY() - 3);
 
-    // LOUDNESS: short-term value, normalisation select, gain being applied.
+    // LOUDNESS: short-term value box, normalisation select, gain applied.
     loudnessLegend = loudnessBlock.removeFromTop (legendH);
     loudnessValueArea = loudnessBlock.removeFromTop (22);
-    loudnessBlock.removeFromTop (5);
-    normCombo.setBounds (loudnessBlock.removeFromTop (28));
-    loudnessBlock.removeFromTop (5);
-    normGainLabel.setBounds (loudnessBlock.removeFromTop (16));
-    dividerYs.push_back (iconRowArea.getY());
+    loudnessBlock.removeFromTop (4);
+    normCombo.setBounds (loudnessBlock.removeFromTop (26));
+    loudnessBlock.removeFromTop (4);
+    normGainLabel.setBounds (loudnessBlock.removeFromTop (14));
+    dividerYs.push_back (iconRowArea.getY() - 2);
 
     // Fader bay, aligned with the strips: name bar along the very bottom, mute
     // above it, fader + meter above that.
-    nameBarArea = bay.removeFromBottom (28);
+    nameBarArea = bay.removeFromBottom (26);
     bay.removeFromBottom (gap);
-    muteButton.setBounds (bay.removeFromBottom (28));
+    muteButton.setBounds (bay.removeFromBottom (26));
     bay.removeFromBottom (gap);
     faderSection.setBounds (bay);
 }

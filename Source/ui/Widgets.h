@@ -63,7 +63,7 @@ public:
     void paint (juce::Graphics&) override;
     void tick();
 
-    static constexpr int preferredWidth = 30 + 64 + 6 + 28;   // scale, fader, gap, meter
+    static constexpr int preferredWidth = 104;   // scale, fader, gap, meter
 
     DbSlider fader { juce::Slider::LinearVertical, juce::Slider::TextBoxAbove };
     LevelMeter meter;

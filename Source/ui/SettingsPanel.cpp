@@ -205,6 +205,8 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     addLearnTarget ("Record", "record");
     addLearnTarget ("Save replay", "replay/save");
     midiLearnTarget.setSelectedItemIndex (0);
+    midiLearnButton.getProperties().set ("lamp", "key");
+    midiLearnButton.setClickingTogglesState (false);
     midiLearnButton.onClick = [this]
     {
         if (midiControl == nullptr)
@@ -213,6 +215,8 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         {
             midiControl->cancelLearn();
             midiLearnButton.setButtonText ("Learn...");
+            midiLearnButton.setToggleState (false, juce::dontSendNotification);
+            updateMidiText();
             return;
         }
         const int index = midiLearnTarget.getSelectedItemIndex();
@@ -222,6 +226,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         if (midiControl->startLearn (target))
         {
             midiLearnButton.setButtonText ("Listening... (click to cancel)");
+            midiLearnButton.setToggleState (true, juce::dontSendNotification);
             midiText = "Move a knob or press a key on the controller for " + target + ".";
             content.repaint (midiTextArea);
         }
@@ -258,7 +263,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     engine.getScanner().addChangeListener (this);
     updateScanText();
     startTimerHz (2);   // watches MIDI learn finishing (a knob/key on another thread)
-    setSize (556, 890);
+    setSize (580, 840);
 }
 
 SettingsPanel::~SettingsPanel()
@@ -275,6 +280,7 @@ void SettingsPanel::timerCallback()
     if (! midiControl->isLearning() && midiLearnButton.getButtonText().startsWith ("Listening"))
     {
         midiLearnButton.setButtonText ("Learn...");
+        midiLearnButton.setToggleState (false, juce::dontSendNotification);
         updateMidiText();
     }
 }
@@ -323,24 +329,36 @@ void SettingsPanel::updateMidiText()
 SettingsPanel::AccentSwatch::AccentSwatch (juce::Colour c, std::function<void()> onClickFn)
     : colour (c), onClick (std::move (onClickFn))
 {
+    setWantsKeyboardFocus (true);
+    makeClickable (*this);
 }
 
 void SettingsPanel::AccentSwatch::paint (juce::Graphics& g)
 {
-    const auto area = getLocalBounds().toFloat();
+    const auto& t = Theme::p();
+    const auto area = getLocalBounds().toFloat().reduced (1.5f);
     g.setColour (colour);
-    g.fillRoundedRectangle (area, Theme::controlRadius);
-    if (selected)
-    {
-        g.setColour (Theme::p().text);
-        g.drawRoundedRectangle (area.reduced (1.0f), Theme::controlRadius, 2.0f);
-    }
+    g.fillEllipse (area);
+    g.setColour (selected ? t.text : t.line);
+    g.drawEllipse (area.reduced (0.5f), selected ? 2.0f : 1.0f);
+    if (hasKeyboardFocus (false))
+        Theme::drawFocusRing (g, getLocalBounds().toFloat(), 14.0f);
 }
 
 void SettingsPanel::AccentSwatch::mouseUp (const juce::MouseEvent& e)
 {
     if (e.mouseWasClicked() && onClick)
         onClick();
+}
+
+bool SettingsPanel::AccentSwatch::keyPressed (const juce::KeyPress& k)
+{
+    if ((k == juce::KeyPress::returnKey || k == juce::KeyPress::spaceKey) && onClick)
+    {
+        onClick();
+        return true;
+    }
+    return false;
 }
 
 void SettingsPanel::updateAccentSwatches()
@@ -366,15 +384,24 @@ void SettingsPanel::updateScanText()
     content.repaint (scanTextArea);
 }
 
+int SettingsPanel::midiBoxHeight() const
+{
+    const int lines = juce::jmax (3, midiControl != nullptr ? (int) midiControl->getMappings().size() : 3);
+    return juce::jmax (56, lines * 18 + 12);
+}
+
 void SettingsPanel::paint (juce::Graphics& g)
 {
-    g.fillAll (Theme::p().panel);
+    g.fillAll (Theme::p().window);
 }
 
 void SettingsPanel::paintContent (juce::Graphics& g)
 {
     const auto& t = Theme::p();
-    g.fillAll (t.panel);
+    g.fillAll (t.window);
+
+    for (const auto* card : { &startupCard, &themeCard, &pluginsCard, &networkCard, &aboutCard })
+        Theme::drawFaceplate (g, card->toFloat());
 
     Theme::drawLegend (g, "Startup", startupLegend);
     Theme::drawLegend (g, "Look and hotkeys", themeLegend);
@@ -382,13 +409,14 @@ void SettingsPanel::paintContent (juce::Graphics& g)
     Theme::drawLegend (g, "Network and logs", networkLegend);
     Theme::drawLegend (g, "About", aboutLegend);
 
-    g.setColour (t.line);
-    for (const auto* legend : { &themeLegend, &pluginsLegend, &networkLegend, &aboutLegend })
-        g.fillRect (legend->getX(), legend->getY() - Theme::s2, legend->getWidth(), 1);
-
     g.setFont (Theme::ui (13.0f));
     g.setColour (t.textDim);
     g.drawText ("Accent colour", accentLabelArea, juce::Justification::centredLeft);
+
+    g.setFont (Theme::ui (12.0f));
+    g.setColour (t.textFaint);
+    g.drawText ("Port", oscPortLabelArea, juce::Justification::centredRight);
+    g.drawText ("Port", wsPortLabelArea, juce::Justification::centredRight);
 
     g.setFont (Theme::ui (13.0f));
     g.setColour (t.textDim);
@@ -402,11 +430,18 @@ void SettingsPanel::paintContent (juce::Graphics& g)
                           "with the /openmix addresses, or a WebSocket plugin against this port.",
                       wsNoteArea, juce::Justification::topLeft, 3);
 
+    // Recessed MIDI mappings readout box matching the desk style.
+    g.setColour (t.selBg);
+    g.fillRoundedRectangle (midiTextArea.toFloat(), Theme::controlRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (midiTextArea.toFloat().reduced (0.5f), Theme::controlRadius, 1.0f);
+    g.setFont (Theme::mono (11.5f));
+    g.setColour (t.textDim);
+    const int midiMaxLines = juce::jmax (3, juce::StringArray::fromLines (midiText).size());
+    g.drawFittedText (midiText, midiTextArea.reduced (8, 6), juce::Justification::topLeft, midiMaxLines);
+
     g.setFont (Theme::ui (13.0f));
     g.setColour (t.textDim);
-    const int midiMaxLines = juce::jmax (4, juce::StringArray::fromLines (midiText).size());
-    g.drawFittedText (midiText, midiTextArea, juce::Justification::topLeft, midiMaxLines);
-
     g.drawFittedText ("OpenMix " + juce::JUCEApplication::getInstance()->getApplicationVersion()
                         + ". Licensed under the GNU AGPLv3. Built with JUCE (AGPLv3) and RNNoise (BSD).",
                       aboutArea, juce::Justification::topLeft, 3);
@@ -416,79 +451,114 @@ void SettingsPanel::resized()
 {
     viewport.setBounds (getLocalBounds());
     const int w = juce::jmax (500, viewport.getMaximumVisibleWidth());
-    const int midiLines = juce::jmax (4, midiControl != nullptr ? (int) midiControl->getMappings().size() : 4);
-    const int midiH = juce::jmax (64, midiLines * 18 + 8);
-    content.setSize (w, 890 + (midiH - 64));
+    content.setSize (w, 928 + midiBoxHeight());
     layoutContent();
 }
 
 void SettingsPanel::layoutContent()
 {
-    auto r = content.getLocalBounds().reduced (Theme::s5, Theme::s4);
+    auto r = content.getLocalBounds().reduced (Theme::s3);
+    constexpr int cardPad = Theme::s3;
+    constexpr int cardGap = 10;
+    const int midiH = midiBoxHeight();
 
-    startupLegend = r.removeFromTop (20);
-    for (auto* t : { &startWithWindows, &startMinimized, &closeToTray })
-        t->setBounds (r.removeFromTop (28));
-    r.removeFromTop (Theme::s4);
-
-    themeLegend = r.removeFromTop (20);
+    startupCard = r.removeFromTop (124);
     {
-        auto row = r.removeFromTop (30);
-        themeButton.setBounds (row.removeFromLeft (190));
-        row.removeFromLeft (Theme::s2);
-        hotkeysButton.setBounds (row.removeFromLeft (190));
+        auto c = startupCard.reduced (cardPad);
+        startupLegend = c.removeFromTop (18);
+        for (auto* t : { &startWithWindows, &startMinimized, &closeToTray })
+            t->setBounds (c.removeFromTop (28));
     }
-    r.removeFromTop (Theme::s1);
+    r.removeFromTop (cardGap);
+
+    themeCard = r.removeFromTop (138);
     {
-        auto row = r.removeFromTop (28);
-        accentLabelArea = row.removeFromLeft (110);
-        for (auto& sw : accentSwatches)
+        auto c = themeCard.reduced (cardPad);
+        themeLegend = c.removeFromTop (18);
         {
-            sw->setBounds (row.removeFromLeft (28));
-            row.removeFromLeft (Theme::s1);
+            auto row = c.removeFromTop (30);
+            const int bw = (row.getWidth() - Theme::s2) / 2;
+            themeButton.setBounds (row.removeFromLeft (bw));
+            row.removeFromLeft (Theme::s2);
+            hotkeysButton.setBounds (row);
         }
+        c.removeFromTop (6);
+        {
+            auto row = c.removeFromTop (28);
+            accentLabelArea = row.removeFromLeft (110);
+            for (auto& sw : accentSwatches)
+            {
+                sw->setBounds (row.removeFromLeft (28));
+                row.removeFromLeft (Theme::s1);
+            }
+        }
+        c.removeFromTop (4);
+        compactMode.setBounds (c.removeFromTop (28));
     }
-    compactMode.setBounds (r.removeFromTop (28));
-    r.removeFromTop (Theme::s4);
+    r.removeFromTop (cardGap);
 
-    pluginsLegend = r.removeFromTop (20);
-    auto row = r.removeFromTop (30);
-    scanButton.setBounds (row.removeFromLeft (190));
-    row.removeFromLeft (Theme::s2);
-    retryButton.setBounds (row.removeFromLeft (190));
-    r.removeFromTop (Theme::s1);
-    scanTextArea = r.removeFromTop (36);
-    row = r.removeFromTop (30);
-    presetsButton.setBounds (row.removeFromLeft (190));
-    row.removeFromLeft (Theme::s2);
-    pluginsButton.setBounds (row.removeFromLeft (190));
-    pluginProbe.setBounds (r.removeFromTop (28));
-    r.removeFromTop (Theme::s4);
+    pluginsCard = r.removeFromTop (174);
+    {
+        auto c = pluginsCard.reduced (cardPad);
+        pluginsLegend = c.removeFromTop (18);
+        auto row = c.removeFromTop (30);
+        const int bw = (row.getWidth() - Theme::s2) / 2;
+        scanButton.setBounds (row.removeFromLeft (bw));
+        row.removeFromLeft (Theme::s2);
+        retryButton.setBounds (row);
+        c.removeFromTop (4);
+        scanTextArea = c.removeFromTop (34);
+        row = c.removeFromTop (30);
+        presetsButton.setBounds (row.removeFromLeft (bw));
+        row.removeFromLeft (Theme::s2);
+        pluginsButton.setBounds (row);
+        c.removeFromTop (6);
+        pluginProbe.setBounds (c.removeFromTop (28));
+    }
+    r.removeFromTop (cardGap);
 
-    networkLegend = r.removeFromTop (20);
-    checkUpdates.setBounds (r.removeFromTop (28));
-    row = r.removeFromTop (28);
-    oscEnabled.setBounds (row.removeFromLeft (270));
-    oscPort.setBounds (row.removeFromLeft (72).reduced (0, 2));
-    oscNoteArea = r.removeFromTop (36);
-    row = r.removeFromTop (28);
-    wsEnabled.setBounds (row.removeFromLeft (270));
-    wsPort.setBounds (row.removeFromLeft (72).reduced (0, 2));
-    wsNoteArea = r.removeFromTop (48);
-    midiEnabled.setBounds (r.removeFromTop (28));
-    midiDeviceBox.setBounds (r.removeFromTop (30));
-    r.removeFromTop (Theme::s1);
-    row = r.removeFromTop (30);
-    midiLearnTarget.setBounds (row.removeFromLeft (240));
-    row.removeFromLeft (Theme::s2);
-    midiLearnButton.setBounds (row.removeFromLeft (110));
-    row.removeFromLeft (Theme::s2);
-    midiClearButton.setBounds (row);
-    const int midiLines = juce::jmax (4, midiControl != nullptr ? (int) midiControl->getMappings().size() : 4);
-    midiTextArea = r.removeFromTop (juce::jmax (64, midiLines * 18 + 8));
-    logsButton.setBounds (r.removeFromTop (30).withWidth (190));
-    r.removeFromTop (Theme::s4);
+    networkCard = r.removeFromTop (344 + midiH);
+    {
+        auto c = networkCard.reduced (cardPad);
+        networkLegend = c.removeFromTop (18);
+        checkUpdates.setBounds (c.removeFromTop (28));
 
-    aboutLegend = r.removeFromTop (20);
-    aboutArea = r;
+        auto oscRow = c.removeFromTop (28);
+        oscPort.setBounds (oscRow.removeFromRight (74).reduced (0, 2));
+        oscRow.removeFromRight (6);
+        oscPortLabelArea = oscRow.removeFromRight (32);
+        oscRow.removeFromRight (Theme::s2);
+        oscEnabled.setBounds (oscRow);
+        oscNoteArea = c.removeFromTop (34);
+
+        auto wsRow = c.removeFromTop (28);
+        wsPort.setBounds (wsRow.removeFromRight (74).reduced (0, 2));
+        wsRow.removeFromRight (6);
+        wsPortLabelArea = wsRow.removeFromRight (32);
+        wsRow.removeFromRight (Theme::s2);
+        wsEnabled.setBounds (wsRow);
+        wsNoteArea = c.removeFromTop (46);
+
+        midiEnabled.setBounds (c.removeFromTop (28));
+        midiDeviceBox.setBounds (c.removeFromTop (30));
+        c.removeFromTop (6);
+        auto row = c.removeFromTop (30);
+        midiLearnTarget.setBounds (row.removeFromLeft (juce::jmin (230, row.getWidth() - 210)));
+        row.removeFromLeft (Theme::s2);
+        midiLearnButton.setBounds (row.removeFromLeft (104));
+        row.removeFromLeft (Theme::s2);
+        midiClearButton.setBounds (row);
+        c.removeFromTop (6);
+        midiTextArea = c.removeFromTop (midiH);
+        c.removeFromTop (8);
+        logsButton.setBounds (c.removeFromTop (30).withWidth (190));
+    }
+    r.removeFromTop (cardGap);
+
+    aboutCard = r.removeFromTop (84);
+    {
+        auto c = aboutCard.reduced (cardPad);
+        aboutLegend = c.removeFromTop (18);
+        aboutArea = c;
+    }
 }

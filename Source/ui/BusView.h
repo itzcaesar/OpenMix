@@ -32,8 +32,8 @@ public:
 
     // Column width limits; compact mode narrows them (Theme::isCompact()).
     // A bus gets about 3/4 of a strip's width (see ConsoleContent::resized).
-    static int minWidth() { return Theme::isCompact() ? 128 : 156; }
-    static int maxWidth() { return Theme::isCompact() ? 240 : 300; }
+    static int minWidth() { return Theme::isCompact() ? 136 : 156; }
+    static int maxWidth() { return Theme::isCompact() ? 200 : 230; }
 
 private:
     void showTargetMenu();
