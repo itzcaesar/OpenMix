@@ -1743,6 +1743,7 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             if (! onBus)
             {
                 makeLamp (hpfToggle, "key");
+                hpfToggle.setClickingTogglesState (true);
                 hpfToggle.setToggleState (fx.hpfOn.load(), juce::dontSendNotification);
                 hpfToggle.setTitle ("High-pass filter");
                 hpfToggle.setTooltip ("High-pass filter: cut rumble below the cutoff.");
@@ -1773,6 +1774,7 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
                 addAndMakeVisible (hpfCutoffSlider);
 
                 makeLamp (lpfToggle, "key");
+                lpfToggle.setClickingTogglesState (true);
                 lpfToggle.setToggleState (fx.lpfOn.load(), juce::dontSendNotification);
                 lpfToggle.setTitle ("Low-pass filter");
                 lpfToggle.setTooltip ("Low-pass filter: cut hiss above the cutoff.");

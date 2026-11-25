@@ -50,7 +50,7 @@ BusView::BusView (MixerEngine& e, int i)
 
     spectrum.setTitle ("Bus " + engine.getBusName (i) + " spectrum. Opens the analyser.");
     spectrum.onClick = [this] { openAnalyser(); };
-    addChildComponent (spectrum);
+    addAndMakeVisible (spectrum);
 
     // Loudness normalisation, in the LOUDNESS section (mockup style): a slow gain
     // that pulls this bus towards the target. Same choices as the bus menu.
@@ -604,6 +604,7 @@ void BusView::resized()
     dividerYs.push_back (analyserBlock.getY() - 3);
 
     // ANALYSER: live spectrum only (no LUFS boxes here).
+    spectrum.setVisible (! analyserBlock.isEmpty());
     spectrumLegend = analyserBlock.removeFromTop (legendH);
     spectrum.setBounds (analyserBlock);
     dividerYs.push_back (limiterBlock.getY() - 3);
