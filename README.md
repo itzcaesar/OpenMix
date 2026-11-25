@@ -218,10 +218,13 @@ slot will be empty on a default (VST2-off) build.
 
 ## Buses
 
-- **Output:** an output pair of the main device, or any Windows output device. Each bus can
-  use a different device: A1 headphones, A2 speakers, B1 a virtual cable for Discord or OBS.
-  Extra devices run on their own clocks; OpenMix resamples them and corrects the drift,
-  which adds about 10-25 ms on those devices only.
+- **Output:** an output pair of the main device, any Windows output device, or **Not connected**
+  (internal only, still available to recording and replay). Each bus can use a different device:
+  A1 headphones, A2 speakers, B1 a virtual cable for Discord or OBS. Extra devices run on their
+  own clocks; OpenMix resamples them and corrects the drift, which adds about 10-25 ms on those
+  devices only. Adding buses does not require separate drivers per bus — only exposing a B bus
+  as a microphone to other apps needs a virtual endpoint (a virtual cable today, or one
+  multi-endpoint OpenMix driver in Phase 7; see `docs/VIRTUAL_DRIVER.md`).
 - **Custom names:** rename a bus from its three-dot menu (empty = the default A1..A3 /
   B1..B3). The name is shown on the bus strip, on the strips' send keys, in the soundboard
   and in recording. A bus never changes group when renamed: slots A1-A3 are always
@@ -426,7 +429,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 | `tests/` | `CoreTests.cpp`, `BuiltInFxTests.cpp`, `AppTests.cpp` (run via `ctest`) |
 | `resources/` | App icon: `make_icon.py` draws `icon.png` and `icon.ico` |
 | `installer/OpenMix.iss` | Inno Setup installer, built by CI for version tags |
-| `docs/` & `website/` | UI design direction (`docs/DESIGN.md`) and MkDocs user wiki (`mkdocs.yml`, `website/docs/`) |
+| `docs/` & `website/` | UI design direction (`docs/DESIGN.md`), Phase 7 virtual driver guide (`docs/VIRTUAL_DRIVER.md`), and MkDocs user wiki (`mkdocs.yml`, `website/docs/`) |
 | `ROADMAP.md` | What's done and what's next |
 
 ## Releases

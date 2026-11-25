@@ -80,7 +80,7 @@ VB-Cable at the same time, for hours, with no drift clicks.
 - [x] **Virtual input strips** (stereo) that read desktop or app audio: a strip can take a
       virtual cable's output as a Windows input device, or use device loopback (below)
 - [x] Stereo hardware strips (L/R input pair), selectable per strip
-- [x] Configurable strip count (add or remove strips at runtime)
+- [x] Configurable strip count (add or remove strips at runtime — pure user-mode slots, so inputs scale without a driver)
 - [x] WASAPI loopback capture as a strip source (what a device plays, without a cable)
 - [x] **Per-app routing**: list running audio apps and assign each to a strip. Either use
       Windows' per-app output device setting (the same mechanism EarTrumpet uses) to send
@@ -146,22 +146,50 @@ Built-in so the basics work without third-party plugins:
 
 ## Phase 7 - Own virtual audio driver  *(~1-2 months, kernel work)*
 
-This removes the need for VB-Cable. Two parts:
+This removes the need for VB-Cable on virtual (`B`) buses (and optionally adds
+VoiceMeeter-style virtual playback inputs). **One** installed driver exposes a
+set of virtual endpoints—adding buses in the mixer never requires adding extra
+drivers per bus. Full architecture and engineering checklist:
+[`docs/VIRTUAL_DRIVER.md`](docs/VIRTUAL_DRIVER.md).
 
-### 7a. Virtual WDM devices (what Discord, OBS and games see)
-- [ ] Start from Microsoft's **SysVAD** sample (Windows Driver Kit). Strip it down to a
-      virtual render endpoint ("OpenMix Input") and a capture endpoint ("OpenMix Output")
-- [ ] Shared-memory ring buffer between the driver and the OpenMix app (driver <-> user mode),
-      with OpenMix's clock as the master
-- [ ] Multiple endpoints (e.g. 3 virtual inputs, 2 virtual outputs)
-- [ ] Develop in a **VM** with kernel debugging (WinDbg): a driver bug means a BSOD
-- [ ] Test-signing mode (`bcdedit /set testsigning on`) during development
-- [ ] **Release signing**: EV code-signing certificate -> Microsoft Partner Center
-      (hardware dev program) -> attestation signing. Budget: a few hundred USD/year
+### 7a. Virtual WDM driver (what Discord, OBS and games see)
+- [ ] **Single driver, multiple endpoints:** Prefer **ACX (KMDF)**
+      (`AcxCircuit`, `AcxStream`, `AcxFactoryCircuit`, RT packet streaming;
+      modern replacement for PortCls), keeping Microsoft's **SysVAD** (WaveRT)
+      sample as a fallback reference
+- [ ] **Fixed or explicitly managed endpoint pool** (e.g. `B1–B3` capture
+      endpoints with `KSNODETYPE_MICROPHONE`, plus optional virtual render
+      inputs with `KSNODETYPE_SPEAKER`), avoiding PnP endpoint churn when `+ Bus`
+      or `Remove bus` is clicked mid-stream
+- [ ] **Zero-blocking WaveRT / RT-packet data path:** Shared-memory ring buffer
+      + asynchronous inverted-call `DeviceIoControl` bridge to `OpenMix.exe`,
+      with defensive kernel index masking (`idx & mask`) against untrusted
+      user-mode indices
+- [ ] **Offline/stall safety:** Emit digital silence (`0`) on capture endpoints
+      when `OpenMix.exe` is closed/stalled, and keep advancing the WaveRT cursor
+      on virtual render endpoints so playing apps never freeze
+- [ ] **Clocking & formats:** Native `32-bit float` (plus `24/16-bit PCM`) at
+      `48 kHz` stereo; start with a QPC-paced kernel timer bridged through
+      OpenMix's `ClockBridge`, with optional master-clock slaving + kernel QPC
+      watchdog fallback later
+- [ ] **Self-loopback exclusion:** Hide OpenMix's own virtual render endpoints
+      from WASAPI loopback menus once bridged directly over shared memory
+- [ ] **VM testing & Driver Verifier:** Develop in a VM with WinDbg; run Driver
+      Verifier (Pool Tracking, Deadlock Detection, Special Pool) and stress
+      `OpenMix.exe` kill/restart, sample-rate switches, and `D0`/`D3` sleep/wake
+- [ ] **Signing & installer:** Test-signing (`bcdedit /set testsigning on`) in
+      dev; for release, sign `.cab` with an **EV Code Signing Certificate**
+      (hardware token / Cloud HSM) and submit to **Microsoft Partner Center**
+      for **Attestation Signing** (cross-signing is deprecated/blocked on modern
+      Windows 11). Add an optional `pnputil` driver component to `installer/OpenMix.iss`
 
 ### 7b. Virtual ASIO driver (optional; lets a DAW connect to OpenMix)
-- [ ] A user-mode COM DLL implementing `IASIO`, registered under `HKLM\SOFTWARE\ASIO`
-- [ ] Exchanges audio with OpenMix through shared memory, in step with the master clock
+- [ ] User-mode COM DLL implementing `IASIO`, registered under
+      `HKLM\SOFTWARE\ASIO` (plus WOW6432Node for 32-bit hosts if needed) — no
+      kernel code required
+- [ ] Exchanges audio with `OpenMix.exe` via shared memory
+      (`CreateFileMapping` / `MapViewOfFile`) and named events, in step with the
+      master clock
 
 ## Phase 8 - Product polish  *(~2 weeks)*
 

@@ -34,6 +34,16 @@ Sources:
   without a virtual cable. Devices OpenMix itself plays into are greyed
   out, because capturing them would feed the sound back into itself.
 
+!!! note "No separate 'Virtual Inputs' driver needed"
+    Instead of separating hardware inputs from driver-backed "Virtual
+    Inputs" (as in VoiceMeeter), every OpenMix strip can pick
+    **Application audio** or **Windows output (loopback)** directly in
+    user mode. Because Windows 10 2004+ supports per-process and device
+    loopback natively, input strips can scale without installing a
+    virtual driver. (A 4-corner surround panner is not built in yet;
+    surround and binaural VoicePad modes are open in Phase 6 of the
+    [roadmap](roadmap.md).)
+
 ## 3. Processing
 
 Processing keys, lit when on. Click for settings, Space switches on or off.

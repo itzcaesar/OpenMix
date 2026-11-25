@@ -36,10 +36,17 @@ microphone.
   load-time crashes; a plugin crashing while processing audio can still
   take OpenMix down. Phase 5 stretch goal.
 - **Surround / binaural positioning, pad automation** — Phase 6, open.
-- **Own virtual audio driver** (Phase 7, kernel work): virtual WDM
-  devices so Discord/OBS/games see OpenMix directly, plus an optional
-  virtual ASIO driver. Needs a VM with kernel debugging and, for release,
-  EV code signing via Microsoft Partner Center.
+- **Own virtual audio driver** (Phase 7, kernel work): **one** installed
+  driver exposing multiple virtual endpoints (`B1–B3` virtual mics for
+  Discord/OBS/games, plus optional virtual playback inputs) and an
+  optional user-mode virtual ASIO COM DLL for DAWs. Planned around
+  Microsoft's modern **ACX** (KMDF) audio framework (with SysVAD as a
+  WaveRT reference), a fixed/explicitly managed endpoint pool to avoid
+  PnP glitches during calls, a non-blocking shared-memory ring buffer +
+  `ClockBridge` path, VM + Driver Verifier testing, and EV
+  (hardware/Cloud HSM) + Microsoft Partner Center attestation signing.
+  See the full guide at
+  [`docs/VIRTUAL_DRIVER.md`](https://github.com/itzcaesar/OpenMix/blob/main/docs/VIRTUAL_DRIVER.md).
 - **Release checklist (Phase 9):** troubleshooting guide and beta testing
   on different hardware (Realtek, USB headsets, Focusrite/Behringer ASIO).
   The troubleshooting guide is now partly covered by this site's

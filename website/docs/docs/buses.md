@@ -1,17 +1,31 @@
 # Buses & outputs
 
-Up to 6 buses, added and removed at runtime with **+ Bus**. The bus row
-is split into **Hardware** (A1–A3) and **Virtual** (B1–B3) groups with a
-divider between them. **+ Bus** asks for the group first, then an optional
+The bus row is OpenMix's **Master section** on the right side of the
+desk, separated from the input strips by a divider. Up to 6 buses, added
+and removed at runtime with **+ Bus**. The bus row is split into
+**Hardware** (A1–A3) and **Virtual** (B1–B3) groups with a divider
+between them. **+ Bus** asks for the group first, then an optional
 custom name, and takes the next free slot in that group.
 
 ## Output
 
-An output pair of the main device, or any Windows output device. Each bus
-can use a different device: A1 headphones, A2 speakers, B1 a virtual cable
-for Discord or OBS. Extra devices run on their own clocks; OpenMix
-resamples them and corrects the drift, which adds about 10–25 ms on those
-devices only.
+An output pair of the main device, any Windows output device, or **Not
+connected** (internal only, which still feeds recording and the replay
+buffer). Each bus can use a different device: A1 headphones, A2
+speakers, B1 a virtual cable for Discord or OBS. Extra devices run on
+their own clocks; OpenMix resamples them and corrects the drift, which
+adds about 10–25 ms on those devices only.
+
+!!! note "Adding buses vs. drivers"
+    Output buses are software mixing buses inside OpenMix—adding or
+    activating a bus does **not** require a separate audio driver per bus.
+    **Hardware (`A`)** buses route to physical outputs or extra channels on
+    your main interface. **Virtual (`B`)** buses only need a virtual
+    audio endpoint when another app (Discord, OBS, Zoom) needs to pick
+    that bus as a microphone: today you point a `B` bus at a third-party
+    virtual cable (`CABLE Input`), and in [Phase 7](roadmap.md) **one**
+    OpenMix virtual driver will expose multiple virtual endpoints at
+    once.
 
 ## Custom names
 
