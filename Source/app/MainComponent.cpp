@@ -372,8 +372,7 @@ MainComponent::MainComponent()
     if (session != nullptr)
         Theme::setDark (session->getStringAttribute ("theme", "dark") != "light");
 
-    // Appearance preferences (AppSettings): accent colour and compact density.
-    Theme::setAccent (AppSettings::get().accentIndex());
+    // Appearance preferences (AppSettings): compact density.
     Theme::setCompact (AppSettings::get().compactMode());
     applyTheme();
 

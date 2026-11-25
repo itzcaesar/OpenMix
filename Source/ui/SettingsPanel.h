@@ -17,24 +17,6 @@ public:
     void resized() override;
 
 private:
-    // One accent-colour swatch: a filled square, with a ring around the selected one.
-    class AccentSwatch : public juce::Component
-    {
-    public:
-        AccentSwatch (juce::Colour, std::function<void()> onClick);
-        void paint (juce::Graphics&) override;
-        void mouseUp (const juce::MouseEvent&) override;
-        bool keyPressed (const juce::KeyPress&) override;
-        void focusGained (FocusChangeType) override { repaint(); }
-        void focusLost (FocusChangeType) override   { repaint(); }
-        void setSelected (bool s) { selected = s; repaint(); }
-
-    private:
-        juce::Colour colour;
-        std::function<void()> onClick;
-        bool selected = false;
-    };
-
     struct Content : public juce::Component
     {
         SettingsPanel& owner;
@@ -51,7 +33,6 @@ private:
     void updateScanText();
     void updateMidiText();
     void refreshMidiDevices();
-    void updateAccentSwatches();
     int midiBoxHeight() const;
 
     MixerEngine& engine;
@@ -67,7 +48,6 @@ private:
     juce::ToggleButton startMinimized   { "Start minimized to the tray" };
     juce::ToggleButton closeToTray      { "Closing the window keeps OpenMix running in the tray" };
     juce::TextButton themeButton;
-    std::vector<std::unique_ptr<AccentSwatch>> accentSwatches;
     juce::ToggleButton compactMode { "Compact mode: narrower strips and buses, tighter spacing" };
     juce::TextButton scanButton   { "Scan for new plugins" };
     juce::TextButton retryButton  { "Retry skipped plugins" };
@@ -91,6 +71,6 @@ private:
     juce::String scanText, midiText;
     juce::Rectangle<int> startupCard, themeCard, pluginsCard, networkCard, aboutCard,
                          startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend,
-                         accentLabelArea, oscNoteArea, scanTextArea, aboutArea, wsNoteArea, midiTextArea,
+                         oscNoteArea, scanTextArea, aboutArea, wsNoteArea, midiTextArea,
                          oscPortLabelArea, wsPortLabelArea;
 };

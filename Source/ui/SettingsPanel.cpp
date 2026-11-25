@@ -45,23 +45,6 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         content.repaint();
     };
 
-    // Accent colour: the lamp colour for "on" sends, the voice-pad puck and toggle lamps.
-    // Amber is the default; the choice is saved and applied on startup.
-    for (int i = 0; i < Theme::numAccentColours; ++i)
-    {
-        auto sw = std::make_unique<AccentSwatch> (juce::Colour (Theme::accentColours[i].argb), [this, i]
-        {
-            AppSettings::get().setAccentIndex (i);
-            Theme::setAccent (i);
-            updateAccentSwatches();
-            if (appearanceChanged) appearanceChanged();
-        });
-        sw->setTitle (juce::String ("Accent colour: ") + Theme::accentColours[i].name);
-        content.addAndMakeVisible (*sw);
-        accentSwatches.push_back (std::move (sw));
-    }
-    updateAccentSwatches();
-
     compactMode.setToggleState (s.compactMode(), juce::dontSendNotification);
     compactMode.onClick = [this]
     {
@@ -326,47 +309,6 @@ void SettingsPanel::updateMidiText()
     content.repaint();
 }
 
-SettingsPanel::AccentSwatch::AccentSwatch (juce::Colour c, std::function<void()> onClickFn)
-    : colour (c), onClick (std::move (onClickFn))
-{
-    setWantsKeyboardFocus (true);
-    makeClickable (*this);
-}
-
-void SettingsPanel::AccentSwatch::paint (juce::Graphics& g)
-{
-    const auto& t = Theme::p();
-    const auto area = getLocalBounds().toFloat().reduced (1.5f);
-    g.setColour (colour);
-    g.fillEllipse (area);
-    g.setColour (selected ? t.text : t.line);
-    g.drawEllipse (area.reduced (0.5f), selected ? 2.0f : 1.0f);
-    if (hasKeyboardFocus (false))
-        Theme::drawFocusRing (g, getLocalBounds().toFloat(), 14.0f);
-}
-
-void SettingsPanel::AccentSwatch::mouseUp (const juce::MouseEvent& e)
-{
-    if (e.mouseWasClicked() && onClick)
-        onClick();
-}
-
-bool SettingsPanel::AccentSwatch::keyPressed (const juce::KeyPress& k)
-{
-    if ((k == juce::KeyPress::returnKey || k == juce::KeyPress::spaceKey) && onClick)
-    {
-        onClick();
-        return true;
-    }
-    return false;
-}
-
-void SettingsPanel::updateAccentSwatches()
-{
-    for (int i = 0; i < (int) accentSwatches.size(); ++i)
-        accentSwatches[(size_t) i]->setSelected (i == Theme::accentIndex());
-}
-
 void SettingsPanel::updateScanText()
 {
     auto& scanner = engine.getScanner();
@@ -409,10 +351,6 @@ void SettingsPanel::paintContent (juce::Graphics& g)
     Theme::drawLegend (g, "Network and logs", networkLegend);
     Theme::drawLegend (g, "About", aboutLegend);
 
-    g.setFont (Theme::ui (13.0f));
-    g.setColour (t.textDim);
-    g.drawText ("Accent colour", accentLabelArea, juce::Justification::centredLeft);
-
     g.setFont (Theme::ui (12.0f));
     g.setColour (t.textFaint);
     g.drawText ("Port", oscPortLabelArea, juce::Justification::centredRight);
@@ -451,7 +389,7 @@ void SettingsPanel::resized()
 {
     viewport.setBounds (getLocalBounds());
     const int w = juce::jmax (500, viewport.getMaximumVisibleWidth());
-    content.setSize (w, 928 + midiBoxHeight());
+    content.setSize (w, 894 + midiBoxHeight());
     layoutContent();
 }
 
@@ -471,7 +409,7 @@ void SettingsPanel::layoutContent()
     }
     r.removeFromTop (cardGap);
 
-    themeCard = r.removeFromTop (138);
+    themeCard = r.removeFromTop (104);
     {
         auto c = themeCard.reduced (cardPad);
         themeLegend = c.removeFromTop (18);
@@ -483,16 +421,6 @@ void SettingsPanel::layoutContent()
             hotkeysButton.setBounds (row);
         }
         c.removeFromTop (6);
-        {
-            auto row = c.removeFromTop (28);
-            accentLabelArea = row.removeFromLeft (110);
-            for (auto& sw : accentSwatches)
-            {
-                sw->setBounds (row.removeFromLeft (28));
-                row.removeFromLeft (Theme::s1);
-            }
-        }
-        c.removeFromTop (4);
         compactMode.setBounds (c.removeFromTop (28));
     }
     r.removeFromTop (cardGap);
