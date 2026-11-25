@@ -229,7 +229,7 @@ void FaderSection::paint (juce::Graphics& g)
 
     // Recessed value box behind the fader dB readout (mockup .fader-box style).
     const float boxW = (float) juce::jlimit (36, 64, fader.getWidth());
-    const auto boxRect = juce::Rectangle<float> (fader.getCentreX() - boxW * 0.5f, (float) fader.getY(),
+    const auto boxRect = juce::Rectangle<float> ((float) fader.getBounds().getCentreX() - boxW * 0.5f, (float) fader.getY(),
                                                  boxW, (float) fader.getTextBoxHeight());
     g.setColour (t.selBg);
     g.fillRoundedRectangle (boxRect, Theme::controlRadius);
