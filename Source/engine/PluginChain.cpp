@@ -128,10 +128,10 @@ void PluginChain::installBuiltIn (int slot, std::unique_ptr<omx::BuiltInFx> fx)
         wasActive[(size_t) slot] = false;   // fade the new effect in
         bypassDelay[(size_t) slot].clear();
         mixDelay[(size_t) slot].clear();
+        slotBypass[(size_t) slot].store (false);
+        slotMix[(size_t) slot].store (1.0f);
+        slotFault[(size_t) slot].store (false);
     }
-    slotBypass[(size_t) slot].store (false);
-    slotMix[(size_t) slot].store (1.0f);
-    slotFault[(size_t) slot].store (false);
 
     if (oldPlugin != nullptr)
         oldPlugin->releaseResources();
@@ -275,10 +275,10 @@ void PluginChain::installPlugin (int slot, std::unique_ptr<juce::AudioPluginInst
         wasActive[(size_t) slot] = false;   // fade the new plugin in
         bypassDelay[(size_t) slot].clear();
         mixDelay[(size_t) slot].clear();
+        slotBypass[(size_t) slot].store (false);
+        slotMix[(size_t) slot].store (1.0f);
+        slotFault[(size_t) slot].store (false);
     }
-    slotBypass[(size_t) slot].store (false);
-    slotMix[(size_t) slot].store (1.0f);
-    slotFault[(size_t) slot].store (false);
 
     if (old != nullptr)
         old->releaseResources();
@@ -438,10 +438,13 @@ void PluginChain::process (float* L, float* R, int numSamples, int& latency) noe
             slotFault[s].store (true);
             slotBypass[s].store (true);
             faultCount.fetch_add (1);
+            chainLatency -= pluginLatency;
             if (fx != nullptr)
                 fx->reset();
             else
                 vst->reset();
+            bypassDelay[s].clear();
+            mixDelay[s].clear();
             wasActive[s] = false;
             continue;   // keep the dry signal
         }

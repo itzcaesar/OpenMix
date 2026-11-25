@@ -117,20 +117,23 @@ int PluginScanner::runChildProbe (const juce::String& fileOrIdentifier)
         if (results.isEmpty())
             continue;
 
-        // Actually start the plugin, the way the mixer will: create the
-        // instance, prepare it and run one silent block through it. A crash
-        // anywhere in there kills this child process, not the mixer.
-        juce::String error;
-        auto instance = fm.createPluginInstance (*results[0], 48000.0, 512, error);
-        if (instance == nullptr)
-            return 1;
+        // Actually start every sub-plugin in the file, the way the mixer will:
+        // create the instance, prepare it and run one silent block through it. A
+        // crash anywhere in there kills this child process, not the mixer.
+        for (auto* desc : results)
+        {
+            juce::String error;
+            auto instance = fm.createPluginInstance (*desc, 48000.0, 512, error);
+            if (instance == nullptr)
+                return 1;
 
-        instance->prepareToPlay (48000.0, 512);
-        juce::AudioBuffer<float> buffer (2, 512);
-        buffer.clear();
-        juce::MidiBuffer midi;
-        instance->processBlock (buffer, midi);
-        instance->releaseResources();
+            instance->prepareToPlay (48000.0, 512);
+            juce::AudioBuffer<float> buffer (2, 512);
+            buffer.clear();
+            juce::MidiBuffer midi;
+            instance->processBlock (buffer, midi);
+            instance->releaseResources();
+        }
         return 0;
     }
 
@@ -165,11 +168,12 @@ void PluginScanner::run()
     {
         if (skipped.contains (file))
             continue;
-        // Only scan if some format thinks this file is out of date. A VST2 .dll
-        // is not a VST3 file (and vice versa), so check each format in turn.
+        // Only check formats that can actually host this file (a .vst3 is not
+        // a VST2 .dll and vice versa), so enabling VST2 doesn't force every
+        // VST3 plugin to re-scan on every launch.
         for (auto* format : scanFormats)
         {
-            if (! known.isListingUpToDate (file, *format))
+            if (format->fileMightContainThisPluginType (file) && ! known.isListingUpToDate (file, *format))
             {
                 toScan.add (file);
                 break;

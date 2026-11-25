@@ -32,6 +32,17 @@ private:
         bool selected = false;
     };
 
+    struct Content : public juce::Component
+    {
+        SettingsPanel& owner;
+        explicit Content (SettingsPanel& o) : owner (o) {}
+        void paint (juce::Graphics& g) override { owner.paintContent (g); }
+        void resized() override { owner.layoutContent(); }
+    };
+
+    void paintContent (juce::Graphics&);
+    void layoutContent();
+
     void changeListenerCallback (juce::ChangeBroadcaster*) override { updateScanText(); }
     void timerCallback() override;
     void updateScanText();
@@ -42,6 +53,10 @@ private:
     MixerEngine& engine;
     MidiControl* midiControl;
     std::function<void()> toggleTheme, oscChanged, openHotkeys, appearanceChanged;
+
+    juce::Viewport viewport;
+    Content content { *this };
+
     juce::TextButton hotkeysButton { "Hotkeys..." };
 
     juce::ToggleButton startWithWindows { "Start OpenMix when Windows starts" };
@@ -62,7 +77,9 @@ private:
     juce::TextEditor wsPort;
     juce::ToggleButton midiEnabled { "MIDI controller" };
     juce::ComboBox midiDeviceBox;
+    juce::Array<juce::MidiDeviceInfo> midiDevices;
     juce::ComboBox midiLearnTarget;
+    std::vector<juce::String> midiLearnPaths;
     juce::TextButton midiLearnButton { "Learn..." };
     juce::TextButton midiClearButton { "Clear mappings" };
     juce::TextButton logsButton { "Open log folder" };

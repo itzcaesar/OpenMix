@@ -204,12 +204,16 @@ void FaderSection::tick()
 void FaderSection::resized()
 {
     auto r = getLocalBounds();
-    const int scaleW = 30, meterW = 28, gap = 6;
-    auto content = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), preferredWidth), r.getHeight());
+    const int availW = r.getWidth();
+    const int scaleW = availW >= 120 ? 30 : availW >= 104 ? 22 : 0;
+    const int meterW = availW >= 112 ? 28 : 20;
+    const int gap = availW >= 112 ? 6 : 4;
+    auto content = r.withSizeKeepingCentre (juce::jmin (availW, preferredWidth), r.getHeight());
 
     content.removeFromLeft (scaleW);
     auto meterArea = content.removeFromRight (meterW);
     content.removeFromRight (gap);
+    fader.setTextBoxStyle (juce::Slider::TextBoxAbove, false, juce::jlimit (36, 64, content.getWidth()), 20);
     fader.setBounds (content);
 
     peakArea = meterArea.removeFromTop (fader.getTextBoxHeight()).expanded (4, 0);
@@ -234,6 +238,9 @@ void FaderSection::paint (juce::Graphics& g)
     }
 
     const int scaleRight = fader.getX() - 3;
+    if (scaleRight < 22)
+        return;
+
     const int zeroY = fader.getY() + (int) fader.getPositionOfValue (0.0);
     int lastLabelY = -100;
 

@@ -42,8 +42,8 @@ public:
     // learn is already in progress for another target.
     bool startLearn (const juce::String& target);
     void cancelLearn();
-    bool isLearning() const noexcept { return learningTarget.isNotEmpty(); }
-    juce::String getLearningTarget() const { return learningTarget; }
+    bool isLearning() const noexcept;
+    juce::String getLearningTarget() const;
 
     std::vector<Mapping> getMappings() const;
     void setMappings (std::vector<Mapping>);
@@ -51,19 +51,22 @@ public:
     static juce::String mappingsToJson (const std::vector<Mapping>&);
     static std::vector<Mapping> mappingsFromJson (const juce::String& json);
 
+    // Public for direct testing as well as MIDI callback dispatch.
+    void applyMapping (const Mapping&, const juce::MidiMessage&);
+
     std::function<void (bool)> onRecord;
     std::function<void()> onSaveReplay;
     std::function<void (int scene)> onRecallScene;
 
 private:
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
-    void applyMapping (const Mapping&, const juce::MidiMessage&);
 
     MixerEngine& engine;
     std::unique_ptr<juce::MidiInput> input;
     std::vector<Mapping> mappings;
     mutable juce::CriticalSection mappingsLock;
     juce::String learningTarget;
+    std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);
     // CC toggle targets remember their last state, so a knob crossing 64
     // flips the mute once instead of on every message above 64.
     std::map<juce::String, bool> ccToggleState;

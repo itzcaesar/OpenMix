@@ -104,8 +104,17 @@ StripView::StripView (MixerEngine& e, int i)
 
     // FX sends: post-fader sends to the engine's global reverb / delay / chorus.
     static const char* fxNames[] { "Reverb", "Delay", "Chorus" };
+    static const char* fxShort[] { "REV", "DLY", "CHO" };
     for (int f = 0; f < omx::kNumFxSends; ++f)
     {
+        auto& btn = fxEditButtons[(size_t) f];
+        btn.setButtonText (fxShort[f]);
+        btn.setTitle (juce::String (fxNames[f]) + " settings");
+        btn.setTooltip (juce::String ("Configure global ") + fxNames[f] + " settings.");
+        btn.onClick = [this, f] { openGlobalFxPanel (f); };
+        makeClickable (btn);
+        addAndMakeVisible (btn);
+
         auto& slider = fxSendSliders[(size_t) f];
         slider.setSliderStyle (juce::Slider::LinearHorizontal);
         slider.setRange (0.0, 1.0, 0.01);
@@ -113,8 +122,8 @@ StripView::StripView (MixerEngine& e, int i)
         slider.setPopupDisplayEnabled (true, true, this);
         slider.textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
         slider.setTitle (juce::String (fxNames[f]) + " send");
-        slider.setTooltip (juce::String (fxNames[f]) + " send (post-fader). The effect return is mixed into "
-                           "every bus this strip is routed to.");
+        slider.setTooltip (juce::String (fxNames[f]) + " send (post-fader). Click " + fxShort[f]
+                           + " to edit the global " + fxNames[f] + " effect.");
         slider.setWantsKeyboardFocus (true);
         makeClickable (slider);
         slider.onValueChange = [this, f] { strip.setFxSendLevel (f, (float) fxSendSliders[(size_t) f].getValue()); };
@@ -161,6 +170,8 @@ void StripView::refreshFromStrip()
 
     faderSection.fader.setTitle (name + " fader");
     faderSection.fader.setValue (strip.faderDb.load(), juce::dontSendNotification);
+    faderSection.meter.setTitle (name + " meter");
+    pad.setTitle (name + " voice pad");
 
     muteButton.setTitle ("Mute " + name);
     muteButton.setTooltip ("Mute " + name + " on every bus.");
@@ -308,6 +319,14 @@ void StripView::openSendPanel (int b)
     auto& key = sendButtons[(size_t) b];
     auto* top = popupParent();
     juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&key, key.getLocalBounds()), top);
+}
+
+void StripView::openGlobalFxPanel (int fxIndex)
+{
+    auto panel = std::make_unique<GlobalFxPanel> (engine, fxIndex);
+    auto& btn = fxEditButtons[(size_t) fxIndex];
+    auto* top = popupParent();
+    juce::CallOutBox::launchAsynchronously (std::move (panel), top->getLocalArea (&btn, btn.getLocalBounds()), top);
 }
 
 void StripView::showStripMenu()
@@ -597,14 +616,6 @@ void StripView::paint (juce::Graphics& g)
         g.drawText ("+24", gainScaleArea, juce::Justification::centredRight);
     }
 
-    // FX send labels: REV / DLY / CHO beside their sliders.
-    static const char* fxLabels[] { "REV", "DLY", "CHO" };
-    g.setFont (Theme::mono (10.0f));
-    g.setColour (Theme::p().textFaint);
-    for (int f = 0; f < omx::kNumFxSends; ++f)
-        if (! fxSendLabelAreas[(size_t) f].isEmpty())
-            g.drawText (fxLabels[f], fxSendLabelAreas[(size_t) f], juce::Justification::centredLeft);
-
     // Channel icon row: a small audio mark above the fader bay (the mockup's
     // per-channel icon row, kept as a quiet divider here).
     if (! iconRowArea.isEmpty())
@@ -758,7 +769,8 @@ void StripView::resized()
     for (int f = 0; f < omx::kNumFxSends; ++f)
     {
         auto row = sends.removeFromTop (18);
-        fxSendLabelAreas[(size_t) f] = row.removeFromLeft (30);
+        fxEditButtons[(size_t) f].setBounds (row.removeFromLeft (32));
+        row.removeFromLeft (2);
         fxSendSliders[(size_t) f].setBounds (row);
         if (f + 1 < omx::kNumFxSends)
             sends.removeFromTop (2);

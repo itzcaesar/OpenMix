@@ -14,21 +14,31 @@ void Soundboard::makePlayable (Pad& pad, double targetRate)
     if (pad.original.getNumSamples() > 0 && pad.originalRate > 0.0)
     {
         const double ratio = pad.originalRate / targetRate;
-        const int outLen = (int) std::ceil (pad.original.getNumSamples() / ratio);
+        const int srcLen = pad.original.getNumSamples();
+        const int outLen = juce::jmax (1, (int) std::ceil (srcLen / ratio));
         out.setSize (2, outLen);
         out.clear();
+
+        // Zero-pad a scratch copy of the source channel so WindowedSincInterpolator
+        // never reads past the buffer end, even on very short clips (< 8 samples).
+        juce::HeapBlock<float> padded;
+        const bool needResample = std::abs (ratio - 1.0) >= 1.0e-9;
+        const int paddedLen = srcLen + 32;
+        if (needResample)
+            padded.calloc ((size_t) paddedLen);
 
         for (int c = 0; c < 2; ++c)
         {
             const int src = juce::jmin (c, pad.original.getNumChannels() - 1);   // mono files: both sides
-            if (std::abs (ratio - 1.0) < 1.0e-9)
+            if (! needResample)
             {
-                out.copyFrom (c, 0, pad.original, src, 0, juce::jmin (outLen, pad.original.getNumSamples()));
+                out.copyFrom (c, 0, pad.original, src, 0, juce::jmin (outLen, srcLen));
             }
             else
             {
+                juce::FloatVectorOperations::copy (padded.get(), pad.original.getReadPointer (src), srcLen);
                 juce::WindowedSincInterpolator interp;
-                interp.process (ratio, pad.original.getReadPointer (src), out.getWritePointer (c), outLen - 8);
+                interp.process (ratio, padded.get(), out.getWritePointer (c), outLen);
             }
         }
     }

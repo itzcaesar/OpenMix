@@ -22,18 +22,22 @@ struct Biquad
 
     void setPeak (double fs, double freq, double q, double gainDb) noexcept
     {
+        const double rate = fs > 0.0 ? fs : 48000.0;
+        const double f = std::clamp (freq, 10.0, rate * 0.45);
         const double A = std::pow (10.0, gainDb / 40.0);
-        const double w = 2.0 * std::numbers::pi * freq / fs;
-        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        const double w = 2.0 * std::numbers::pi * f / rate;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * std::max (0.1, q));
         set (1.0 + alpha * A, -2.0 * cw, 1.0 - alpha * A,
              1.0 + alpha / A, -2.0 * cw, 1.0 - alpha / A);
     }
 
     void setLowShelf (double fs, double freq, double gainDb, double q = 0.707) noexcept
     {
+        const double rate = fs > 0.0 ? fs : 48000.0;
+        const double f = std::clamp (freq, 10.0, rate * 0.45);
         const double A = std::pow (10.0, gainDb / 40.0);
-        const double w = 2.0 * std::numbers::pi * freq / fs;
-        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        const double w = 2.0 * std::numbers::pi * f / rate;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * std::max (0.1, q));
         const double k = 2.0 * std::sqrt (A) * alpha;
         set (A * ((A + 1) - (A - 1) * cw + k),
              2 * A * ((A - 1) - (A + 1) * cw),
@@ -45,9 +49,11 @@ struct Biquad
 
     void setHighShelf (double fs, double freq, double gainDb, double q = 0.707) noexcept
     {
+        const double rate = fs > 0.0 ? fs : 48000.0;
+        const double f = std::clamp (freq, 10.0, rate * 0.45);
         const double A = std::pow (10.0, gainDb / 40.0);
-        const double w = 2.0 * std::numbers::pi * freq / fs;
-        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        const double w = 2.0 * std::numbers::pi * f / rate;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * std::max (0.1, q));
         const double k = 2.0 * std::sqrt (A) * alpha;
         set (A * ((A + 1) + (A - 1) * cw + k),
              -2 * A * ((A - 1) + (A + 1) * cw),
@@ -60,8 +66,10 @@ struct Biquad
     // Band-pass with 0 dB peak gain (RBJ "constant 0 dB peak gain"), used as a detector.
     void setBandPass (double fs, double freq, double q) noexcept
     {
-        const double w = 2.0 * std::numbers::pi * freq / fs;
-        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        const double rate = fs > 0.0 ? fs : 48000.0;
+        const double f = std::clamp (freq, 10.0, rate * 0.45);
+        const double w = 2.0 * std::numbers::pi * f / rate;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * std::max (0.1, q));
         set (alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cw, 1.0 - alpha);
     }
 
@@ -69,18 +77,20 @@ struct Biquad
     // The cutoff is clamped inside (0, Nyquist) so retuning can never go unstable.
     void setHighPass (double fs, double freq, double q = 0.707) noexcept
     {
-        const double f = std::clamp (freq, 10.0, fs * 0.45);
-        const double w = 2.0 * std::numbers::pi * f / fs;
-        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        const double rate = fs > 0.0 ? fs : 48000.0;
+        const double f = std::clamp (freq, 10.0, rate * 0.45);
+        const double w = 2.0 * std::numbers::pi * f / rate;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * std::max (0.1, q));
         set ((1.0 + cw) / 2.0, -(1.0 + cw), (1.0 + cw) / 2.0,
              1.0 + alpha, -2.0 * cw, 1.0 - alpha);
     }
 
     void setLowPass (double fs, double freq, double q = 0.707) noexcept
     {
-        const double f = std::clamp (freq, 10.0, fs * 0.45);
-        const double w = 2.0 * std::numbers::pi * f / fs;
-        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        const double rate = fs > 0.0 ? fs : 48000.0;
+        const double f = std::clamp (freq, 10.0, rate * 0.45);
+        const double w = 2.0 * std::numbers::pi * f / rate;
+        const double cw = std::cos (w), alpha = std::sin (w) / (2.0 * std::max (0.1, q));
         set ((1.0 - cw) / 2.0, 1.0 - cw, (1.0 - cw) / 2.0,
              1.0 + alpha, -2.0 * cw, 1.0 - alpha);
     }

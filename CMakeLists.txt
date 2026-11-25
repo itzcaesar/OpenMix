@@ -124,19 +124,68 @@ target_compile_definitions(OpenMix PRIVATE
     OPENMIX_VST2_ENABLED=${OPENMIX_VST2_HOST}
     JUCE_PLUGINHOST_LADSPA=0
     JUCE_PLUGINHOST_LV2=0
-    JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_USE_MP3AUDIOFORMAT=1   # soundboard pads (Windows Media decoders are not used)
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:OpenMix,JUCE_VERSION>")
 
 # Core unit tests (plain C++, no JUCE). Run with: ctest --test-dir build -C Release
-option(OPENMIX_BUILD_TESTS "Build the core unit tests" ON)
+option(OPENMIX_BUILD_TESTS "Build the unit tests" ON)
 if(OPENMIX_BUILD_TESTS)
     enable_testing()
     add_executable(OpenMixCoreTests tests/CoreTests.cpp Source/dsp/Denoiser.cpp)
     target_include_directories(OpenMixCoreTests PRIVATE Source)
     target_link_libraries(OpenMixCoreTests PRIVATE rnnoise)
     add_test(NAME OpenMixCoreTests COMMAND OpenMixCoreTests)
+
+    add_executable(OpenMixBuiltInFxTests tests/BuiltInFxTests.cpp Source/dsp/BuiltInFx.cpp)
+    target_include_directories(OpenMixBuiltInFxTests PRIVATE Source)
+    target_compile_definitions(OpenMixBuiltInFxTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(OpenMixBuiltInFxTests PRIVATE juce::juce_audio_basics)
+    add_test(NAME OpenMixBuiltInFxTests COMMAND OpenMixBuiltInFxTests)
+
+    add_executable(OpenMixAppTests
+        tests/AppTests.cpp
+        Source/app/Session.cpp
+        Source/app/RemoteCommands.cpp
+        Source/app/MidiControl.cpp
+        Source/engine/MixerEngine.cpp
+        Source/engine/ChannelStrip.cpp
+        Source/engine/PluginChain.cpp
+        Source/engine/VoicePad.cpp
+        Source/engine/ExternalIO.cpp
+        Source/engine/AppCapture.cpp
+        Source/engine/AppRouting.cpp
+        Source/engine/PluginScanner.cpp
+        Source/creator/Recorder.cpp
+        Source/creator/Soundboard.cpp
+        Source/dsp/Denoiser.cpp
+        Source/dsp/BuiltInFx.cpp
+        Source/ui/Widgets.cpp
+        Source/ui/OpenMixLookAndFeel.cpp)
+    target_include_directories(OpenMixAppTests PRIVATE Source $<TARGET_PROPERTY:OpenMix,BINARY_DIR>/OpenMix_artefacts/JuceLibraryCode)
+    add_dependencies(OpenMixAppTests OpenMix)
+    target_compile_definitions(OpenMixAppTests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_ASIO=1
+        JUCE_WASAPI=1
+        JUCE_DIRECTSOUND=1
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_PLUGINHOST_VST=${OPENMIX_VST2_HOST}
+        OPENMIX_VST2_ENABLED=${OPENMIX_VST2_HOST}
+        JUCE_PLUGINHOST_LADSPA=0
+        JUCE_PLUGINHOST_LV2=0
+        JUCE_USE_MP3AUDIOFORMAT=1)
+    target_link_libraries(OpenMixAppTests PRIVATE
+        juce::juce_audio_utils
+        juce::juce_audio_processors
+        juce::juce_dsp
+        juce::juce_osc
+        rnnoise
+        mmdevapi
+        avrt
+        runtimeobject)
+    add_test(NAME OpenMixAppTests COMMAND OpenMixAppTests)
 endif()
 
 # Deliberately no /fp:fast (it lets the compiler assume NaN/Inf never happen, which breaks the

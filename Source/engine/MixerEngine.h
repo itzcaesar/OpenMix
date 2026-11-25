@@ -273,6 +273,7 @@ private:
     std::array<std::unique_ptr<omx::BuiltInFx>, omx::kNumFxSends> fxUnits;
     juce::AudioBuffer<float> fxSendBuffer;
     std::array<std::array<juce::SmoothedValue<float>, omx::kNumFxSends>, kNumStrips> fxSendGain;
+    int fxBusTailSamples[omx::kNumFxSends][kNumBuses] {};
 
     int maxBlock = 512;
     std::atomic<double> currentSampleRate { 48000.0 };

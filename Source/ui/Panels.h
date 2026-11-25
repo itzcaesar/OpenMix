@@ -145,3 +145,35 @@ private:
     juce::String title, help;
     juce::Rectangle<int> titleArea, helpArea;
 };
+
+// Editor for the shared global FX unit (Reverb / Delay / Chorus) fed by strip FX sends.
+// Wet/dry mix is fixed at 100% wet on global sends (the per-strip send slider is the level).
+class GlobalFxPanel : public juce::Component
+{
+public:
+    GlobalFxPanel (MixerEngine&, int fxIndex);
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    struct KnobDef
+    {
+        juce::String label;
+        double min, max, step, skewMid = 0.0;
+        juce::String suffix;
+        double value = 0.0;
+        std::function<void (double)> onApply;
+    };
+
+    void rebuildDelayControls();
+
+    MixerEngine& engine;
+    int fxIndex;
+    std::vector<KnobDef> defs;
+    std::vector<std::unique_ptr<DbSlider>> sliders;
+    juce::TextButton tempoButton { "Tempo sync" };
+    juce::ComboBox noteCombo;
+    juce::String title, help;
+    juce::Rectangle<int> titleArea, helpArea;
+};

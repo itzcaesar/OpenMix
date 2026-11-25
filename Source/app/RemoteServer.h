@@ -39,11 +39,16 @@ private:
     struct Client
     {
         std::unique_ptr<juce::StreamingSocket> socket;
+        std::mutex sendLock;
         bool isWebSocket = false;
     };
 
     void listenLoop();
     void handleClient (std::shared_ptr<Client>);
+    void removeClient (const std::shared_ptr<Client>&);
+    void refreshCachedState();
+    juce::String getCachedState() const;
+    RemoteCallbacks makeSafeCallbacks() const;
     bool sendText (Client&, const juce::String& text);
     void broadcast (const juce::String& text);
     juce::String httpResponse (int code, const juce::String& contentType, const juce::String& body) const;
@@ -54,9 +59,13 @@ private:
     std::atomic<bool> shouldStop { false };
     int port = 0;
     int lastExternalChanges = -1;
+    int stateRefreshTicks = 0;
+    std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);
 
     std::unique_ptr<juce::StreamingSocket> listener;
     std::thread listenerThread;
     std::mutex clientsLock;
     std::vector<std::shared_ptr<Client>> clients;
+    mutable std::mutex stateLock;
+    juce::String cachedStateJson;
 };

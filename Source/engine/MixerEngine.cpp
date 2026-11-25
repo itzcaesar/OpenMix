@@ -25,6 +25,21 @@ MixerEngine::MixerEngine()
         buses[(size_t) b].outputPair.store (isDefaultBus (b) ? pair++ : 0);   // A1 -> outs 1/2, A2 -> 3/4, B1 -> 5/6
     }
     buses[0].monitor.store (true);   // A1 (usually headphones) is where solo goes
+
+    // Create global FX units up front so getters and Session::apply work before audio starts.
+    for (int fx = 0; fx < omx::kNumFxSends; ++fx)
+    {
+        fxUnits[(size_t) fx] = PluginChain::makeBuiltInFx ((omx::FxType) fx);
+        if (auto* reverb = dynamic_cast<omx::BuiltInReverb*> (fxUnits[(size_t) fx].get()))
+            reverb->setMix (1.0f);
+        else if (auto* delay = dynamic_cast<omx::BuiltInDelay*> (fxUnits[(size_t) fx].get()))
+        {
+            delay->setMix (1.0f);
+            delay->setTempoBpm ((float) tapTempo.getBpm());
+        }
+        else if (auto* chorus = dynamic_cast<omx::BuiltInChorus*> (fxUnits[(size_t) fx].get()))
+            chorus->setMix (1.0f);
+    }
 }
 
 MixerEngine::~MixerEngine()
@@ -430,8 +445,8 @@ void MixerEngine::applyBpmToDelays()
 {
     const float bpm = (float) tapTempo.getBpm();
 
-    if (auto* delay = getFxDelay())
-        delay->setTempoBpm (bpm);   // the global FX delay is always tempo-synced
+    if (auto* delay = getFxDelay(); delay != nullptr && delay->isTempoSynced())
+        delay->setTempoBpm (bpm);
 
     for (auto& s : strips)
         s->inserts.setDelayTempoBpm (bpm);
@@ -730,7 +745,7 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 
     // Global FX units for the sends (one per effect type). They run wet-only
     // (mix 1.0): the send level is the amount control, so the return is pure
-    // wet signal. The delay is tempo-synced from the start.
+    // wet signal. Preserve any settings loaded from the session across device restarts.
     fxSendBuffer.setSize (omx::kNumFxSends * 2, maxBlock);
     for (int fx = 0; fx < omx::kNumFxSends; ++fx)
     {
@@ -741,12 +756,11 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         if (auto* reverb = dynamic_cast<omx::BuiltInReverb*> (fxUnits[(size_t) fx].get()))
             reverb->setMix (1.0f);
         else if (auto* delay = dynamic_cast<omx::BuiltInDelay*> (fxUnits[(size_t) fx].get()))
-        {
             delay->setMix (1.0f);
-            delay->setTempoBpm ((float) tapTempo.getBpm());
-        }
         else if (auto* chorus = dynamic_cast<omx::BuiltInChorus*> (fxUnits[(size_t) fx].get()))
             chorus->setMix (1.0f);
+        for (int b = 0; b < kNumBuses; ++b)
+            fxBusTailSamples[fx][b] = 0;
     }
     applyBpmToDelays();
 
@@ -947,12 +961,16 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
             fxSendBuffer.addFromWithRamp (fx * 2 + 1, 0, stripBuffer.getReadPointer (1), n, startGain, endGain);
             for (int b = 0; b < kNumBuses; ++b)
                 if (strip.busOn[b].load())
+                {
                     fxBusHasSend[fx][b] = true;
+                    fxBusTailSamples[fx][b] = (int) (sr * 2.0);
+                }
         }
     }
 
     // Global FX units: process the summed sends in place. The wet return
     // stays in fxSendBuffer and is mixed into the buses below.
+    bool fxHasAudio[omx::kNumFxSends] {};
     for (int fx = 0; fx < omx::kNumFxSends; ++fx)
     {
         auto* unit = fxUnits[(size_t) fx].get();
@@ -962,6 +980,14 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         float* chans[2] { fxSendBuffer.getWritePointer (fx * 2), fxSendBuffer.getWritePointer (fx * 2 + 1) };
         juce::AudioBuffer<float> view (chans, 2, n);
         unit->processBlock (view);
+
+        const float mag = juce::jmax (view.getMagnitude (0, 0, n), view.getMagnitude (1, 0, n));
+        fxHasAudio[fx] = std::isfinite (mag) && mag > 1.0e-6f;
+        if (! std::isfinite (mag))
+        {
+            view.clear();
+            unit->reset();
+        }
     }
 
     // Soundboard: mixed into its buses like a strip, with smoothed sends.
@@ -990,13 +1016,19 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         auto* R = busBuffer.getWritePointer (b * 2 + 1);
 
         // FX return: the wet signal of every unit a strip routed to this bus
-        // is sending to. Added before the bus processing, so the return goes
-        // through the bus EQ / compressor / inserts / fader / limiter like
-        // the dry mix. A bus with no contributing strip gets no return.
+        // is sending to (or that still has an active decay tail). Added before
+        // bus processing so it goes through EQ / comp / inserts / fader / limiter.
         for (int fx = 0; fx < omx::kNumFxSends; ++fx)
         {
             if (! fxBusHasSend[fx][b])
-                continue;
+            {
+                if (fxBusTailSamples[fx][b] <= 0)
+                    continue;
+                if (fxHasAudio[fx])
+                    fxBusTailSamples[fx][b] = juce::jmax (fxBusTailSamples[fx][b] - n, n);
+                else
+                    fxBusTailSamples[fx][b] = juce::jmax (0, fxBusTailSamples[fx][b] - n);
+            }
             juce::FloatVectorOperations::add (L, fxSendBuffer.getReadPointer (fx * 2), n);
             juce::FloatVectorOperations::add (R, fxSendBuffer.getReadPointer (fx * 2 + 1), n);
         }
@@ -1050,6 +1082,16 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         {
             busNorm[(size_t) b].reset();
             bus.normGain.store (1.0f);
+        }
+
+        // Guard against any non-finite samples from bus EQ / comp / inserts / norm before the limiter.
+        if (AudioSafety::containsNonFinite (L, n) || AudioSafety::containsNonFinite (R, n))
+        {
+            busBuffer.clear (b * 2, 0, n);
+            busBuffer.clear (b * 2 + 1, 0, n);
+            busEq[(size_t) b].reset();
+            busComp[(size_t) b].reset();
+            busNorm[(size_t) b].reset();
         }
 
         // Safety limiter: nothing leaves a bus above -0.3 dBFS.

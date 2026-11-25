@@ -61,7 +61,11 @@ bool applyRemoteCommand (MixerEngine& engine, const juce::String& path, float v,
     }
     else if (p[0] == "soundboard" && p.size() >= 3 && p[2] == "play")
     {
-        engine.getSoundboard().trigger (p[1].getIntValue() - 1);
+        const int pad = p[1].getIntValue() - 1;
+        if (juce::isPositiveAndBelow (pad, Soundboard::numPads))
+            engine.getSoundboard().trigger (pad);
+        else
+            changed = false;
     }
     else if (p[0] == "record")
     {
@@ -115,6 +119,7 @@ juce::String remoteStateJson (MixerEngine& engine)
             continue;
         juce::DynamicObject::Ptr o = new juce::DynamicObject();
         o->setProperty ("name", juce::String (kBusNames[b]));
+        o->setProperty ("displayName", engine.getBusName (b));
         o->setProperty ("faderDb", (double) bus.faderDb.load());
         o->setProperty ("mute", bus.mute.load());
         o->setProperty ("peakDb", (double) juce::Decibels::gainToDecibels (juce::jmax (bus.peakL.load(), bus.peakR.load()), -100.0f));
@@ -125,9 +130,14 @@ juce::String remoteStateJson (MixerEngine& engine)
     root->setProperty ("buses", buses);
 
     juce::Array<juce::var> pads;
+    juce::Array<juce::var> padNames;
     for (int p = 0; p < Soundboard::numPads; ++p)
+    {
         pads.add (engine.getSoundboard().isPlaying (p));
+        padNames.add (engine.getSoundboard().getPadInfo (p).name);
+    }
     root->setProperty ("soundboardPlaying", pads);
+    root->setProperty ("soundboardNames", padNames);
 
     juce::Array<juce::var> scenes;
     for (auto& scene : engine.scenes)

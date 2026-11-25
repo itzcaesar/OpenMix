@@ -185,7 +185,7 @@ This removes the need for VB-Cable. Two parts:
 - [x] **Licensing decision:** OpenMix is released under AGPLv3, using JUCE under its AGPLv3
       option (a closed-source release would need a JUCE licence)
 - [x] Docs: README with a Discord/OBS quick start
-- [ ] Troubleshooting guide (buffer sizes, ASIO tips, common device problems)
+- [x] Troubleshooting guide (buffer sizes, ASIO tips, common device problems)
 - [ ] Beta testing on different hardware (Realtek, USB headsets, Focusrite/Behringer ASIO)
 
 ---

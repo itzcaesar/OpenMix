@@ -10,9 +10,15 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     hotkeysButton.setTooltip ("Global hotkeys for mute, push to talk, the soundboard, recording and scenes.");
     hotkeysButton.onClick = [this] { if (openHotkeys) openHotkeys(); };
     makeClickable (hotkeysButton);
-    addAndMakeVisible (hotkeysButton);
+    content.addAndMakeVisible (hotkeysButton);
 
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
+    content.setFocusContainerType (FocusContainerType::keyboardFocusContainer);
+    viewport.setViewedComponent (&content, false);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setScrollBarThickness (8);
+    addAndMakeVisible (viewport);
+
     auto& s = AppSettings::get();
 
     startWithWindows.setToggleState (s.startWithWindows(), juce::dontSendNotification);
@@ -27,7 +33,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     for (auto* t : { &startWithWindows, &startMinimized, &closeToTray })
     {
         makeClickable (*t);
-        addAndMakeVisible (t);
+        content.addAndMakeVisible (t);
     }
 
     auto themeLabel = [] { return Theme::isDark() ? juce::String ("Switch to light mode") : juce::String ("Switch to dark mode"); };
@@ -36,7 +42,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     {
         if (toggleTheme) toggleTheme();
         themeButton.setButtonText (themeLabel());
-        repaint();
+        content.repaint();
     };
 
     // Accent colour: the lamp colour for "on" sends, the voice-pad puck and toggle lamps.
@@ -51,7 +57,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
             if (appearanceChanged) appearanceChanged();
         });
         sw->setTitle (juce::String ("Accent colour: ") + Theme::accentColours[i].name);
-        addAndMakeVisible (*sw);
+        content.addAndMakeVisible (*sw);
         accentSwatches.push_back (std::move (sw));
     }
     updateAccentSwatches();
@@ -64,7 +70,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         if (appearanceChanged) appearanceChanged();
     };
     makeClickable (compactMode);
-    addAndMakeVisible (compactMode);
+    content.addAndMakeVisible (compactMode);
 
     scanButton.onClick    = [this] { engine.getScanner().startScan (false); updateScanText(); };
     retryButton.onClick   = [this] { engine.getScanner().startScan (true);  updateScanText(); };
@@ -87,7 +93,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     for (auto* b : { &themeButton, &scanButton, &retryButton, &presetsButton, &pluginsButton })
     {
         makeClickable (*b);
-        addAndMakeVisible (b);
+        content.addAndMakeVisible (b);
     }
 
     // Crash-safe plugin loading: a plugin that crashes while loading is caught
@@ -95,7 +101,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     pluginProbe.setToggleState (s.pluginProbeEnabled(), juce::dontSendNotification);
     pluginProbe.onClick = [this] { AppSettings::get().setPluginProbeEnabled (pluginProbe.getToggleState()); };
     makeClickable (pluginProbe);
-    addAndMakeVisible (pluginProbe);
+    content.addAndMakeVisible (pluginProbe);
 
     checkUpdates.setToggleState (s.checkForUpdates(), juce::dontSendNotification);
     checkUpdates.onClick = [this] { AppSettings::get().setCheckForUpdates (checkUpdates.getToggleState()); };
@@ -168,25 +174,36 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     midiDeviceBox.onChange = [this]
     {
         const int id = midiDeviceBox.getSelectedId();
-        if (id > 0)
+        if (id > 0 && juce::isPositiveAndBelow (id - 1, midiDevices.size()))
         {
-            AppSettings::get().setMidiDevice (midiDeviceBox.getItemText (id - 1));
+            AppSettings::get().setMidiDevice (midiDevices[id - 1].identifier);
             if (oscChanged) oscChanged();
         }
     };
     refreshMidiDevices();
 
+    auto addLearnTarget = [this] (const juce::String& label, const juce::String& targetPath)
+    {
+        midiLearnTarget.addItem (label, midiLearnTarget.getNumItems() + 1);
+        midiLearnPaths.push_back (targetPath);
+    };
     for (int sIdx = 0; sIdx < kNumStrips; ++sIdx)
     {
         const auto n = juce::String (sIdx + 1);
-        midiLearnTarget.addItem ("Strip " + n + " fader", midiLearnTarget.getNumItems() + 1);
-        midiLearnTarget.addItem ("Strip " + n + " mute", midiLearnTarget.getNumItems() + 1);
+        addLearnTarget ("Strip " + n + " fader", "strip/" + n + "/fader");
+        addLearnTarget ("Strip " + n + " mute",  "strip/" + n + "/mute");
+        addLearnTarget ("Strip " + n + " solo",  "strip/" + n + "/solo");
     }
     for (int b = 0; b < kNumBuses; ++b)
-        midiLearnTarget.addItem (juce::String ("Bus ") + kBusNames[b] + " fader", midiLearnTarget.getNumItems() + 1);
+    {
+        const juce::String bn (kBusNames[b]);
+        addLearnTarget ("Bus " + bn + " fader", "bus/" + bn + "/fader");
+        addLearnTarget ("Bus " + bn + " mute",  "bus/" + bn + "/mute");
+    }
     for (int p = 0; p < Soundboard::numPads; ++p)
-        midiLearnTarget.addItem ("Soundboard pad " + juce::String (p + 1), midiLearnTarget.getNumItems() + 1);
-    midiLearnTarget.addItem ("Record", midiLearnTarget.getNumItems() + 1);
+        addLearnTarget ("Soundboard pad " + juce::String (p + 1), "soundboard/" + juce::String (p + 1) + "/play");
+    addLearnTarget ("Record", "record");
+    addLearnTarget ("Save replay", "replay/save");
     midiLearnTarget.setSelectedItemIndex (0);
     midiLearnButton.onClick = [this]
     {
@@ -199,20 +216,14 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
             return;
         }
         const int index = midiLearnTarget.getSelectedItemIndex();
-        juce::String target;
-        if (index < kNumStrips * 2)
-            target = "strip/" + juce::String (index / 2 + 1) + (index % 2 == 0 ? "/fader" : "/mute");
-        else if (index < kNumStrips * 2 + kNumBuses)
-            target = juce::String ("bus/") + kBusNames[index - kNumStrips * 2] + "/fader";
-        else if (index < kNumStrips * 2 + kNumBuses + Soundboard::numPads)
-            target = "soundboard/" + juce::String (index - kNumStrips * 2 - kNumBuses + 1);
-        else
-            target = "record";
+        if (! juce::isPositiveAndBelow (index, (int) midiLearnPaths.size()))
+            return;
+        const auto target = midiLearnPaths[(size_t) index];
         if (midiControl->startLearn (target))
         {
             midiLearnButton.setButtonText ("Listening... (click to cancel)");
             midiText = "Move a knob or press a key on the controller for " + target + ".";
-            repaint (midiTextArea);
+            content.repaint (midiTextArea);
         }
     };
     midiClearButton.onClick = [this]
@@ -226,10 +237,10 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     for (auto* b : { &midiLearnButton, &midiClearButton })
     {
         makeClickable (*b);
-        addAndMakeVisible (*b);
+        content.addAndMakeVisible (*b);
     }
-    addAndMakeVisible (midiDeviceBox);
-    addAndMakeVisible (midiLearnTarget);
+    content.addAndMakeVisible (midiDeviceBox);
+    content.addAndMakeVisible (midiLearnTarget);
     updateMidiText();
 
     logsButton.onClick = [] { auto dir = AppSettings::getLogFolder(); dir.createDirectory(); dir.startAsProcess(); };
@@ -237,17 +248,17 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     for (auto* t : { &checkUpdates, &oscEnabled, &wsEnabled, &midiEnabled })
     {
         makeClickable (*t);
-        addAndMakeVisible (t);
+        content.addAndMakeVisible (t);
     }
-    addAndMakeVisible (oscPort);
-    addAndMakeVisible (wsPort);
+    content.addAndMakeVisible (oscPort);
+    content.addAndMakeVisible (wsPort);
     makeClickable (logsButton);
-    addAndMakeVisible (logsButton);
+    content.addAndMakeVisible (logsButton);
 
     engine.getScanner().addChangeListener (this);
     updateScanText();
     startTimerHz (2);   // watches MIDI learn finishing (a knob/key on another thread)
-    setSize (540, 890);
+    setSize (556, 890);
 }
 
 SettingsPanel::~SettingsPanel()
@@ -271,15 +282,15 @@ void SettingsPanel::timerCallback()
 void SettingsPanel::refreshMidiDevices()
 {
     midiDeviceBox.clear();
-    const auto devices = MidiControl::getDevices();
+    midiDevices = MidiControl::getDevices();
     const auto saved = AppSettings::get().midiDevice();
-    for (int i = 0; i < devices.size(); ++i)
+    for (int i = 0; i < midiDevices.size(); ++i)
     {
-        midiDeviceBox.addItem (devices[i].name, i + 1);
-        if (devices[i].identifier == saved)
+        midiDeviceBox.addItem (midiDevices[i].name, i + 1);
+        if (midiDevices[i].identifier == saved || midiDevices[i].name == saved)
             midiDeviceBox.setSelectedId (i + 1, juce::dontSendNotification);
     }
-    if (devices.isEmpty())
+    if (midiDevices.isEmpty())
         midiDeviceBox.addItem ("No MIDI devices found", -1);
     midiDeviceBox.setTextWhenNothingSelected ("Choose a MIDI controller");
 }
@@ -304,7 +315,7 @@ void SettingsPanel::updateMidiText()
         }
         AppSettings::get().setMidiMappings (MidiControl::mappingsToJson (maps));
     }
-    repaint (midiTextArea);
+    content.repaint (midiTextArea);
 }
 
 SettingsPanel::AccentSwatch::AccentSwatch (juce::Colour c, std::function<void()> onClickFn)
@@ -350,10 +361,15 @@ void SettingsPanel::updateScanText()
 
     retryButton.setEnabled (! scanner.isScanning() && skipped > 0);
     scanButton.setEnabled (! scanner.isScanning());
-    repaint (scanTextArea);
+    content.repaint (scanTextArea);
 }
 
 void SettingsPanel::paint (juce::Graphics& g)
+{
+    g.fillAll (Theme::p().panel);
+}
+
+void SettingsPanel::paintContent (juce::Graphics& g)
 {
     const auto& t = Theme::p();
     g.fillAll (t.panel);
@@ -391,7 +407,15 @@ void SettingsPanel::paint (juce::Graphics& g)
 
 void SettingsPanel::resized()
 {
-    auto r = getLocalBounds().reduced (Theme::s5, Theme::s4);
+    viewport.setBounds (getLocalBounds());
+    const int w = juce::jmax (500, viewport.getMaximumVisibleWidth());
+    content.setSize (w, 890);
+    layoutContent();
+}
+
+void SettingsPanel::layoutContent()
+{
+    auto r = content.getLocalBounds().reduced (Theme::s5, Theme::s4);
 
     startupLegend = r.removeFromTop (20);
     for (auto* t : { &startWithWindows, &startMinimized, &closeToTray })

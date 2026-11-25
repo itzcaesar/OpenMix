@@ -1,7 +1,11 @@
 #include "app/MidiControl.h"
 
 MidiControl::MidiControl (MixerEngine& e) : engine (e) {}
-MidiControl::~MidiControl() { stop(); }
+MidiControl::~MidiControl()
+{
+    alive->store (false);
+    stop();
+}
 
 juce::Array<juce::MidiDeviceInfo> MidiControl::getDevices()
 {
@@ -29,6 +33,7 @@ void MidiControl::stop()
         input->stop();
         input.reset();
     }
+    const juce::ScopedLock sl (mappingsLock);
     learningTarget.clear();
 }
 
@@ -39,6 +44,7 @@ juce::String MidiControl::getDeviceName() const
 
 bool MidiControl::startLearn (const juce::String& target)
 {
+    const juce::ScopedLock sl (mappingsLock);
     if (learningTarget.isNotEmpty())
         return false;
     learningTarget = target;
@@ -47,7 +53,20 @@ bool MidiControl::startLearn (const juce::String& target)
 
 void MidiControl::cancelLearn()
 {
+    const juce::ScopedLock sl (mappingsLock);
     learningTarget.clear();
+}
+
+bool MidiControl::isLearning() const noexcept
+{
+    const juce::ScopedLock sl (mappingsLock);
+    return learningTarget.isNotEmpty();
+}
+
+juce::String MidiControl::getLearningTarget() const
+{
+    const juce::ScopedLock sl (mappingsLock);
+    return learningTarget;
 }
 
 std::vector<MidiControl::Mapping> MidiControl::getMappings() const
@@ -109,26 +128,29 @@ std::vector<MidiControl::Mapping> MidiControl::mappingsFromJson (const juce::Str
 void MidiControl::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
     // Learn mode captures the first CC or note, on any channel.
-    if (learningTarget.isNotEmpty() && (message.isController() || message.isNoteOn()))
+    if (message.isController() || message.isNoteOn())
     {
-        Mapping m;
-        m.isNote = message.isNoteOn();
-        m.channel = message.getChannel();
-        m.number = message.isController() ? message.getControllerNumber() : message.getNoteNumber();
-        m.target = learningTarget;
-        learningTarget.clear();
-
-        std::vector<Mapping> maps;
+        juce::String learnedFor;
         {
             const juce::ScopedLock sl (mappingsLock);
-            maps = mappings;
+            if (learningTarget.isNotEmpty())
+            {
+                learnedFor = learningTarget;
+                learningTarget.clear();
+
+                Mapping m;
+                m.isNote = message.isNoteOn();
+                m.channel = message.getChannel();
+                m.number = message.isController() ? message.getControllerNumber() : message.getNoteNumber();
+                m.target = learnedFor;
+
+                mappings.erase (std::remove_if (mappings.begin(), mappings.end(),
+                                                [&m] (const Mapping& x) { return x.target == m.target; }),
+                                mappings.end());
+                mappings.push_back (m);
+                return;
+            }
         }
-        maps.erase (std::remove_if (maps.begin(), maps.end(),
-                                    [&m] (const Mapping& x) { return x.target == m.target; }),
-                    maps.end());
-        maps.push_back (m);
-        setMappings (maps);
-        return;
     }
 
     std::vector<Mapping> maps;
@@ -156,13 +178,26 @@ void MidiControl::applyMapping (const Mapping& m, const juce::MidiMessage& messa
 
     // Record / scene / replay run on the message thread: a MIDI callback
     // must never do UI work itself.
-    auto callOnMessageThread = [] (std::function<void()> fn)
+    auto a = alive;
+    auto callOnMessageThread = [a] (std::function<void()> fn)
     {
-        juce::MessageManager::callAsync ([fn] { fn(); });
+        juce::MessageManager::callAsync ([a, fn] { if (a->load()) fn(); });
     };
 
     const auto target = m.target;
-    if (target == "record" || target.startsWith ("scene/") || target == "replay/save")
+    if (target == "record")
+    {
+        // Toggle recording on each trigger (CC >= 64 or note on) so a single button can start and stop.
+        if (! m.isNote && message.getControllerValue() < 64)
+            return;
+        callOnMessageThread ([this, target, cb]
+        {
+            const float next = engine.getRecorder().isRecording() ? 0.0f : 1.0f;
+            applyRemoteCommand (engine, target, next, cb);
+        });
+        return;
+    }
+    if (target.startsWith ("scene/") || target == "replay/save")
     {
         callOnMessageThread ([this, target, cb]
         {
@@ -200,8 +235,8 @@ void MidiControl::applyMapping (const Mapping& m, const juce::MidiMessage& messa
             applyRemoteCommand (engine, target, on ? 1.0f : 0.0f, cb);
             return;
         }
-        // Note on toggles: read the current mute/solo from the engine.
-        // (Strip/bus mutes are atomics, safe to read from the MIDI thread.)
+        // Note on toggles: read the current mute/solo/norm from the engine.
+        // (Strip/bus atomics are safe to read from the MIDI thread.)
         float current = 0.0f;
         juce::StringArray p;
         p.addTokens (target, "/", {});
@@ -214,10 +249,10 @@ void MidiControl::applyMapping (const Mapping& m, const juce::MidiMessage& messa
         }
         else if (p[0] == "bus" && p.size() >= 3)
         {
-            // Bus mute is p[1] = name, p[2] = "mute".
             for (int b = 0; b < kNumBuses; ++b)
                 if (juce::String (kBusNames[b]).equalsIgnoreCase (p[1]))
-                    current = engine.getBus (b).mute.load() ? 1.0f : 0.0f;
+                    current = p[2] == "norm" ? (engine.getBus (b).normOn.load() ? 1.0f : 0.0f)
+                                             : (engine.getBus (b).mute.load() ? 1.0f : 0.0f);
         }
         applyRemoteCommand (engine, target, current > 0.5f ? 0.0f : 1.0f, cb);
         return;
@@ -225,7 +260,8 @@ void MidiControl::applyMapping (const Mapping& m, const juce::MidiMessage& messa
 
     if (target.startsWith ("soundboard/"))
     {
-        applyRemoteCommand (engine, target + "/play", 1.0f, cb);
+        const auto cmdPath = target.endsWith ("/play") ? target : target + "/play";
+        applyRemoteCommand (engine, cmdPath, 1.0f, cb);
         return;
     }
 

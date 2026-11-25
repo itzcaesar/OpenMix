@@ -725,6 +725,11 @@ int main()
         const float held = loud.process (0.0f, -14.0f, 480);
         CHECK (std::abs (held - gain) < 0.01f, "silence changed the gain to %f", held);
 
+        // reset() clears targetGain too, so silence right after reset stays at unity.
+        loud.reset();
+        const float afterReset = loud.process (0.0f, -14.0f, 480);
+        CHECK (std::abs (afterReset - 1.0f) < 1e-6f, "reset left stale targetGain (%f)", afterReset);
+
         // A bus already at target stays at unity.
         omx::LoudnessNormaliser flat;
         flat.prepare (48000.0);
@@ -732,6 +737,46 @@ int main()
         for (int i = 0; i < 200; ++i)
             gain = flat.process (rmsAtMinus14, -14.0f, 480);
         CHECK (std::abs (gain - 1.0f) < 0.05f, "on-target bus gain %f", gain);
+    });
+
+    run ("SafetyLimiter: sanitises NaN/Inf inputs without propagating them", []
+    {
+        AudioSafety::SafetyLimiter lim;
+        lim.prepare (48000.0);
+        float l[4] { 0.5f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(), -0.5f };
+        float r[4] { 0.5f, -std::numeric_limits<float>::infinity(), 0.25f, std::numeric_limits<float>::quiet_NaN() };
+        lim.process (l, r, 4);
+        CHECK (! AudioSafety::containsNonFinite (l, 4) && ! AudioSafety::containsNonFinite (r, 4),
+               "SafetyLimiter propagated NaN/Inf");
+    });
+
+    run ("DelayLine: delay change crossfades instead of jumping", []
+    {
+        DelayLine d;
+        d.prepare (1000);
+        std::vector<float> l (512, 1.0f), r (512, 1.0f);
+        d.process (l.data(), r.data(), 512, 0);
+        // Switch delay from 0 to 100 on an all-ones signal: a jump would output 0 at i=0,
+        // whereas crossfading starts from the old delay's sample (1.0) and blends smoothly.
+        std::vector<float> l2 (128, 1.0f), r2 (128, 1.0f);
+        d.process (l2.data(), r2.data(), 128, 100);
+        CHECK (std::abs (l2[0] - 1.0f) < 1e-5f, "delay transition clicked at sample 0: %f", l2[0]);
+    });
+
+    run ("Biquad: extreme frequencies above Nyquist are clamped and stay stable", []
+    {
+        Biquad p, ls, hs, bp;
+        p.setPeak (44100.0, 30000.0, 1.0, 6.0);
+        ls.setLowShelf (44100.0, 30000.0, 6.0);
+        hs.setHighShelf (44100.0, 30000.0, 6.0);
+        bp.setBandPass (44100.0, 30000.0, 1.4);
+        float x = 1.0f;
+        for (int i = 0; i < 4096; ++i)
+        {
+            x = bp.process (hs.process (ls.process (p.process (i == 0 ? 0.5f : 0.0f, 0), 0), 0), 0);
+            CHECK (std::isfinite (x), "biquad went non-finite at sample %d", i);
+            if (! std::isfinite (x)) break;
+        }
     });
 
     std::printf (failures == 0 ? "\nAll tests passed\n" : "\n%d check(s) failed\n", failures);

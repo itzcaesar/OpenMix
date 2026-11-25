@@ -85,11 +85,16 @@ namespace
 }
 
 RemoteServer::RemoteServer (MixerEngine& e) : engine (e) {}
-RemoteServer::~RemoteServer() { stop(); }
+RemoteServer::~RemoteServer()
+{
+    alive->store (false);
+    stop();
+}
 
 bool RemoteServer::start (int newPort, juce::String& error)
 {
     stop();
+    refreshCachedState();
     listener = std::make_unique<juce::StreamingSocket>();
     if (! listener->createListener (newPort, "0.0.0.0"))
     {
@@ -134,6 +139,58 @@ void RemoteServer::stop()
     listener.reset();
 }
 
+void RemoteServer::removeClient (const std::shared_ptr<Client>& client)
+{
+    if (client->socket != nullptr)
+        client->socket->close();
+    const std::lock_guard<std::mutex> sl (clientsLock);
+    clients.erase (std::remove (clients.begin(), clients.end(), client), clients.end());
+}
+
+void RemoteServer::refreshCachedState()
+{
+    const auto json = remoteStateJson (engine);
+    const std::lock_guard<std::mutex> sl (stateLock);
+    cachedStateJson = json;
+}
+
+juce::String RemoteServer::getCachedState() const
+{
+    const std::lock_guard<std::mutex> sl (stateLock);
+    return cachedStateJson;
+}
+
+RemoteCallbacks RemoteServer::makeSafeCallbacks() const
+{
+    RemoteCallbacks cb;
+    auto a = alive;
+    if (onRecord)
+    {
+        auto fn = onRecord;
+        cb.onRecord = [a, fn] (bool on)
+        {
+            juce::MessageManager::callAsync ([a, fn, on] { if (a->load()) fn (on); });
+        };
+    }
+    if (onSaveReplay)
+    {
+        auto fn = onSaveReplay;
+        cb.onSaveReplay = [a, fn]
+        {
+            juce::MessageManager::callAsync ([a, fn] { if (a->load()) fn(); });
+        };
+    }
+    if (onRecallScene)
+    {
+        auto fn = onRecallScene;
+        cb.onRecallScene = [a, fn] (int scene)
+        {
+            juce::MessageManager::callAsync ([a, fn, scene] { if (a->load()) fn (scene); });
+        };
+    }
+    return cb;
+}
+
 void RemoteServer::listenLoop()
 {
     while (! shouldStop.load())
@@ -153,6 +210,12 @@ void RemoteServer::listenLoop()
         client->socket.reset (raw);
         {
             const std::lock_guard<std::mutex> sl (clientsLock);
+            if (clients.size() >= 64)
+            {
+                raw->close();
+                delete raw;
+                continue;
+            }
             clients.push_back (client);
         }
         std::thread ([this, client] { handleClient (client); }).detach();
@@ -161,6 +224,7 @@ void RemoteServer::listenLoop()
 
 bool RemoteServer::sendText (Client& client, const juce::String& text)
 {
+    const std::lock_guard<std::mutex> wl (client.sendLock);
     if (client.socket == nullptr || ! client.socket->isConnected())
         return false;
     const auto bytes = text.toRawUTF8();
@@ -187,21 +251,34 @@ bool RemoteServer::sendText (Client& client, const juce::String& text)
 
 void RemoteServer::broadcast (const juce::String& text)
 {
-    const std::lock_guard<std::mutex> sl (clientsLock);
-    for (auto& c : clients)
-        if (c->isWebSocket)
-            sendText (*c, text);
+    std::vector<std::shared_ptr<Client>> targets;
+    {
+        const std::lock_guard<std::mutex> sl (clientsLock);
+        for (auto& c : clients)
+            if (c->isWebSocket)
+                targets.push_back (c);
+    }
+    for (auto& c : targets)
+        sendText (*c, text);
 }
 
 void RemoteServer::broadcastStateIfChanged()
 {
     if (! running.load())
         return;
+
     const int changes = engine.externalChanges.load();
-    if (changes == lastExternalChanges)
+    const bool externalChanged = changes != lastExternalChanges;
+    if (externalChanged || ++stateRefreshTicks >= 3)
+    {
+        stateRefreshTicks = 0;
+        refreshCachedState();
+    }
+
+    if (! externalChanged)
         return;
     lastExternalChanges = changes;
-    broadcast ("{\"type\":\"state\",\"state\":" + remoteStateJson (engine) + "}");
+    broadcast ("{\"type\":\"state\",\"state\":" + getCachedState() + "}");
 }
 
 juce::String RemoteServer::httpResponse (int code, const juce::String& contentType, const juce::String& body) const
@@ -215,6 +292,13 @@ juce::String RemoteServer::httpResponse (int code, const juce::String& contentTy
 
 void RemoteServer::handleClient (std::shared_ptr<Client> client)
 {
+    struct ClientCleanup
+    {
+        RemoteServer& server;
+        std::shared_ptr<Client> c;
+        ~ClientCleanup() { server.removeClient (c); }
+    } cleanup { *this, client };
+
     auto& socket = *client->socket;
 
     // Read the HTTP request head (up to 8 KB).
@@ -230,6 +314,9 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
             head += juce::String (buf, (size_t) n);
         }
     }
+    if (! head.contains ("\r\n\r\n"))
+        return;
+
     const auto firstLine = head.upToFirstOccurrenceOf ("\r\n", false, false);
     const auto method = firstLine.upToFirstOccurrenceOf (" ", false, false);
     const auto path = firstLine.fromFirstOccurrenceOf (" ", false, false).upToFirstOccurrenceOf (" ", false, false);
@@ -247,10 +334,13 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
             "Sec-WebSocket-Accept: " + accept + "\r\n\r\n";
-        if (socket.write (response.toRawUTF8(), (int) response.getNumBytesAsUTF8()) <= 0)
-            return;
+        {
+            const std::lock_guard<std::mutex> wl (client->sendLock);
+            if (socket.write (response.toRawUTF8(), (int) response.getNumBytesAsUTF8()) <= 0)
+                return;
+        }
         client->isWebSocket = true;
-        sendText (*client, "{\"type\":\"state\",\"state\":" + remoteStateJson (engine) + "}");
+        sendText (*client, "{\"type\":\"state\",\"state\":" + getCachedState() + "}");
 
         // Frame loop: masked client frames, text only, one message per frame.
         while (! shouldStop.load() && socket.isConnected())
@@ -288,10 +378,13 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
 
             if (opcode == 8)   // close
                 break;
-            if (opcode == 9)   // ping -> pong
+            if (opcode == 9)   // ping -> pong (RFC 6455: control frames max 125 bytes)
             {
+                if (len > 125)
+                    break;
                 std::vector<uint8_t> pong { 0x8A, (uint8_t) len };
                 pong.insert (pong.end(), payload.begin(), payload.end());
+                const std::lock_guard<std::mutex> wl (client->sendLock);
                 socket.write (pong.data(), (int) pong.size());
                 continue;
             }
@@ -305,15 +398,15 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
             auto* obj = parsed.getDynamicObject();
             if (obj == nullptr)
                 continue;
-            RemoteCallbacks cb;
-            cb.onRecord = onRecord;
-            cb.onSaveReplay = onSaveReplay;
-            cb.onRecallScene = onRecallScene;
+            const auto cb = makeSafeCallbacks();
             const bool ok = applyRemoteCommand (engine, obj->getProperty ("path").toString(),
                                                 (float) obj->getProperty ("value"), cb);
             sendText (*client, ok ? "{\"type\":\"ok\"}" : "{\"type\":\"error\",\"error\":\"unknown path\"}");
             if (ok)
-                broadcastStateIfChanged();
+            {
+                auto a = alive;
+                juce::MessageManager::callAsync ([this, a] { if (a->load()) broadcastStateIfChanged(); });
+            }
         }
         return;
     }
@@ -328,37 +421,46 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
     }
     else if (method == "GET" && path == "/api/state")
     {
-        body = remoteStateJson (engine);
+        body = getCachedState();
         contentType = "application/json";
     }
     else if (method == "POST" && path == "/api/command")
     {
         const int contentLength = headerValue (head, "Content-Length").getIntValue();
-        juce::String jsonBody = head.fromFirstOccurrenceOf ("\r\n\r\n", false, false);
-        while ((int) jsonBody.getNumBytesAsUTF8() < contentLength)
+        if (contentLength <= 0 || contentLength > 64 * 1024)
         {
-            char buf[1024];
-            const int n = socket.read (buf, (int) sizeof (buf) - 1, true);
-            if (n <= 0) break;
-            buf[n] = '\0';
-            jsonBody += juce::String (buf, (size_t) n);
+            code = 400;
+            body = "{\"ok\":false}";
+            contentType = "application/json";
         }
-        juce::var parsed;
-        bool ok = false;
-        if (! juce::JSON::parse (jsonBody, parsed).failed() && parsed.isObject())
+        else
         {
-            auto* obj = parsed.getDynamicObject();
-            RemoteCallbacks cb;
-            cb.onRecord = onRecord;
-            cb.onSaveReplay = onSaveReplay;
-            cb.onRecallScene = onRecallScene;
-            ok = obj != nullptr && applyRemoteCommand (engine, obj->getProperty ("path").toString(),
-                                                       (float) obj->getProperty ("value"), cb);
+            juce::String jsonBody = head.fromFirstOccurrenceOf ("\r\n\r\n", false, false);
+            while ((int) jsonBody.getNumBytesAsUTF8() < contentLength)
+            {
+                char buf[1024];
+                const int n = socket.read (buf, (int) sizeof (buf) - 1, true);
+                if (n <= 0) break;
+                buf[n] = '\0';
+                jsonBody += juce::String (buf, (size_t) n);
+            }
+            juce::var parsed;
+            bool ok = false;
+            if (! juce::JSON::parse (jsonBody, parsed).failed() && parsed.isObject())
+            {
+                auto* obj = parsed.getDynamicObject();
+                const auto cb = makeSafeCallbacks();
+                ok = obj != nullptr && applyRemoteCommand (engine, obj->getProperty ("path").toString(),
+                                                           (float) obj->getProperty ("value"), cb);
+            }
+            body = ok ? "{\"ok\":true}" : "{\"ok\":false}";
+            contentType = "application/json";
+            if (ok)
+            {
+                auto a = alive;
+                juce::MessageManager::callAsync ([this, a] { if (a->load()) broadcastStateIfChanged(); });
+            }
         }
-        body = ok ? "{\"ok\":true}" : "{\"ok\":false}";
-        contentType = "application/json";
-        if (ok)
-            broadcastStateIfChanged();
     }
     else
     {
@@ -367,6 +469,7 @@ void RemoteServer::handleClient (std::shared_ptr<Client> client)
     }
 
     const auto response = httpResponse (code, contentType, body);
+    const std::lock_guard<std::mutex> wl (client->sendLock);
     socket.write (response.toRawUTF8(), (int) response.getNumBytesAsUTF8());
 }
 
@@ -386,38 +489,43 @@ button.on{background:#c98a2b;color:#111}.pad{width:22%;height:44px;margin:2px}
 <h2>Strips</h2><div id="strips"></div><h2>Buses</h2><div id="buses"></div>
 <h2>Soundboard</h2><div id="pads"></div><h2>Scenes</h2><div id="scenes"></div>
 <script>
-let ws=null,state=null;
+let ws=null,state=null,pollTimer=null;
+function startPolling(){if(!pollTimer)pollTimer=setInterval(poll,1000);}
 function cmd(path,value){const m=JSON.stringify({path,value});
  if(ws&&ws.readyState===1)ws.send(m);
  else fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:m});}
 function render(){if(!state)return;
  const s=document.getElementById('strips');s.innerHTML='';
  state.strips.forEach(st=>{const d=document.createElement('div');d.className='row';
-  d.innerHTML='<span>'+st.name+'</span><input type="range" min="-60" max="12" step="0.5" value="'+st.faderDb+'">'
-   +'<button class="'+(st.mute?'on':'')+'">Mute</button>';
-  d.querySelector('input').oninput=e=>cmd('/openmix/strip/'+st.index+'/fader',parseFloat(e.target.value));
-  d.querySelector('button').onclick=()=>cmd('/openmix/strip/'+st.index+'/mute',st.mute?0:1);
-  s.appendChild(d);});
+  const lbl=document.createElement('span');lbl.textContent=st.name;
+  const rng=document.createElement('input');rng.type='range';rng.min='-60';rng.max='12';rng.step='0.5';rng.value=st.faderDb;
+  rng.oninput=e=>cmd('/openmix/strip/'+st.index+'/fader',parseFloat(e.target.value));
+  const btn=document.createElement('button');btn.className=st.mute?'on':'';btn.textContent='Mute';
+  btn.onclick=()=>cmd('/openmix/strip/'+st.index+'/mute',st.mute?0:1);
+  d.appendChild(lbl);d.appendChild(rng);d.appendChild(btn);s.appendChild(d);});
  const b=document.getElementById('buses');b.innerHTML='';
  state.buses.forEach(bs=>{const d=document.createElement('div');d.className='row';
-  d.innerHTML='<span>'+bs.name+'</span><input type="range" min="-60" max="12" step="0.5" value="'+bs.faderDb+'">'
-   +'<button class="'+(bs.mute?'on':'')+'">Mute</button>';
-  d.querySelector('input').oninput=e=>cmd('/openmix/bus/'+bs.name+'/fader',parseFloat(e.target.value));
-  d.querySelector('button').onclick=()=>cmd('/openmix/bus/'+bs.name+'/mute',bs.mute?0:1);
-  b.appendChild(d);});
+  const lbl=document.createElement('span');lbl.textContent=bs.displayName||bs.name;
+  const rng=document.createElement('input');rng.type='range';rng.min='-60';rng.max='12';rng.step='0.5';rng.value=bs.faderDb;
+  rng.oninput=e=>cmd('/openmix/bus/'+bs.name+'/fader',parseFloat(e.target.value));
+  const btn=document.createElement('button');btn.className=bs.mute?'on':'';btn.textContent='Mute';
+  btn.onclick=()=>cmd('/openmix/bus/'+bs.name+'/mute',bs.mute?0:1);
+  d.appendChild(lbl);d.appendChild(rng);d.appendChild(btn);b.appendChild(d);});
  const p=document.getElementById('pads');p.innerHTML='';
- for(let i=1;i<=8;i++){const btn=document.createElement('button');btn.className='pad';btn.textContent='Pad '+i;
+ const names=state.soundboardNames||[];
+ for(let i=1;i<=8;i++){const btn=document.createElement('button');btn.className='pad';
+  btn.textContent=(names[i-1]&&names[i-1].length)?names[i-1]:('Pad '+i);
   btn.onclick=()=>cmd('/openmix/soundboard/'+i+'/play',1);p.appendChild(btn);}
  const sc=document.getElementById('scenes');sc.innerHTML='';
  state.scenes.forEach((name,i)=>{const btn=document.createElement('button');btn.textContent=name;
   btn.onclick=()=>cmd('/openmix/scene/'+(i+1),1);sc.appendChild(btn);});
  document.getElementById('status').textContent='connected';}
-function poll(){fetch('/api/state').then(r=>r.json()).then(j=>{state=j;render();});}
+function poll(){fetch('/api/state').then(r=>r.json()).then(j=>{state=j;render();}).catch(()=>{});}
 try{ws=new WebSocket('ws://'+location.host+'/ws');
  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='state'){state=m.state;render();}};
- ws.onclose=()=>{document.getElementById('status').textContent='WebSocket closed, polling';setInterval(poll,1000);};
- ws.onerror=()=>{setInterval(poll,1000);};}
-catch(e){setInterval(poll,1000);}
+ ws.onclose=()=>{document.getElementById('status').textContent='WebSocket closed, polling';startPolling();};
+ ws.onerror=()=>{startPolling();};}
+catch(e){startPolling();}
 setInterval(()=>{if(!ws||ws.readyState!==1)poll();},2000);poll();
 </script></body></html>)HTML";
 }

@@ -77,13 +77,15 @@ namespace AudioSafety
             float minGain = 1.0f;
             for (int i = 0; i < numSamples; ++i)
             {
-                const float peak = std::max (std::abs (left[i]), std::abs (right[i]));
+                const float l = std::isfinite (left[i])  ? left[i]  : 0.0f;
+                const float r = std::isfinite (right[i]) ? right[i] : 0.0f;
+                const float peak = std::max (std::abs (l), std::abs (r));
                 const float target = peak > ceiling ? ceiling / peak : 1.0f;
 
                 gain = target < gain ? target : target + (gain - target) * release;
 
-                left[i]  = std::clamp (left[i]  * gain, -ceiling, ceiling);
-                right[i] = std::clamp (right[i] * gain, -ceiling, ceiling);
+                left[i]  = std::clamp (l * gain, -ceiling, ceiling);
+                right[i] = std::clamp (r * gain, -ceiling, ceiling);
                 minGain = std::min (minGain, gain);
             }
             return minGain;

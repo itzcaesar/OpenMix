@@ -46,6 +46,7 @@ private:
     // Processing + sends
     void openProcessorPanel (int index);
     void openSendPanel (int bus);
+    void openGlobalFxPanel (int fxIndex);
     void updateKeys();
     juce::Component* popupParent();
 
@@ -71,6 +72,7 @@ private:
     InsertRack inserts;
     VoicePadComponent pad;
     std::array<StripKey, kNumBuses> sendButtons;
+    std::array<juce::TextButton, omx::kNumFxSends> fxEditButtons;
     std::array<DbSlider, omx::kNumFxSends> fxSendSliders;
     StripKey muteButton { "Mute" }, soloButton { "Solo" };
     FaderSection faderSection;
@@ -79,7 +81,6 @@ private:
                          padLegend, sendsLegend, fxLegend, nameBarArea,
                          gainHeadArea, gainScaleArea, iconRowArea;
     std::vector<int> dividerYs;   // y of each 1 px section divider, in strip coords
-    std::array<juce::Rectangle<int>, omx::kNumFxSends> fxSendLabelAreas {};
     int bayTop = 0;
     bool inLayout = false;
 

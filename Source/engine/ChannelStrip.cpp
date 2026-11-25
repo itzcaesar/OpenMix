@@ -82,8 +82,8 @@ void ChannelStrip::resetToDefaults()
         sendDb[b].store (0.0f);
         sendPre[b].store (false);
     }
-    for (int fx = 0; fx < omx::kNumFxSends; ++fx)
-        fxSendLevel[(size_t) fx].store (0.0f);
+    for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
+        fxSendLevel[(size_t) fxIdx].store (0.0f);
     pad.x.store (0.0f);
     pad.y.store (-1.0f);
     pad.mode.store (VoicePadParams::Voice);
@@ -131,18 +131,18 @@ omx::StripPreset ChannelStrip::savePreset() const
 
     p.padX = pad.x.load();   p.padY = pad.y.load();   p.padMode = pad.mode.load();
 
-    for (int fx = 0; fx < omx::kNumFxSends; ++fx)
-        p.fxSend[(size_t) fx] = fxSendLevel[(size_t) fx].load();
+    for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
+        p.fxSend[(size_t) fxIdx] = fxSendLevel[(size_t) fxIdx].load();
 
     p.numSlots = inserts.getNumInserts();
     for (int s = 0; s < p.numSlots; ++s)
     {
         auto& slot = p.slots[(size_t) s];
         slot = {};
-        if (auto* fx = inserts.getBuiltIn (s))
+        if (auto* builtIn = inserts.getBuiltIn (s))
         {
             slot.isBuiltIn = true;
-            slot.fxType = PluginChain::fxTypeDisplayName (fx->getType()).toStdString();
+            slot.fxType = PluginChain::fxTypeDisplayName (builtIn->getType()).toStdString();
             slot.name = slot.fxType;
             inserts.getBuiltInParams (s, slot.fxParams, slot.fxTempoSync);
         }
@@ -188,8 +188,8 @@ int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormat
     pad.y.store (juce::jlimit (-1.0f, 1.0f, p.padY));
     pad.mode.store (juce::jlimit (0, VoicePadParams::numModes - 1, p.padMode));
 
-    for (int fx = 0; fx < omx::kNumFxSends; ++fx)
-        setFxSendLevel (fx, p.fxSend[(size_t) fx]);
+    for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
+        setFxSendLevel (fxIdx, p.fxSend[(size_t) fxIdx]);
 
     // Inserts: replace the chain. Each plugin is re-loaded by identifier and starts
     // with its defaults (no state is stored in a preset); a plugin that is not

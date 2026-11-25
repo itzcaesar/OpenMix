@@ -475,36 +475,36 @@ BuiltInFxPanel::BuiltInFxPanel (MixerEngine& e, PluginChain& c, int s)
     {
         const auto& d = defs[i];
         auto slider = std::make_unique<DbSlider> (juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow);
-        auto* s = slider.get();
+        auto* sl = slider.get();
 
-        s->setRange (d.min, d.max, d.step);
+        sl->setRange (d.min, d.max, d.step);
         if (d.skewMid > 0.0)
-            s->setSkewFactorFromMidPoint (d.skewMid);
-        s->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 72, 18);
+            sl->setSkewFactorFromMidPoint (d.skewMid);
+        sl->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 72, 18);
         const auto suffix = d.suffix;
-        s->textFromValueFunction = [suffix] (double v)
+        sl->textFromValueFunction = [suffix] (double v)
         {
             const bool whole = std::abs (v) >= 100.0 || suffix == " %";
             return juce::String (v, whole ? 0 : 1) + suffix;
         };
         const double span = d.max - d.min;
-        s->keyStep  = d.suffix == " ms" || d.suffix == " Hz" ? juce::jmax (d.step, span / 50.0) : d.step;
-        s->pageStep = span / 10.0;
-        s->homeValue = d.skewMid > 0.0 ? d.skewMid : d.max;
-        s->setDoubleClickReturnValue (true, s->homeValue);
-        s->setTitle (title + " " + d.label);
-        s->setWantsKeyboardFocus (true);
-        makeClickable (*s);
+        sl->keyStep  = d.suffix == " ms" || d.suffix == " Hz" ? juce::jmax (d.step, span / 50.0) : d.step;
+        sl->pageStep = span / 10.0;
+        sl->homeValue = d.skewMid > 0.0 ? d.skewMid : d.max;
+        sl->setDoubleClickReturnValue (true, sl->homeValue);
+        sl->setTitle (title + " " + d.label);
+        sl->setWantsKeyboardFocus (true);
+        makeClickable (*sl);
 
         const int paramIndex = d.paramIndex;
         const double scale = d.scale;
-        s->onValueChange = [this, s, paramIndex, scale]
+        sl->onValueChange = [this, sl, paramIndex, scale]
         {
-            params[(size_t) paramIndex] = (float) (s->getValue() / scale);
+            params[(size_t) paramIndex] = (float) (sl->getValue() / scale);
             push();
         };
 
-        addAndMakeVisible (s);
+        addAndMakeVisible (sl);
         sliders.push_back (std::move (slider));
     }
 
@@ -632,6 +632,209 @@ void BuiltInFxPanel::resized()
     const int w = row.getWidth() / (int) sliders.size();
     for (auto& s : sliders)
         s->setBounds (row.removeFromLeft (w).reduced (4, 0));
+    r.removeFromTop (Theme::s2);
+
+    helpArea = r;
+}
+
+//==============================================================================
+// GlobalFxPanel
+
+GlobalFxPanel::GlobalFxPanel (MixerEngine& e, int fxIdx)
+    : engine (e), fxIndex (fxIdx)
+{
+    setFocusContainerType (FocusContainerType::keyboardFocusContainer);
+
+    if (fxIndex == omx::kFxReverb)
+    {
+        title = "Global Reverb";
+        auto* rev = engine.getFxReverb();
+        defs = {
+            { "Room size", 0, 100, 1, 0.0, " %", rev != nullptr ? rev->getRoomSize() * 100.0 : 50.0,
+              [this] (double v) { if (auto* r = engine.getFxReverb()) r->setRoomSize ((float) (v / 100.0)); } },
+            { "Damping", 0, 100, 1, 0.0, " %", rev != nullptr ? rev->getDamping() * 100.0 : 50.0,
+              [this] (double v) { if (auto* r = engine.getFxReverb()) r->setDamping ((float) (v / 100.0)); } },
+            { "Pre-delay", 0, 100, 1, 0.0, " ms", rev != nullptr ? rev->getPreDelayMs() : 0.0,
+              [this] (double v) { if (auto* r = engine.getFxReverb()) r->setPreDelayMs ((float) v); } }
+        };
+        help = "Shared reverb fed by every strip's REV send (100% wet return).";
+    }
+    else if (fxIndex == omx::kFxDelay)
+    {
+        title = "Global Delay";
+        auto* dly = engine.getFxDelay();
+        defs = {
+            { "Time", 0, 2000, 1, 0.0, " ms", dly != nullptr ? dly->getTimeMs() : 500.0,
+              [this] (double v) { if (auto* d = engine.getFxDelay()) d->setTimeMs ((float) v); } },
+            { "Feedback", 0, 95, 1, 0.0, " %", dly != nullptr ? dly->getFeedback() * 100.0 : 35.0,
+              [this] (double v) { if (auto* d = engine.getFxDelay()) d->setFeedback ((float) (v / 100.0)); } },
+            { "Low-pass", 200, 20000, 1, 2000.0, " Hz", dly != nullptr ? dly->getFeedbackLowpassHz() : 8000.0,
+              [this] (double v) { if (auto* d = engine.getFxDelay()) d->setFeedbackLowpassHz ((float) v); } }
+        };
+        help = "Shared stereo delay fed by every strip's DLY send. Tempo sync follows the status bar BPM.";
+    }
+    else
+    {
+        title = "Global Chorus";
+        auto* cho = engine.getFxChorus();
+        defs = {
+            { "Rate", 0.05, 10, 0.01, 0.7, " Hz", cho != nullptr ? cho->getRateHz() : 0.7,
+              [this] (double v) { if (auto* c = engine.getFxChorus()) c->setRateHz ((float) v); } },
+            { "Depth", 0, 10, 0.1, 0.0, " ms", cho != nullptr ? cho->getDepthMs() : 3.0,
+              [this] (double v) { if (auto* c = engine.getFxChorus()) c->setDepthMs ((float) v); } },
+            { "Feedback", 0, 50, 1, 0.0, " %", cho != nullptr ? cho->getFeedback() * 100.0 : 0.0,
+              [this] (double v) { if (auto* c = engine.getFxChorus()) c->setFeedback ((float) (v / 100.0)); } }
+        };
+        help = "Shared stereo chorus fed by every strip's CHO send.";
+    }
+
+    setTitle (title);
+
+    for (const auto& d : defs)
+    {
+        auto slider = std::make_unique<DbSlider> (juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow);
+        auto* sl = slider.get();
+        sl->setRange (d.min, d.max, d.step);
+        if (d.skewMid > 0.0)
+            sl->setSkewFactorFromMidPoint (d.skewMid);
+        sl->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 72, 18);
+        const auto suffix = d.suffix;
+        sl->textFromValueFunction = [suffix] (double v)
+        {
+            const bool whole = std::abs (v) >= 100.0 || suffix == " %";
+            return juce::String (v, whole ? 0 : 1) + suffix;
+        };
+        const double span = d.max - d.min;
+        sl->keyStep  = d.suffix == " ms" || d.suffix == " Hz" ? juce::jmax (d.step, span / 50.0) : d.step;
+        sl->pageStep = span / 10.0;
+        sl->homeValue = d.skewMid > 0.0 ? d.skewMid : d.max;
+        sl->setDoubleClickReturnValue (true, sl->homeValue);
+        sl->setValue (d.value, juce::dontSendNotification);
+        sl->updateText();
+        sl->setTitle (title + " " + d.label);
+        sl->setWantsKeyboardFocus (true);
+        makeClickable (*sl);
+
+        auto applyFn = d.onApply;
+        sl->onValueChange = [sl, applyFn] { if (applyFn) applyFn (sl->getValue()); };
+        addAndMakeVisible (sl);
+        sliders.push_back (std::move (slider));
+    }
+
+    if (fxIndex == omx::kFxDelay)
+    {
+        makeLamp (tempoButton, "accent");
+        tempoButton.setTitle ("Delay follows the tap tempo");
+        tempoButton.onClick = [this]
+        {
+            if (auto* dly = engine.getFxDelay())
+            {
+                if (tempoButton.getToggleState())
+                {
+                    dly->setTempoBpm ((float) engine.getBpm());
+                    engine.applyBpmToDelays();
+                }
+                else
+                {
+                    dly->setTimeMs ((float) sliders[0]->getValue());
+                }
+            }
+            rebuildDelayControls();
+        };
+        addAndMakeVisible (tempoButton);
+
+        noteCombo.addItem ("1/4 note", 1);
+        noteCombo.addItem ("Dotted 1/4", 2);
+        noteCombo.addItem ("1/2 note", 3);
+        noteCombo.addItem ("1/8 note", 4);
+        noteCombo.addItem ("1/16 note", 5);
+        noteCombo.setTitle ("Delay note value");
+        noteCombo.onChange = [this]
+        {
+            static constexpr float divisions[] { 1.0f, 1.5f, 2.0f, 0.5f, 0.25f };
+            const int id = noteCombo.getSelectedId();
+            if (auto* dly = engine.getFxDelay(); dly != nullptr && juce::isPositiveAndBelow (id - 1, (int) std::size (divisions)))
+            {
+                dly->setNoteDivision (divisions[id - 1]);
+                dly->setTempoBpm ((float) engine.getBpm());
+                rebuildDelayControls();
+            }
+        };
+        makeClickable (noteCombo);
+        addAndMakeVisible (noteCombo);
+        rebuildDelayControls();
+    }
+
+    setSize (340, fxIndex == omx::kFxDelay ? 260 : 230);
+}
+
+void GlobalFxPanel::rebuildDelayControls()
+{
+    auto* dly = engine.getFxDelay();
+    if (dly == nullptr)
+        return;
+
+    const bool synced = dly->isTempoSynced();
+    tempoButton.setToggleState (synced, juce::dontSendNotification);
+    if (! sliders.empty())
+    {
+        sliders[0]->setValue (dly->getTimeMs(), juce::dontSendNotification);
+        sliders[0]->updateText();
+        sliders[0]->setEnabled (! synced);
+    }
+
+    static constexpr float divisions[] { 1.0f, 1.5f, 2.0f, 0.5f, 0.25f };
+    int id = 1;
+    for (size_t i = 0; i < std::size (divisions); ++i)
+        if (std::abs (dly->getNoteDivision() - divisions[i]) < 0.001f)
+            id = (int) i + 1;
+    noteCombo.setSelectedId (id, juce::dontSendNotification);
+    noteCombo.setEnabled (synced);
+}
+
+void GlobalFxPanel::paint (juce::Graphics& g)
+{
+    const auto& t = Theme::p();
+
+    g.setColour (t.text);
+    g.setFont (Theme::ui (15.0f, true));
+    g.drawText (title, titleArea, juce::Justification::centredLeft);
+
+    g.setFont (Theme::ui (11.5f, true).withExtraKerningFactor (0.04f));
+    g.setColour (t.textFaint);
+    for (size_t i = 0; i < sliders.size(); ++i)
+        g.drawText (defs[i].label.toUpperCase(), sliders[i]->getBounds().withHeight (16).translated (0, -16),
+                    juce::Justification::centred);
+
+    if (help.isNotEmpty())
+    {
+        g.setFont (Theme::ui (12.5f));
+        g.setColour (t.textDim);
+        g.drawFittedText (help, helpArea, juce::Justification::topLeft, 3);
+    }
+}
+
+void GlobalFxPanel::resized()
+{
+    auto r = getLocalBounds().reduced (Theme::s3);
+
+    titleArea = r.removeFromTop (30);
+    r.removeFromTop (Theme::s2);
+
+    if (fxIndex == omx::kFxDelay)
+    {
+        auto row = r.removeFromTop (30);
+        tempoButton.setBounds (row.removeFromLeft (120));
+        row.removeFromLeft (Theme::s2);
+        noteCombo.setBounds (row);
+        r.removeFromTop (Theme::s3);
+    }
+
+    r.removeFromTop (16);
+    auto row = r.removeFromTop (76);
+    const int w = row.getWidth() / (int) sliders.size();
+    for (auto& sl : sliders)
+        sl->setBounds (row.removeFromLeft (w).reduced (4, 0));
     r.removeFromTop (Theme::s2);
 
     helpArea = r;

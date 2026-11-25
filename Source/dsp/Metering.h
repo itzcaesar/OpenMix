@@ -65,10 +65,10 @@ namespace omx
         void prepare (double sampleRate) noexcept
         {
             fs = sampleRate > 0.0 ? sampleRate : 48000.0;
-            gain = 1.0f;
+            reset();
         }
 
-        void reset() noexcept { gain = 1.0f; }
+        void reset() noexcept { gain = 1.0f; targetGain = 1.0f; }
 
         // rms: smoothed RMS level (linear) of the bus, as measured this block.
         // targetLufs: e.g. -14 for streaming, -23 for broadcast (EBU R128).

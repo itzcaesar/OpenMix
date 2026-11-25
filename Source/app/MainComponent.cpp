@@ -40,7 +40,10 @@ ConsoleContent::ConsoleContent (MixerEngine& e) : soundboard (e), engine (e)
     addStripButton.onClick = [this]
     {
         if (engine.addStrip() >= 0)
+        {
             relayout();
+            Session::save (engine);
+        }
     };
     makeClickable (addStripButton);
     addChildComponent (addStripButton);
@@ -605,15 +608,20 @@ void MainComponent::showAudioSettings()
 
 void MainComponent::showSettings()
 {
+    const auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+    const int maxH = display != nullptr ? juce::jmax (520, (int) display->userBounds.getHeight() - 60) : 700;
+    auto* panel = new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyRemote(); }, [this] { showHotkeys(); }, &midiControl,
+                                     // Accent or compact changed: repaint everything and re-run the layout.
+                                     [this] { applyTheme(); resized(); });
+    panel->setSize (556, juce::jmin (890, maxH));
+
     juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned (new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyRemote(); }, [this] { showHotkeys(); }, &midiControl,
-                                            // Accent or compact changed: repaint everything and re-run the layout.
-                                            [this] { applyTheme(); resized(); }));
+    o.content.setOwned (panel);
     o.dialogTitle = "Settings";
     o.dialogBackgroundColour = Theme::p().panel;
     o.escapeKeyTriggersCloseButton = true;
     o.useNativeTitleBar = true;
-    o.resizable = false;
+    o.resizable = true;
     o.launchAsync();
 }
 
@@ -715,7 +723,10 @@ void MainComponent::onEditBpm()
             return;
         const double bpm = w->getTextEditorContents ("bpm").getDoubleValue();
         if (bpm > 0.0)
+        {
             safe->engine.setBpm (bpm);   // clamps to 40..240, pushes to tempo-synced delays
+            Session::save (safe->engine);
+        }
         safe->updateBpm();
     }), true);
 }
@@ -909,7 +920,11 @@ void MainComponent::startRecording()
     if (what == 0 || what == 2)
         for (int b = 0; b < kNumBuses; ++b)
             if (engine.getBus (b).active.load())
-                targets.push_back ({ juce::String ("Bus ") + engine.getBusName (b), true, b });
+            {
+                const auto custom = engine.getBus (b).customName;
+                const auto label = juce::String ("Bus ") + kBusNames[b] + (custom.isNotEmpty() ? " " + custom : juce::String());
+                targets.push_back ({ label, true, b });
+            }
 
     if (what == 1 || what == 2)
         for (int s = 0; s < kNumStrips; ++s)

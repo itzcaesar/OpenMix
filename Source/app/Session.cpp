@@ -356,6 +356,18 @@ static void saveSlots (juce::XmlElement& x, PluginChain& chain)
         e->setAttribute ("index", s);
         e->setAttribute ("bypass", chain.slotBypass[(size_t) s].load());
         e->setAttribute ("mix", chain.slotMix[(size_t) s].load());
+        if (chain.isBuiltInSlot (s))
+        {
+            std::array<float, 6> params {};
+            bool tempoSync = false;
+            if (chain.getBuiltInParams (s, params, tempoSync))
+            {
+                e->setAttribute ("builtIn", true);
+                e->setAttribute ("tempoSync", tempoSync);
+                for (int i = 0; i < 6; ++i)
+                    e->setAttribute ("param" + juce::String (i), params[(size_t) i]);
+            }
+        }
     }
 }
 
@@ -364,11 +376,19 @@ static void loadSlots (const juce::XmlElement& x, PluginChain& chain)
     for (auto* e : x.getChildWithTagNameIterator ("SlotMix"))
     {
         const int s = e->getIntAttribute ("index", -1);
-        if (! juce::isPositiveAndBelow (s, kNumSlots) || chain.getPlugin (s) == nullptr)
+        if (! juce::isPositiveAndBelow (s, kNumSlots)
+            || (chain.getPlugin (s) == nullptr && ! chain.isBuiltInSlot (s)))
             continue;
         chain.slotFault[(size_t) s].store (false);
         chain.slotBypass[(size_t) s].store (e->getBoolAttribute ("bypass"));
         chain.slotMix[(size_t) s].store ((float) e->getDoubleAttribute ("mix", 1.0));
+        if (e->getBoolAttribute ("builtIn", false) && chain.isBuiltInSlot (s))
+        {
+            std::array<float, 6> params {};
+            for (int i = 0; i < 6; ++i)
+                params[(size_t) i] = (float) e->getDoubleAttribute ("param" + juce::String (i), 0.0);
+            chain.setBuiltInParams (s, params, e->getBoolAttribute ("tempoSync", false));
+        }
     }
 }
 
@@ -595,6 +615,33 @@ void Session::save (MixerEngine& engine)
             saveStripPresetXml (*xs, preset.name, preset.preset);
     }
 
+    {
+        auto* xfx = root.createNewChildElement ("GlobalFx");
+        if (auto* rev = engine.getFxReverb())
+        {
+            auto* xr = xfx->createNewChildElement ("Reverb");
+            xr->setAttribute ("roomSize", rev->getRoomSize());
+            xr->setAttribute ("damping", rev->getDamping());
+            xr->setAttribute ("preDelayMs", rev->getPreDelayMs());
+        }
+        if (auto* dly = engine.getFxDelay())
+        {
+            auto* xd = xfx->createNewChildElement ("Delay");
+            xd->setAttribute ("tempoSync", dly->isTempoSynced());
+            xd->setAttribute ("timeMs", dly->getTimeMs());
+            xd->setAttribute ("noteDivision", dly->getNoteDivision());
+            xd->setAttribute ("feedback", dly->getFeedback());
+            xd->setAttribute ("lowpassHz", dly->getFeedbackLowpassHz());
+        }
+        if (auto* cho = engine.getFxChorus())
+        {
+            auto* xc = xfx->createNewChildElement ("Chorus");
+            xc->setAttribute ("rateHz", cho->getRateHz());
+            xc->setAttribute ("depthMs", cho->getDepthMs());
+            xc->setAttribute ("feedback", cho->getFeedback());
+        }
+    }
+
     // Only touch the disk when something actually changed (this runs every few seconds).
     static juce::String lastWritten;
     const auto text = root.toString();
@@ -762,6 +809,35 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
             else
                 juce::Logger::writeToLog ("Soundboard pad " + juce::String (p + 1) + ": " + error);
         }
+    }
+
+    // Global FX units: restore parameters before setBpm() pushes BPM into synced delays.
+    if (auto* xfx = root.getChildByName ("GlobalFx"))
+    {
+        if (auto* xr = xfx->getChildByName ("Reverb"))
+            if (auto* rev = engine.getFxReverb())
+            {
+                rev->setRoomSize ((float) xr->getDoubleAttribute ("roomSize", rev->getRoomSize()));
+                rev->setDamping ((float) xr->getDoubleAttribute ("damping", rev->getDamping()));
+                rev->setPreDelayMs ((float) xr->getDoubleAttribute ("preDelayMs", rev->getPreDelayMs()));
+            }
+        if (auto* xd = xfx->getChildByName ("Delay"))
+            if (auto* dly = engine.getFxDelay())
+            {
+                if (xd->getBoolAttribute ("tempoSync", true))
+                    dly->setNoteDivision ((float) xd->getDoubleAttribute ("noteDivision", dly->getNoteDivision()));
+                else
+                    dly->setTimeMs ((float) xd->getDoubleAttribute ("timeMs", dly->getTimeMs()));
+                dly->setFeedback ((float) xd->getDoubleAttribute ("feedback", dly->getFeedback()));
+                dly->setFeedbackLowpassHz ((float) xd->getDoubleAttribute ("lowpassHz", dly->getFeedbackLowpassHz()));
+            }
+        if (auto* xc = xfx->getChildByName ("Chorus"))
+            if (auto* cho = engine.getFxChorus())
+            {
+                cho->setRateHz ((float) xc->getDoubleAttribute ("rateHz", cho->getRateHz()));
+                cho->setDepthMs ((float) xc->getDoubleAttribute ("depthMs", cho->getDepthMs()));
+                cho->setFeedback ((float) xc->getDoubleAttribute ("feedback", cho->getFeedback()));
+            }
     }
 
     // Tap tempo: restore the saved BPM (old files keep the current one) and

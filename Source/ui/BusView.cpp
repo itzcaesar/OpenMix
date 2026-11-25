@@ -269,6 +269,7 @@ void BusView::refreshFromBus()
     muteButton.setTooltip ("Mute everything going out of " + busName() + ".");
     spectrum.setTitle ("Bus " + busName() + " spectrum. Opens the analyser.");
     faderSection.fader.setTitle ("Bus " + busName() + " fader");
+    faderSection.meter.setTitle ("Bus " + busName() + " meter");
     faderSection.fader.setValue (bus.faderDb.load(), juce::dontSendNotification);
     muteButton.setToggleState (bus.mute.load(), juce::dontSendNotification);
     updateKeys();

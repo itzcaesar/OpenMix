@@ -15,11 +15,14 @@ namespace omx
     class LoudnessMeter
     {
     public:
+        static constexpr size_t maxBlocks = 36000;   // 1 hour of 100 ms blocks (bounded memory)
+
         void prepare (double sampleRate)
         {
             fs = sampleRate;
             designKWeighting();
             stepSamples = std::max (1, (int) std::lround (fs * 0.1));   // 100 ms
+            blocks.reserve (1024);
             reset();
         }
 
@@ -34,6 +37,8 @@ namespace omx
             stepsFilled = 0;
             stepWrite = 0;
             blocks.clear();
+            blockWrite = 0;
+            cachedIntegrated = -INFINITY;
         }
 
         void push (const float* left, const float* right, int numSamples)
@@ -59,31 +64,24 @@ namespace omx
                     stepCount = 0;
 
                     if (stepsFilled >= 4)
-                        blocks.push_back (meanOfLast (4));   // a 400 ms gating block, 75% overlap
+                    {
+                        const double b = meanOfLast (4);   // a 400 ms gating block, 75% overlap
+                        if (blocks.size() < maxBlocks)
+                            blocks.push_back (b);
+                        else
+                        {
+                            blocks[blockWrite] = b;
+                            blockWrite = (blockWrite + 1) % maxBlocks;
+                        }
+                        cachedIntegrated = computeIntegrated();
+                    }
                 }
             }
         }
 
         double momentary() const  { return stepsFilled >= 4 ? floored (toLufs (meanOfLast (4))) : -INFINITY; }
         double shortTerm() const  { return stepsFilled >= 30 ? floored (toLufs (meanOfLast (30))) : -INFINITY; }
-
-        double integrated() const
-        {
-            // Absolute gate at -70 LUFS, then a relative gate 10 LU below the mean of what's left.
-            double sum = 0.0;
-            int n = 0;
-            for (double b : blocks)
-                if (toLufs (b) > -70.0) { sum += b; ++n; }
-            if (n == 0)
-                return -INFINITY;
-
-            const double relativeGate = toLufs (sum / n) - 10.0;
-            sum = 0.0;
-            n = 0;
-            for (double b : blocks)
-                if (toLufs (b) > -70.0 && toLufs (b) > relativeGate) { sum += b; ++n; }
-            return n > 0 ? toLufs (sum / n) : -INFINITY;
-        }
+        double integrated() const { return cachedIntegrated; }
 
         // Below the -70 LUFS absolute gate a reading means nothing (dither, denormals): no signal.
         static double floored (double lufs) { return lufs > -70.0 ? lufs : -INFINITY; }
@@ -129,11 +127,31 @@ namespace omx
             return s / count;
         }
 
+        double computeIntegrated() const
+        {
+            // Absolute gate at -70 LUFS, then a relative gate 10 LU below the mean of what's left.
+            double sum = 0.0;
+            int n = 0;
+            for (double b : blocks)
+                if (toLufs (b) > -70.0) { sum += b; ++n; }
+            if (n == 0)
+                return -INFINITY;
+
+            const double relativeGate = toLufs (sum / n) - 10.0;
+            sum = 0.0;
+            n = 0;
+            for (double b : blocks)
+                if (toLufs (b) > -70.0 && toLufs (b) > relativeGate) { sum += b; ++n; }
+            return n > 0 ? toLufs (sum / n) : -INFINITY;
+        }
+
         double fs = 48000.0;
         Coeffs stage1 {}, stage2 {};
         State state[2][2] {};
         int stepSamples = 4800, stepCount = 0, stepsFilled = 0, stepWrite = 0;
         double stepSum = 0.0;
         std::vector<double> steps, blocks;
+        size_t blockWrite = 0;
+        double cachedIntegrated = -INFINITY;
     };
 }

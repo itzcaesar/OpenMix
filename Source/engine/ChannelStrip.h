@@ -126,15 +126,15 @@ public:
     // the engine's global FX units (see MixerEngine): the wet return is
     // mixed into every bus this strip is routed to, before that bus's
     // processing, so it follows the bus fader and limiter like the dry mix.
-    void setFxSendLevel (int fx, float level) noexcept
+    void setFxSendLevel (int fxIndex, float level) noexcept
     {
-        if (juce::isPositiveAndBelow (fx, omx::kNumFxSends))
-            fxSendLevel[(size_t) fx].store (juce::jlimit (0.0f, 1.0f, level));
+        if (juce::isPositiveAndBelow (fxIndex, omx::kNumFxSends))
+            fxSendLevel[(size_t) fxIndex].store (juce::jlimit (0.0f, 1.0f, level));
     }
-    float getFxSendLevel (int fx) const noexcept
+    float getFxSendLevel (int fxIndex) const noexcept
     {
-        return juce::isPositiveAndBelow (fx, omx::kNumFxSends)
-            ? fxSendLevel[(size_t) fx].load() : 0.0f;
+        return juce::isPositiveAndBelow (fxIndex, omx::kNumFxSends)
+            ? fxSendLevel[(size_t) fxIndex].load() : 0.0f;
     }
 
     // Strip preset (message thread): the strip's sound, see omx::StripPreset.
