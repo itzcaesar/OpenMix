@@ -597,13 +597,14 @@ void OpenMixLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
         const float capW = 12.0f, capH = juce::jmin (18.0f, area.getHeight() - 2.0f);
         const float cx = juce::jlimit (track.getX() + capW * 0.5f, track.getRight() - capW * 0.5f, sliderPos);
         const auto cap = juce::Rectangle<float> (capW, capH).withCentre ({ cx, cy });
-        g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.45f : 0.18f));
+        const float alpha = slider.isEnabled() ? 1.0f : 0.45f;
+        g.setColour (juce::Colours::black.withAlpha ((t.dark ? 0.45f : 0.18f) * alpha));
         g.fillRoundedRectangle (cap.translated (0.0f, 1.5f), Theme::controlRadius);
-        const auto top = t.dark ? t.raised.brighter (0.16f) : juce::Colours::white;
-        const auto bottom = t.dark ? t.raised.darker (0.06f) : juce::Colour (0xffdcdce0);
+        const auto top = (t.dark ? t.raised.brighter (0.16f) : juce::Colours::white).withMultipliedAlpha (alpha);
+        const auto bottom = (t.dark ? t.raised.darker (0.06f) : juce::Colour (0xffdcdce0)).withMultipliedAlpha (alpha);
         g.setGradientFill (juce::ColourGradient (top, cap.getX(), cap.getY(), bottom, cap.getX(), cap.getBottom(), false));
         g.fillRoundedRectangle (cap, Theme::controlRadius);
-        g.setColour (t.controlEdge);
+        g.setColour (t.controlEdge.withMultipliedAlpha (alpha));
         g.drawRoundedRectangle (cap.reduced (0.5f), Theme::controlRadius, 1.0f);
 
         if (slider.hasKeyboardFocus (false))
