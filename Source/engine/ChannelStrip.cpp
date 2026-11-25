@@ -130,6 +130,11 @@ omx::StripPreset ChannelStrip::savePreset() const
     }
 
     p.padX = pad.x.load();   p.padY = pad.y.load();   p.padMode = pad.mode.load();
+    for (int m = 0; m < VoicePadParams::numModes; ++m)
+    {
+        p.padModeX[(size_t) m] = pad.modeX[(size_t) m].load();
+        p.padModeY[(size_t) m] = pad.modeY[(size_t) m].load();
+    }
 
     for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
         p.fxSend[(size_t) fxIdx] = fxSendLevel[(size_t) fxIdx].load();
@@ -184,9 +189,10 @@ int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormat
         sendPre[b].store (p.sendPre[(size_t) b]);
     }
 
-    pad.x.store (juce::jlimit (-1.0f, 1.0f, p.padX));
-    pad.y.store (juce::jlimit (-1.0f, 1.0f, p.padY));
     pad.mode.store (juce::jlimit (0, VoicePadParams::numModes - 1, p.padMode));
+    for (int m = 0; m < VoicePadParams::numModes; ++m)
+        pad.setModePosition (m, p.padModeX[(size_t) m], p.padModeY[(size_t) m]);
+    pad.setPosition (p.padX, p.padY);
 
     for (int fxIdx = 0; fxIdx < omx::kNumFxSends; ++fxIdx)
         setFxSendLevel (fxIdx, p.fxSend[(size_t) fxIdx]);

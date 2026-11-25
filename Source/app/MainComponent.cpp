@@ -313,28 +313,6 @@ void StatusDisplay::paintButton (juce::Graphics& g, bool highlighted, bool down)
 //==============================================================================
 // StatusBar
 
-StatusBar::StatusBar()
-{
-    tapButton.setTooltip ("Tap the tempo: each tap sets the BPM (40..240). Tempo-synced delays follow it.");
-    tapButton.onClick = [this] { if (onTap) onTap(); };
-    makeClickable (tapButton);
-    addAndMakeVisible (tapButton);
-
-    bpmButton.setButtonText ("120 BPM");
-    bpmButton.setTooltip ("Tempo for the tap-tempo delays. Click to type a BPM (40..240).");
-    bpmButton.onClick = [this] { if (onEditBpm) onEditBpm(); };
-    makeClickable (bpmButton);
-    addAndMakeVisible (bpmButton);
-}
-
-void StatusBar::setBpm (double bpm)
-{
-    if (std::abs (bpm - currentBpm) < 0.05)
-        return;
-    currentBpm = bpm;
-    bpmButton.setButtonText (juce::String (bpm, 0) + " BPM");
-}
-
 void StatusBar::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
@@ -358,15 +336,6 @@ void StatusBar::paint (juce::Graphics& g)
     g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
     area.removeFromLeft (Theme::s3);
 
-    const int rightReserve = 76 + Theme::s1 + 56 + Theme::s3;
-    if (area.getWidth() > rightReserve + Theme::s3)
-    {
-        auto rightEdge = area.removeFromRight (rightReserve);
-        g.setColour (t.line);
-        g.fillRect (rightEdge.getX(), area.getCentreY() - 7, 1, 14);
-        area.removeFromRight (Theme::s3);
-    }
-
     const auto font = Theme::mono (12.0f);
     g.setFont (font);
     for (int i = 0; i < segments.size(); ++i)
@@ -389,15 +358,6 @@ void StatusBar::paint (juce::Graphics& g)
             area.removeFromLeft (Theme::s3);
         }
     }
-}
-
-void StatusBar::resized()
-{
-    auto r = getLocalBounds().reduced (consolePad(), 0);
-    constexpr int h = 22;
-    bpmButton.setBounds (r.removeFromRight (76).withSizeKeepingCentre (76, h));
-    r.removeFromRight (Theme::s1);
-    tapButton.setBounds (r.removeFromRight (56).withSizeKeepingCentre (56, h));
 }
 
 //==============================================================================
@@ -466,11 +426,8 @@ MainComponent::MainComponent()
     statusDisplay.onClick = [this] { showAudioSettings(); };
     addAndMakeVisible (statusDisplay);
 
-    // Bottom status bar: device / rate / buffer / engine CPU / LIVE, plus tap tempo.
-    statusBar.onTap = [this] { onTapTempo(); };
-    statusBar.onEditBpm = [this] { onEditBpm(); };
+    // Bottom status bar: device / rate / buffer / engine CPU / LIVE.
     addAndMakeVisible (statusBar);
-    updateBpm();
 
     appSettingsButton.setTooltip ("Light or dark theme, startup and tray, plugins, remote control, updates.");
     appSettingsButton.onClick = [this] { showSettings(); };
@@ -777,42 +734,6 @@ void MainComponent::updateStatus()
         statusBar.setLive (false);
     }
     statusBar.setSegments (bottom);
-    updateBpm();
-}
-
-void MainComponent::updateBpm()
-{
-    statusBar.setBpm (engine.getBpm());
-}
-
-void MainComponent::onTapTempo()
-{
-    engine.tap();   // tap() already pushes the BPM into every tempo-synced delay
-    updateBpm();
-}
-
-void MainComponent::onEditBpm()
-{
-    auto* w = new juce::AlertWindow ("Set tempo",
-                                     "Tempo for the tap-tempo delays (40..240 BPM).",
-                                     juce::MessageBoxIconType::NoIcon, this);
-    w->addTextEditor ("bpm", juce::String (engine.getBpm(), 0), "BPM");
-    w->addButton ("Set", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    juce::Component::SafePointer<MainComponent> safe (this);
-    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result)
-    {
-        if (safe == nullptr || result != 1)
-            return;
-        const double bpm = w->getTextEditorContents ("bpm").getDoubleValue();
-        if (bpm > 0.0)
-        {
-            safe->engine.setBpm (bpm);   // clamps to 40..240, pushes to tempo-synced delays
-            Session::save (safe->engine);
-        }
-        safe->updateBpm();
-    }), true);
 }
 
 void MainComponent::timerCallback()

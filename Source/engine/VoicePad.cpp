@@ -88,11 +88,13 @@ void VoicePadProcessor::process (juce::AudioBuffer<float>& stereo, int numSample
     const int mode = params.mode.load();
     if (mode != lastMode)
     {
-        // Each mode uses the filters differently: start clean, recompute coefficients.
+        // Each mode uses the filters differently: start clean, snap smoothers to the new mode's saved puck.
         lowShelf.reset(); highShelf.reset(); presence.reset(); midPeak.reset();
         lowShelf = {}; highShelf = {}; presence = {}; midPeak = {};
         std::fill (delayL.begin(), delayL.end(), 0.0f);
         std::fill (delayR.begin(), delayR.end(), 0.0f);
+        smX.setCurrentAndTargetValue (params.x.load());
+        smY.setCurrentAndTargetValue ((params.y.load() + 1.0f) * 0.5f);
         lastX = lastY = 99.0f;
         lastMode = mode;
     }
@@ -248,7 +250,7 @@ void VoicePadComponent::refreshFromParams()
 
 void VoicePadComponent::setMode (int m)
 {
-    params.mode.store (m);
+    params.setModeAndSync (m);
     refreshFromParams();
 }
 
@@ -386,16 +388,15 @@ void VoicePadComponent::paint (juce::Graphics& g)
 void VoicePadComponent::setFromMouse (juce::Point<float> pos)
 {
     const auto inner = padArea().reduced (10.0f);
-    params.x.store (juce::jlimit (-1.0f, 1.0f, juce::jmap (pos.x, inner.getX(), inner.getRight(), -1.0f, 1.0f)));
-    params.y.store (juce::jlimit (-1.0f, 1.0f, juce::jmap (pos.y, inner.getBottom(), inner.getY(), -1.0f, 1.0f)));
+    params.setPosition (juce::jmap (pos.x, inner.getX(), inner.getRight(), -1.0f, 1.0f),
+                        juce::jmap (pos.y, inner.getBottom(), inner.getY(), -1.0f, 1.0f));
     setDescription (readout());
     repaint();
 }
 
 void VoicePadComponent::nudge (float dx, float dy)
 {
-    params.x.store (juce::jlimit (-1.0f, 1.0f, params.x.load() + dx));
-    params.y.store (juce::jlimit (-1.0f, 1.0f, params.y.load() + dy));
+    params.setPosition (params.x.load() + dx, params.y.load() + dy);
     setDescription (readout());
     repaint();
 }
@@ -409,8 +410,7 @@ bool VoicePadComponent::keyPressed (const juce::KeyPress& k)
     if (k.isKeyCode (juce::KeyPress::downKey))  { nudge (0.0f, -step); return true; }
     if (k.isKeyCode (juce::KeyPress::homeKey))
     {
-        params.x.store (0.0f);
-        params.y.store (-1.0f);
+        params.setPosition (0.0f, -1.0f);
         refreshFromParams();
         return true;
     }
@@ -440,7 +440,6 @@ void VoicePadComponent::mouseUp (const juce::MouseEvent&)
 
 void VoicePadComponent::mouseDoubleClick (const juce::MouseEvent&)
 {
-    params.x.store (0.0f);
-    params.y.store (-1.0f);
+    params.setPosition (0.0f, -1.0f);
     refreshFromParams();
 }

@@ -9,9 +9,60 @@ struct VoicePadParams
     enum Mode { Voice = 0, Pan = 1, Color = 2, Space = 3 };
     static constexpr int numModes = 4;
 
-    std::atomic<float> x { 0.0f };   // -1 (left / Lo)  .. +1 (right / Hi)
-    std::atomic<float> y { -1.0f };  // -1 (bottom, neutral) .. +1 (top)
+    VoicePadParams()
+    {
+        for (int i = 0; i < numModes; ++i)
+        {
+            modeX[(size_t) i].store (0.0f);
+            modeY[(size_t) i].store (-1.0f);
+        }
+    }
+
+    std::atomic<float> x { 0.0f };   // active mode's X (-1 .. +1)
+    std::atomic<float> y { -1.0f };  // active mode's Y (-1 .. +1)
     std::atomic<int>   mode { Voice };
+
+    // Saved per-mode circle coordinates so switching between Voice / Pan / Color / Space
+    // preserves each mode's own position rather than dragging the previous mode's circle along.
+    std::array<std::atomic<float>, numModes> modeX;
+    std::array<std::atomic<float>, numModes> modeY;
+
+    void setModeAndSync (int newMode) noexcept
+    {
+        const int next = juce::jlimit (0, numModes - 1, newMode);
+        const int cur = juce::jlimit (0, numModes - 1, mode.load());
+        modeX[(size_t) cur].store (x.load());
+        modeY[(size_t) cur].store (y.load());
+        x.store (modeX[(size_t) next].load());
+        y.store (modeY[(size_t) next].load());
+        mode.store (next);
+    }
+
+    void setPosition (float nx, float ny) noexcept
+    {
+        const float cx = juce::jlimit (-1.0f, 1.0f, nx);
+        const float cy = juce::jlimit (-1.0f, 1.0f, ny);
+        const int cur = juce::jlimit (0, numModes - 1, mode.load());
+        modeX[(size_t) cur].store (cx);
+        modeY[(size_t) cur].store (cy);
+        x.store (cx);
+        y.store (cy);
+    }
+
+    void setModePosition (int m, float nx, float ny) noexcept
+    {
+        if (! juce::isPositiveAndBelow (m, numModes))
+            return;
+        const float cx = juce::jlimit (-1.0f, 1.0f, nx);
+        const float cy = juce::jlimit (-1.0f, 1.0f, ny);
+        modeX[(size_t) m].store (cx);
+        modeY[(size_t) m].store (cy);
+        if (m == mode.load())
+        {
+            x.store (cx);
+            y.store (cy);
+        }
+    }
 };
 
 // Voice mode: X = tone tilt (Lo <-> Hi), Y = presence + echo.

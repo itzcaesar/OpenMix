@@ -24,6 +24,35 @@ std::unique_ptr<juce::XmlElement> Session::load()
     return file.existsAsFile() ? juce::parseXML (file) : nullptr;
 }
 
+static void writePadXml (juce::XmlElement& e, const VoicePadParams& pad)
+{
+    e.setAttribute ("padX", pad.x.load());
+    e.setAttribute ("padY", pad.y.load());
+    e.setAttribute ("padMode", pad.mode.load());
+    for (int m = 0; m < VoicePadParams::numModes; ++m)
+    {
+        e.setAttribute ("padModeX" + juce::String (m), pad.modeX[(size_t) m].load());
+        e.setAttribute ("padModeY" + juce::String (m), pad.modeY[(size_t) m].load());
+    }
+}
+
+static void readPadXml (const juce::XmlElement& e, VoicePadParams& pad)
+{
+    const int m = e.getIntAttribute ("padMode", pad.mode.load());
+    pad.mode.store (juce::jlimit (0, VoicePadParams::numModes - 1, m));
+    for (int i = 0; i < VoicePadParams::numModes; ++i)
+    {
+        const float defX = pad.modeX[(size_t) i].load();
+        const float defY = pad.modeY[(size_t) i].load();
+        pad.setModePosition (i,
+                             (float) e.getDoubleAttribute ("padModeX" + juce::String (i), defX),
+                             (float) e.getDoubleAttribute ("padModeY" + juce::String (i), defY));
+    }
+    const float legacyX = (float) e.getDoubleAttribute ("padX", pad.x.load());
+    const float legacyY = (float) e.getDoubleAttribute ("padY", pad.y.load());
+    pad.setPosition (legacyX, legacyY);
+}
+
 static void saveProcessing (juce::XmlElement& x, const ProcessingParams& fx)
 {
     auto* e = x.createNewChildElement ("Processing");
@@ -208,6 +237,11 @@ static void saveStripPresetXml (juce::XmlElement& parent, const juce::String& na
     e->setAttribute ("padX", p.padX);
     e->setAttribute ("padY", p.padY);
     e->setAttribute ("padMode", p.padMode);
+    for (int m = 0; m < VoicePadParams::numModes; ++m)
+    {
+        e->setAttribute ("padModeX" + juce::String (m), p.padModeX[(size_t) m]);
+        e->setAttribute ("padModeY" + juce::String (m), p.padModeY[(size_t) m]);
+    }
     for (int b = 0; b < kNumBuses; ++b)
     {
         const juce::String bus (kBusNames[b]);
@@ -282,6 +316,13 @@ static bool loadStripPresetXml (const juce::XmlElement& e, juce::String& name, o
     p.padX = f ("padX", 0.0);
     p.padY = f ("padY", -1.0);
     p.padMode = e.getIntAttribute ("padMode", 0);
+    for (int m = 0; m < VoicePadParams::numModes; ++m)
+    {
+        const float defX = (m == p.padMode) ? p.padX : 0.0f;
+        const float defY = (m == p.padMode) ? p.padY : -1.0f;
+        p.padModeX[(size_t) m] = f ("padModeX" + juce::String (m), defX);
+        p.padModeY[(size_t) m] = f ("padModeY" + juce::String (m), defY);
+    }
     for (int b = 0; b < kNumBuses; ++b)
     {
         const juce::String bus (kBusNames[b]);
@@ -408,9 +449,7 @@ std::unique_ptr<juce::XmlElement> Session::captureScene (MixerEngine& engine)
         x->setAttribute ("soloSafe", strip.soloSafe.load());
         x->setAttribute ("mono", strip.mono.load());
         x->setAttribute ("invertPolarity", strip.invertPolarity.load());
-        x->setAttribute ("padX", strip.pad.x.load());
-        x->setAttribute ("padY", strip.pad.y.load());
-        x->setAttribute ("padMode", strip.pad.mode.load());
+        writePadXml (*x, strip.pad);
         for (int b = 0; b < kNumBuses; ++b)
         {
             const juce::String bus (kBusNames[b]);
@@ -462,9 +501,7 @@ void Session::applyScene (const juce::XmlElement& root, MixerEngine& engine)
         strip.soloSafe.store (x->getBoolAttribute ("soloSafe", strip.soloSafe.load()));
         strip.mono.store (x->getBoolAttribute ("mono", strip.mono.load()));
         strip.invertPolarity.store (x->getBoolAttribute ("invertPolarity", strip.invertPolarity.load()));
-        strip.pad.x.store ((float) x->getDoubleAttribute ("padX", strip.pad.x.load()));
-        strip.pad.y.store ((float) x->getDoubleAttribute ("padY", strip.pad.y.load()));
-        strip.pad.mode.store (x->getIntAttribute ("padMode", strip.pad.mode.load()));
+        readPadXml (*x, strip.pad);
         for (int b = 0; b < kNumBuses; ++b)
         {
             const juce::String bus (kBusNames[b]);
@@ -509,7 +546,6 @@ void Session::save (MixerEngine& engine)
     juce::XmlElement root ("OpenMixSession");
     root.setAttribute ("version", sessionVersion);
     root.setAttribute ("theme", Theme::isDark() ? "dark" : "light");
-    root.setAttribute ("bpm", engine.getBpm());   // tap tempo, 40..240 BPM
 
     if (auto device = engine.getDeviceManager().createStateXml())
         root.addChildElement (device.release());
@@ -540,9 +576,7 @@ void Session::save (MixerEngine& engine)
         xs->setAttribute ("soloSafe", strip.soloSafe.load());
         xs->setAttribute ("mono", strip.mono.load());
         xs->setAttribute ("invertPolarity", strip.invertPolarity.load());
-        xs->setAttribute ("padX", strip.pad.x.load());
-        xs->setAttribute ("padY", strip.pad.y.load());
-        xs->setAttribute ("padMode", strip.pad.mode.load());
+        writePadXml (*xs, strip.pad);
 
         for (int b = 0; b < kNumBuses; ++b)
         {
@@ -714,9 +748,7 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
         strip.soloSafe.store (xs->getBoolAttribute ("soloSafe", false));
         strip.mono.store (xs->getBoolAttribute ("mono", false));
         strip.invertPolarity.store (xs->getBoolAttribute ("invertPolarity", false));
-        strip.pad.x.store ((float) xs->getDoubleAttribute ("padX", 0.0));
-        strip.pad.y.store ((float) xs->getDoubleAttribute ("padY", -1.0));
-        strip.pad.mode.store (xs->getIntAttribute ("padMode", 0));
+        readPadXml (*xs, strip.pad);
 
         for (int b = 0; b < kNumBuses; ++b)
         {
@@ -811,7 +843,7 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
         }
     }
 
-    // Global FX units: restore parameters before setBpm() pushes BPM into synced delays.
+    // Global FX units
     if (auto* xfx = root.getChildByName ("GlobalFx"))
     {
         if (auto* xr = xfx->getChildByName ("Reverb"))
@@ -824,10 +856,7 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
         if (auto* xd = xfx->getChildByName ("Delay"))
             if (auto* dly = engine.getFxDelay())
             {
-                if (xd->getBoolAttribute ("tempoSync", true))
-                    dly->setNoteDivision ((float) xd->getDoubleAttribute ("noteDivision", dly->getNoteDivision()));
-                else
-                    dly->setTimeMs ((float) xd->getDoubleAttribute ("timeMs", dly->getTimeMs()));
+                dly->setTimeMs ((float) xd->getDoubleAttribute ("timeMs", dly->getTimeMs()));
                 dly->setFeedback ((float) xd->getDoubleAttribute ("feedback", dly->getFeedback()));
                 dly->setFeedbackLowpassHz ((float) xd->getDoubleAttribute ("lowpassHz", dly->getFeedbackLowpassHz()));
             }
@@ -839,8 +868,4 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
                 cho->setFeedback ((float) xc->getDoubleAttribute ("feedback", cho->getFeedback()));
             }
     }
-
-    // Tap tempo: restore the saved BPM (old files keep the current one) and
-    // push it into the global FX delay and every tempo-synced delay insert.
-    engine.setBpm (root.getDoubleAttribute ("bpm", engine.getBpm()));
 }

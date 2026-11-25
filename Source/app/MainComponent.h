@@ -53,25 +53,18 @@ private:
 };
 
 // The bottom status bar: audio device, sample rate, buffer size, engine CPU%,
-// a LIVE indicator, and tap tempo (Tap button + BPM, click the BPM to type one).
+// and a LIVE indicator.
 class StatusBar : public juce::Component
 {
 public:
-    StatusBar();
+    StatusBar() = default;
     void setSegments (const juce::StringArray& s) { segments = s; repaint(); }
     void setLive (bool live) { if (live != isLive) { isLive = live; repaint(); } }
-    void setBpm (double bpm);
     void paint (juce::Graphics&) override;
-    void resized() override;
-
-    std::function<void()> onTap, onEditBpm;
 
 private:
     juce::StringArray segments;
     bool isLive = false;
-    double currentBpm = 120.0;
-    juce::TextButton tapButton { "Tap" };
-    juce::TextButton bpmButton;
 };
 
 // The header's status readout (device, rate, latency, CPU, dropouts). It is also the way into
@@ -107,11 +100,6 @@ private:
     void toggleTheme();
     void applyTheme();
     void updateStatus();
-    void updateBpm();        // tap-tempo readout in the status bar
-    void onTapTempo();       // Tap button: one tap, drives tempo-synced delays
-    void onEditBpm();        // BPM button: type a tempo (40..240)
-
-    // Creator tools
     void toggleRecording();
     void startRecording();
     void showRecordMenu();

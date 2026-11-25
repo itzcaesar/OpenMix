@@ -431,8 +431,9 @@ void SendPanel::layoutExtra (juce::Rectangle<int>& r)
 // BuiltInFxPanel
 
 BuiltInFxPanel::BuiltInFxPanel (MixerEngine& e, PluginChain& c, int s)
-    : engine (e), chain (c), slot (s)
+    : chain (c), slot (s)
 {
+    juce::ignoreUnused (e);
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
 
     if (auto* fx = chain.getBuiltIn (slot))
@@ -457,8 +458,7 @@ BuiltInFxPanel::BuiltInFxPanel (MixerEngine& e, PluginChain& c, int s)
                      { "Feedback", 0, 95, 1, 0.0, " %", 1, 100.0 },
                      { "Mix",      0, 100, 1, 0.0, " %", 2, 100.0 },
                      { "Low-pass", 200, 20000, 1, 2000.0, " Hz", 3, 1.0 } };
-            help = "Tempo-synced stereo delay: with tempo sync on, the time follows the tap-tempo "
-                   "BPM and the note value below. The low-pass darkens each repeat.";
+            help = "Stereo delay with feedback and low-pass damping on each repeat.";
             break;
 
         case omx::FxType::Chorus:
@@ -508,50 +508,14 @@ BuiltInFxPanel::BuiltInFxPanel (MixerEngine& e, PluginChain& c, int s)
         sliders.push_back (std::move (slider));
     }
 
-    if (type == omx::FxType::Delay)
-    {
-        makeLamp (tempoButton, "accent");
-        tempoButton.setTitle ("Delay follows the tap tempo");
-        tempoButton.onClick = [this]
-        {
-            tempoSync = tempoButton.getToggleState();
-            if (tempoSync)
-                params[5] = (float) engine.getBpm();
-            push();
-            if (tempoSync)
-                engine.applyBpmToDelays();
-            rebuildFromChain();
-        };
-        addAndMakeVisible (tempoButton);
-
-        noteCombo.addItem ("1/4 note", 1);
-        noteCombo.addItem ("Dotted 1/4", 2);
-        noteCombo.addItem ("1/2 note", 3);
-        noteCombo.addItem ("1/8 note", 4);
-        noteCombo.addItem ("1/16 note", 5);
-        noteCombo.setTitle ("Delay note value");
-        noteCombo.setTooltip ("Note value for the tempo-synced delay time.");
-        noteCombo.onChange = [this]
-        {
-            static constexpr float divisions[] { 1.0f, 1.5f, 2.0f, 0.5f, 0.25f };
-            const int id = noteCombo.getSelectedId();
-            if (juce::isPositiveAndBelow (id - 1, (int) std::size (divisions)))
-            {
-                params[4] = divisions[id - 1];
-                push();
-            }
-        };
-        makeClickable (noteCombo);
-        addAndMakeVisible (noteCombo);
-    }
-
     rebuildFromChain();
-    setSize (340, type == omx::FxType::Delay ? 260 : 230);
+    setSize (340, 230);
 }
 
 void BuiltInFxPanel::rebuildFromChain()
 {
-    if (! chain.getBuiltInParams (slot, params, tempoSync))
+    bool unusedSync = false;
+    if (! chain.getBuiltInParams (slot, params, unusedSync))
         return;
 
     for (size_t i = 0; i < defs.size(); ++i)
@@ -560,32 +524,11 @@ void BuiltInFxPanel::rebuildFromChain()
         s->setValue (params[(size_t) defs[i].paramIndex] * defs[i].scale, juce::dontSendNotification);
         s->updateText();
     }
-
-    if (type == omx::FxType::Delay)
-    {
-        tempoButton.setToggleState (tempoSync, juce::dontSendNotification);
-        tempoButton.setTooltip (tempoSync ? juce::String ("Tempo sync on: the delay follows the tap tempo (")
-                                            + juce::String (engine.getBpm(), 0) + " BPM)."
-                                         : "Tempo sync off: the Time knob sets the delay directly.");
-        // With tempo sync on the time is computed from the BPM, not set by hand.
-        if (! sliders.empty())
-            sliders[0]->setEnabled (! tempoSync);
-
-        static constexpr float divisions[] { 1.0f, 1.5f, 2.0f, 0.5f, 0.25f };
-        int id = 1;
-        for (size_t i = 0; i < std::size (divisions); ++i)
-            if (std::abs (params[4] - divisions[i]) < 0.001f)
-                id = (int) i + 1;
-        noteCombo.setSelectedId (id, juce::dontSendNotification);
-        noteCombo.setEnabled (tempoSync);
-    }
 }
 
 void BuiltInFxPanel::push()
 {
-    if (tempoSync && type == omx::FxType::Delay)
-        params[5] = (float) engine.getBpm();
-    chain.setBuiltInParams (slot, params, tempoSync);
+    chain.setBuiltInParams (slot, params, false);
 }
 
 void BuiltInFxPanel::paint (juce::Graphics& g)
@@ -617,15 +560,6 @@ void BuiltInFxPanel::resized()
     auto top = r.removeFromTop (30);
     titleArea = top;
     r.removeFromTop (Theme::s2);
-
-    if (type == omx::FxType::Delay)
-    {
-        auto row = r.removeFromTop (30);
-        tempoButton.setBounds (row.removeFromLeft (120));
-        row.removeFromLeft (Theme::s2);
-        noteCombo.setBounds (row);
-        r.removeFromTop (Theme::s3);
-    }
 
     r.removeFromTop (16);   // knob labels
     auto row = r.removeFromTop (76);
@@ -671,7 +605,7 @@ GlobalFxPanel::GlobalFxPanel (MixerEngine& e, int fxIdx)
             { "Low-pass", 200, 20000, 1, 2000.0, " Hz", dly != nullptr ? dly->getFeedbackLowpassHz() : 8000.0,
               [this] (double v) { if (auto* d = engine.getFxDelay()) d->setFeedbackLowpassHz ((float) v); } }
         };
-        help = "Shared stereo delay fed by every strip's DLY send. Tempo sync follows the status bar BPM.";
+        help = "Shared stereo delay fed by every strip's DLY send.";
     }
     else
     {
@@ -721,75 +655,7 @@ GlobalFxPanel::GlobalFxPanel (MixerEngine& e, int fxIdx)
         sliders.push_back (std::move (slider));
     }
 
-    if (fxIndex == omx::kFxDelay)
-    {
-        makeLamp (tempoButton, "accent");
-        tempoButton.setTitle ("Delay follows the tap tempo");
-        tempoButton.onClick = [this]
-        {
-            if (auto* dly = engine.getFxDelay())
-            {
-                if (tempoButton.getToggleState())
-                {
-                    dly->setTempoBpm ((float) engine.getBpm());
-                    engine.applyBpmToDelays();
-                }
-                else
-                {
-                    dly->setTimeMs ((float) sliders[0]->getValue());
-                }
-            }
-            rebuildDelayControls();
-        };
-        addAndMakeVisible (tempoButton);
-
-        noteCombo.addItem ("1/4 note", 1);
-        noteCombo.addItem ("Dotted 1/4", 2);
-        noteCombo.addItem ("1/2 note", 3);
-        noteCombo.addItem ("1/8 note", 4);
-        noteCombo.addItem ("1/16 note", 5);
-        noteCombo.setTitle ("Delay note value");
-        noteCombo.onChange = [this]
-        {
-            static constexpr float divisions[] { 1.0f, 1.5f, 2.0f, 0.5f, 0.25f };
-            const int id = noteCombo.getSelectedId();
-            if (auto* dly = engine.getFxDelay(); dly != nullptr && juce::isPositiveAndBelow (id - 1, (int) std::size (divisions)))
-            {
-                dly->setNoteDivision (divisions[id - 1]);
-                dly->setTempoBpm ((float) engine.getBpm());
-                rebuildDelayControls();
-            }
-        };
-        makeClickable (noteCombo);
-        addAndMakeVisible (noteCombo);
-        rebuildDelayControls();
-    }
-
-    setSize (340, fxIndex == omx::kFxDelay ? 260 : 230);
-}
-
-void GlobalFxPanel::rebuildDelayControls()
-{
-    auto* dly = engine.getFxDelay();
-    if (dly == nullptr)
-        return;
-
-    const bool synced = dly->isTempoSynced();
-    tempoButton.setToggleState (synced, juce::dontSendNotification);
-    if (! sliders.empty())
-    {
-        sliders[0]->setValue (dly->getTimeMs(), juce::dontSendNotification);
-        sliders[0]->updateText();
-        sliders[0]->setEnabled (! synced);
-    }
-
-    static constexpr float divisions[] { 1.0f, 1.5f, 2.0f, 0.5f, 0.25f };
-    int id = 1;
-    for (size_t i = 0; i < std::size (divisions); ++i)
-        if (std::abs (dly->getNoteDivision() - divisions[i]) < 0.001f)
-            id = (int) i + 1;
-    noteCombo.setSelectedId (id, juce::dontSendNotification);
-    noteCombo.setEnabled (synced);
+    setSize (340, 230);
 }
 
 void GlobalFxPanel::paint (juce::Graphics& g)
@@ -820,15 +686,6 @@ void GlobalFxPanel::resized()
 
     titleArea = r.removeFromTop (30);
     r.removeFromTop (Theme::s2);
-
-    if (fxIndex == omx::kFxDelay)
-    {
-        auto row = r.removeFromTop (30);
-        tempoButton.setBounds (row.removeFromLeft (120));
-        row.removeFromLeft (Theme::s2);
-        noteCombo.setBounds (row);
-        r.removeFromTop (Theme::s3);
-    }
 
     r.removeFromTop (16);
     auto row = r.removeFromTop (76);

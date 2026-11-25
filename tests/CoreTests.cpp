@@ -5,7 +5,6 @@
 #include "engine/ClockBridge.h"
 #include "engine/CpuMeter.h"
 #include "engine/StripLogic.h"
-#include "engine/TapTempo.h"
 #include "dsp/DelayLine.h"
 #include "dsp/Dynamics.h"
 #include "dsp/Denoiser.h"
@@ -443,60 +442,6 @@ int main()
         CHECK (q.busOn[3] && q.sendDb[3] == -6.0f && q.sendPre[3], "send lost in copy");
         CHECK (q.numSlots == 2 && q.slots[0].identifier == "C:\\Plugins\\Comp.vst3" && q.slots[0].mix == 0.8f
                && q.slots[1].name == "Verb" && q.slots[1].bypass, "insert slots lost in copy");
-    });
-
-    run ("TapTempo: steady taps give the right BPM, clamped to 40..240", []
-    {
-        omx::TapTempo t;
-        CHECK (t.getBpm() == 120.0, "default BPM should be 120, got %f", t.getBpm());
-        CHECK (t.getTapCount() == 0, "no taps yet");
-
-        t.tapAt (10.0);
-        CHECK (t.getBpm() == 120.0, "one tap must not change the BPM");
-        CHECK (t.getTapCount() == 1, "tap count should be 1");
-
-        for (int i = 1; i <= 4; ++i)   // 0.5 s intervals -> 120 BPM
-            t.tapAt (10.0 + 0.5 * i);
-        CHECK (std::abs (t.getBpm() - 120.0) < 0.01, "0.5 s taps should be 120 BPM, got %f", t.getBpm());
-
-        omx::TapTempo fast;
-        fast.tapAt (0.0);
-        for (int i = 1; i <= 4; ++i)
-            fast.tapAt (0.25 * i);   // 0.25 s intervals -> 240 BPM (the clamp)
-        CHECK (std::abs (fast.getBpm() - 240.0) < 0.01, "0.25 s taps should be 240 BPM, got %f", fast.getBpm());
-
-        omx::TapTempo slow;
-        slow.tapAt (0.0);
-        for (int i = 1; i <= 4; ++i)
-            slow.tapAt (2.0 * i);   // 2 s intervals -> 30 BPM, clamped to 40
-        CHECK (std::abs (slow.getBpm() - 40.0) < 0.01, "2 s taps should clamp to 40 BPM, got %f", slow.getBpm());
-
-        // A pause over 2 s restarts the sequence: the old slow taps must not
-        // drag the new fast tempo down. The reset tap itself leaves the BPM
-        // alone; the next tap (0.5 s later) sets it to 120.
-        slow.tapAt (10.5);   // 2.5 s after the last tap: resets the history
-        CHECK (slow.getTapCount() == 1 && std::abs (slow.getBpm() - 40.0) < 0.01,
-               "the reset tap should start a fresh sequence without changing the BPM yet");
-        slow.tapAt (11.0);
-        CHECK (std::abs (slow.getBpm() - 120.0) < 0.01, "after a long pause the BPM should restart at 120, got %f", slow.getBpm());
-
-        // Duplicate / out-of-order timestamps are ignored, never fatal.
-        omx::TapTempo dup;
-        dup.tapAt (5.0);
-        dup.tapAt (5.0);
-        dup.tapAt (4.0);
-        CHECK (dup.getTapCount() == 1 && dup.getBpm() == 120.0, "duplicate taps changed the state");
-
-        // setBpm clamps and clears the tap history.
-        omx::TapTempo set;
-        set.tapAt (0.0); set.tapAt (0.5);
-        set.setBpm (300.0);
-        CHECK (set.getBpm() == 240.0 && set.getTapCount() == 0, "setBpm(300) should clamp to 240 and clear taps");
-        set.setBpm (10.0);
-        CHECK (set.getBpm() == 40.0, "setBpm(10) should clamp to 40");
-
-        CHECK (std::abs (omx::TapTempo::bpmFromInterval (0.5) - 120.0) < 0.01, "bpmFromInterval(0.5 s)");
-        CHECK (omx::TapTempo::bpmFromInterval (0.0) == 120.0, "zero interval should give the default");
     });
 
     run ("CpuMeter: EMA smoothing converges, bad samples are ignored", []

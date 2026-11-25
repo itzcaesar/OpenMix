@@ -5,7 +5,6 @@
 #include "engine/CpuMeter.h"
 #include "engine/ExternalIO.h"
 #include "engine/PluginScanner.h"
-#include "engine/TapTempo.h"
 #include "dsp/BuiltInFx.h"
 #include "dsp/Metering.h"
 #include "creator/Recorder.h"
@@ -136,21 +135,6 @@ public:
     int findNextFreeSlotInGroup (bool virtualGroup) const noexcept;
     static bool isVirtualBus (int bus) noexcept { return omx::isVirtualBusSlot (bus); }
 
-    // Tap tempo + BPM (message thread, except getBpm which is any thread).
-    // The BPM starts at 120, clamps to 40..240, and is shared by every
-    // tempo-synced BuiltInDelay: the global FX delay, and any delay insert
-    // on a strip or bus whose tempo sync is on (see applyBpmToDelays).
-    // tap() records a tap at the current time and returns the new BPM.
-    double getBpm() const noexcept { return tapTempo.getBpm(); }
-    void setBpm (double bpm);
-    double tap();
-    // Push the current BPM into the global FX delay and every tempo-synced
-    // delay insert in every strip/bus chain. Called by setBpm/tap and when
-    // the audio device starts; the UI agent should also call it after
-    // installing a delay insert, so a freshly added delay picks up the
-    // current BPM instead of its 120 default.
-    void applyBpmToDelays();
-
     // Global FX units for the sends (message thread for the getters; the
     // audio thread processes them). One unit per effect type, shared by all
     // strips: a strip's post-fader signal, scaled by its FX send level,
@@ -262,8 +246,7 @@ private:
     std::array<omx::Compressor, kNumBuses> busComp;
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;
 
-    // Tap tempo + CPU meter (see the public getters above).
-    omx::TapTempo tapTempo;
+    // CPU meter (see the public getters above).
     omx::CpuMeter cpuMeter;
     std::atomic<float> cpuUsagePercent { 0.0f };
 

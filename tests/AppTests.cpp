@@ -96,19 +96,34 @@ int main()
                "built-in params not restored by scene");
     });
 
-    run ("MixerEngine: global FX units always exist and applyBpmToDelays preserves sync state", []
+    run ("MixerEngine: global FX units always exist and delay time updates cleanly", []
     {
         MixerEngine engine;
         CHECK (engine.getFxReverb() != nullptr && engine.getFxDelay() != nullptr && engine.getFxChorus() != nullptr,
                "global FX units should be constructed with MixerEngine");
-        engine.setBpm (140.0);
-        CHECK (std::abs (engine.getFxDelay()->getTempoBpm() - 140.0f) < 0.01f, "global delay didn't follow BPM");
-
         engine.getFxDelay()->setTimeMs (333.0f);
         CHECK (! engine.getFxDelay()->isTempoSynced(), "setTimeMs should disable tempo sync");
-        engine.setBpm (100.0);
-        CHECK (std::abs (engine.getFxDelay()->getTimeMs() - 333.0f) < 0.01f,
-               "unsynced delay time was overwritten by setBpm");
+        CHECK (std::abs (engine.getFxDelay()->getTimeMs() - 333.0f) < 0.01f, "global delay time not set");
+    });
+
+    run ("VoicePadParams: each mode saves and restores its own circle position", []
+    {
+        VoicePadParams pad;
+        pad.setModeAndSync (VoicePadParams::Voice);
+        pad.setPosition (0.65f, 0.35f);
+
+        pad.setModeAndSync (VoicePadParams::Pan);
+        CHECK (std::abs (pad.x.load() - 0.0f) < 1e-5f && std::abs (pad.y.load() - (-1.0f)) < 1e-5f,
+               "switching to Pan carried over Voice position");
+        pad.setPosition (-0.45f, 0.25f);
+
+        pad.setModeAndSync (VoicePadParams::Voice);
+        CHECK (std::abs (pad.x.load() - 0.65f) < 1e-5f && std::abs (pad.y.load() - 0.35f) < 1e-5f,
+               "Voice position was not saved");
+
+        pad.setModeAndSync (VoicePadParams::Pan);
+        CHECK (std::abs (pad.x.load() - (-0.45f)) < 1e-5f && std::abs (pad.y.load() - 0.25f) < 1e-5f,
+               "Pan position was not saved");
     });
 
     run ("RemoteCommands: validation, displayName, and soundboardNames", []

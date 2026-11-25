@@ -103,9 +103,11 @@ namespace omx
         std::array<float, kPresetNumBuses> sendDb {};
         std::array<bool,  kPresetNumBuses> sendPre {};
 
-        // VoicePad (x = pan/tone, y, mode). Pan lives here, on the pad, as before.
+        // VoicePad (x = pan/tone, y, mode + per-mode saved coordinates).
         float padX = 0.0f, padY = -1.0f;
         int padMode = 0;   // VoicePadParams::Mode
+        std::array<float, 4> padModeX { 0.0f, 0.0f, 0.0f, 0.0f };
+        std::array<float, 4> padModeY { -1.0f, -1.0f, -1.0f, -1.0f };
 
         // Insert slots, packed (numSlots entries of `slots` are used).
         // A slot holds either a VST plugin (isBuiltIn false) or a built-in

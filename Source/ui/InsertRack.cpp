@@ -647,20 +647,6 @@ void InsertRack::addBuiltIn (int slot, omx::FxType type)
 
     chain.installBuiltIn (slot, PluginChain::makeBuiltInFx (type));
 
-    // A fresh delay follows the tap tempo from the start, instead of its 120 BPM
-    // default: tempo-sync it to the current BPM, then push the BPM everywhere.
-    if (type == omx::FxType::Delay)
-    {
-        std::array<float, 6> params {};
-        bool tempoSync = false;
-        if (chain.getBuiltInParams (slot, params, tempoSync))
-        {
-            params[5] = (float) engine.getBpm();
-            chain.setBuiltInParams (slot, params, true);
-        }
-        engine.applyBpmToDelays();
-    }
-
     updateRows();
     openBuiltInPanel (slot);
 }

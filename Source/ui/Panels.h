@@ -107,9 +107,7 @@ private:
 // Editor for a built-in insert (Reverb / Delay / Chorus) in a PluginChain slot.
 // Unlike PanelBase its parameters live on the effect object, not in atomics, so
 // it reads them with PluginChain::getBuiltInParams and writes them back with
-// setBuiltInParams. A delay's tempo-sync switch and note division live here;
-// when tempo sync is on, the time knob is disabled and the delay follows the
-// tap-tempo BPM (see MixerEngine::applyBpmToDelays).
+// setBuiltInParams.
 class BuiltInFxPanel : public juce::Component
 {
 public:
@@ -131,17 +129,13 @@ private:
     void push();   // write the sliders back into the chain
     void rebuildFromChain();
 
-    MixerEngine& engine;
     PluginChain& chain;
     int slot;
     omx::FxType type;
     std::array<float, 6> params {};
-    bool tempoSync = false;
 
     std::vector<KnobDef> defs;
     std::vector<std::unique_ptr<DbSlider>> sliders;
-    juce::TextButton tempoButton { "Tempo sync" };
-    juce::ComboBox noteCombo;
     juce::String title, help;
     juce::Rectangle<int> titleArea, helpArea;
 };
@@ -166,14 +160,10 @@ private:
         std::function<void (double)> onApply;
     };
 
-    void rebuildDelayControls();
-
     MixerEngine& engine;
     int fxIndex;
     std::vector<KnobDef> defs;
     std::vector<std::unique_ptr<DbSlider>> sliders;
-    juce::TextButton tempoButton { "Tempo sync" };
-    juce::ComboBox noteCombo;
     juce::String title, help;
     juce::Rectangle<int> titleArea, helpArea;
 };

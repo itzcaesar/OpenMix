@@ -33,10 +33,7 @@ MixerEngine::MixerEngine()
         if (auto* reverb = dynamic_cast<omx::BuiltInReverb*> (fxUnits[(size_t) fx].get()))
             reverb->setMix (1.0f);
         else if (auto* delay = dynamic_cast<omx::BuiltInDelay*> (fxUnits[(size_t) fx].get()))
-        {
             delay->setMix (1.0f);
-            delay->setTempoBpm ((float) tapTempo.getBpm());
-        }
         else if (auto* chorus = dynamic_cast<omx::BuiltInChorus*> (fxUnits[(size_t) fx].get()))
             chorus->setMix (1.0f);
     }
@@ -428,32 +425,6 @@ int MixerEngine::findNextFreeSlotInGroup (bool virtualGroup) const noexcept
     return -1;
 }
 
-void MixerEngine::setBpm (double bpm)
-{
-    tapTempo.setBpm (bpm);
-    applyBpmToDelays();
-}
-
-double MixerEngine::tap()
-{
-    const double bpm = tapTempo.tap();
-    applyBpmToDelays();
-    return bpm;
-}
-
-void MixerEngine::applyBpmToDelays()
-{
-    const float bpm = (float) tapTempo.getBpm();
-
-    if (auto* delay = getFxDelay(); delay != nullptr && delay->isTempoSynced())
-        delay->setTempoBpm (bpm);
-
-    for (auto& s : strips)
-        s->inserts.setDelayTempoBpm (bpm);
-    for (auto& b : buses)
-        b.inserts.setDelayTempoBpm (bpm);
-}
-
 omx::BuiltInFx* MixerEngine::getFxUnit (int fx) noexcept
 {
     return juce::isPositiveAndBelow (fx, omx::kNumFxSends) ? fxUnits[(size_t) fx].get() : nullptr;
@@ -762,7 +733,6 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         for (int b = 0; b < kNumBuses; ++b)
             fxBusTailSamples[fx][b] = 0;
     }
-    applyBpmToDelays();
 
     for (int b = 0; b < kNumBuses; ++b)
     {
