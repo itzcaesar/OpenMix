@@ -89,7 +89,23 @@ void HotkeysPanel::rebuild()
             hotkeys.setBindings (std::move (all));
             hotkeys.save();
             setNote ("Hotkey removed.");
-            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<HotkeysPanel> (this)] { if (safe != nullptr) safe->rebuild(); });
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<HotkeysPanel> (this), i]
+            {
+                if (safe == nullptr)
+                    return;
+                safe->rebuild();
+                if (! safe->isShowing())
+                    return;
+                if (! safe->rows.empty())
+                {
+                    const int nextIdx = juce::jmin (i, (int) safe->rows.size() - 1);
+                    safe->rows[(size_t) nextIdx]->remove.grabKeyboardFocus();
+                }
+                else
+                {
+                    safe->addButton.grabKeyboardFocus();
+                }
+            });
         };
         list.addAndMakeVisible (*row);
         rows.push_back (std::move (row));
@@ -191,8 +207,11 @@ void HotkeysPanel::paint (juce::Graphics& g)
                       "so pick combinations it doesn't use (for example with Ctrl+Alt).",
                       helpArea, juce::Justification::topLeft, 3);
 
+    const auto wellBounds = view.getBounds().toFloat().expanded (4.0f);
     g.setColour (t.well);
-    g.fillRoundedRectangle (view.getBounds().toFloat().expanded (4.0f), Theme::controlRadius);
+    g.fillRoundedRectangle (wellBounds, Theme::controlRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (wellBounds.reduced (0.5f), Theme::controlRadius, 1.0f);
 
     if (rows.empty())
     {

@@ -91,8 +91,10 @@ void OpenMixLookAndFeel::drawLamp (juce::Graphics& g, juce::Rectangle<float> are
     g.drawRoundedRectangle (area.reduced (0.5f), 1.5f, 1.0f);
 }
 
-juce::Font OpenMixLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
+juce::Font OpenMixLookAndFeel::getTextButtonFont (juce::TextButton& button, int buttonHeight)
 {
+    if (button.getProperties()["micro"])
+        return Theme::mono (10.5f);
     return Theme::ui (juce::jlimit (12.0f, 13.5f, (float) buttonHeight * 0.5f), true);
 }
 

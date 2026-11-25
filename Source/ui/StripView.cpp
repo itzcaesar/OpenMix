@@ -109,6 +109,7 @@ StripView::StripView (MixerEngine& e, int i)
     {
         auto& btn = fxEditButtons[(size_t) f];
         btn.setButtonText (fxShort[f]);
+        btn.getProperties().set ("micro", true);
         btn.setTitle (juce::String (fxNames[f]) + " settings");
         btn.setTooltip (juce::String ("Configure global ") + fxNames[f] + " settings.");
         btn.onClick = [this, f] { openGlobalFxPanel (f); };
@@ -699,30 +700,28 @@ void StripView::resized()
     dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
 
-    // The voice pad is a fixed height pinned to the bottom of the top section;
-    // the inserts take whatever is left in the middle (at least one row -- the
-    // list scrolls past that). The sends live in the fader bay, beside the
-    // fader, so the top section is shorter than it used to be.
+    // The voice pad and icon row sit at the bottom of the top section;
+    // the inserts take whatever is left in the middle (at least one row --
+    // the list scrolls past that, and expands up to all 6 slots on tall windows).
     const int padH = Theme::isCompact() ? 76 : 94;
     const int padSectionH = legendH + VoicePadComponent::headerHeight + padH;
     constexpr int iconH = 21;
 
+    iconRowArea = top.removeFromBottom (iconH);
+    top.removeFromBottom (gap);
+    auto padBlock = top.removeFromBottom (padSectionH);
+
     insertsLegend = top.removeFromTop (legendH);
-    const int insertsAvail = top.getHeight() - padSectionH - gap - iconH;
+    const int insertsAvail = top.getHeight() - gap;
     const int rackH = insertsAvail <= 0 ? 0
         : juce::jlimit (InsertRack::heightForRows (1), InsertRack::heightForRows (kNumSlots), insertsAvail);
     inserts.setBounds (rackH > 0 ? top.removeFromTop (rackH) : juce::Rectangle<int>());
-    dividerYs.push_back (top.getY());
-    top.removeFromTop (gap);
+    dividerYs.push_back (padBlock.getY() - gap);
 
     // VOICE PAD: mode buttons + a pad tall enough to read (94 px, 76 compact).
-    padLegend = top.removeFromTop (legendH);
-    pad.setBounds (top.removeFromTop (VoicePadComponent::headerHeight + padH));
-    dividerYs.push_back (top.getY());
-    top.removeFromTop (gap);
-
-    // Icon row, at the bottom of the top section just above the fader bay.
-    iconRowArea = top.removeFromTop (iconH);
+    padLegend = padBlock.removeFromTop (legendH);
+    pad.setBounds (padBlock);
+    dividerYs.push_back (iconRowArea.getY());
 
     // Fader bay: name bar along the bottom, Mute / Solo above it, and above
     // that the fader + meter with the sends beside it -- bus keys in a
@@ -740,8 +739,8 @@ void StripView::resized()
     }
     bay.removeFromBottom (gap);
 
-    const int sendsMin = Theme::isCompact() ? 64 : 80;
-    const int sendsW = juce::jlimit (sendsMin, 112, bay.getWidth() - FaderSection::preferredWidth - 6);
+    const int sendsMin = Theme::isCompact() ? 78 : 92;
+    const int sendsW = juce::jlimit (sendsMin, 118, bay.getWidth() - FaderSection::preferredWidth - 6);
     auto sends = bay.removeFromRight (sendsW);
     bay.removeFromRight (6);
     faderSection.setBounds (bay);
@@ -769,8 +768,8 @@ void StripView::resized()
     for (int f = 0; f < omx::kNumFxSends; ++f)
     {
         auto row = sends.removeFromTop (18);
-        fxEditButtons[(size_t) f].setBounds (row.removeFromLeft (32));
-        row.removeFromLeft (2);
+        fxEditButtons[(size_t) f].setBounds (row.removeFromLeft (34));
+        row.removeFromLeft (3);
         fxSendSliders[(size_t) f].setBounds (row);
         if (f + 1 < omx::kNumFxSends)
             sends.removeFromTop (2);

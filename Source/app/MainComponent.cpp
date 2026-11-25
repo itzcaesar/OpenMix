@@ -218,7 +218,7 @@ void ConsoleContent::resized()
     // top section (input, processing, inserts, voice pad) takes the rest, and the
     // console's minimum height guarantees the top section never squeezes at the
     // default window size -- shorter windows scroll instead.
-    const int bayHeight = juce::jlimit (230, 360, (int) (r.getHeight() * 0.34f));
+    const int bayHeight = juce::jlimit (220, 320, (int) (r.getHeight() * 0.33f));
     const int bayTop = r.getHeight() - bayHeight;
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -360,6 +360,15 @@ void StatusBar::paint (juce::Graphics& g)
     g.setColour (t.line);
     g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
     area.removeFromLeft (Theme::s3);
+
+    const int rightReserve = 76 + Theme::s1 + 56 + Theme::s3;
+    if (area.getWidth() > rightReserve + Theme::s3)
+    {
+        auto rightEdge = area.removeFromRight (rightReserve);
+        g.setColour (t.line);
+        g.fillRect (rightEdge.getX(), area.getCentreY() - 7, 1, 14);
+        area.removeFromRight (Theme::s3);
+    }
 
     const auto font = Theme::mono (12.0f);
     g.setFont (font);
@@ -1306,28 +1315,37 @@ void MainComponent::resized()
     constexpr int h = 28;
     header.removeFromLeft (120);
 
-    appSettingsButton.setBounds (header.removeFromRight (84).withSizeKeepingCentre (84, h));
+    const bool narrowHeader = getWidth() < 1140;
+    const int settingsW   = narrowHeader ? 72  : 84;
+    const int updateW     = narrowHeader ? 104 : 124;
+    const int soundboardW = narrowHeader ? 92  : 108;
+    const int replayW     = narrowHeader ? 88  : 104;
+    const int recordW     = narrowHeader ? 86  : 100;
+    const int sceneW      = narrowHeader ? 136 : 170;
+    const int divGap      = narrowHeader ? Theme::s2 : Theme::s3;
+
+    appSettingsButton.setBounds (header.removeFromRight (settingsW).withSizeKeepingCentre (settingsW, h));
     header.removeFromRight (Theme::s1);
     if (updateButton.isVisible())
     {
-        updateButton.setBounds (header.removeFromRight (124).withSizeKeepingCentre (124, h));
+        updateButton.setBounds (header.removeFromRight (updateW).withSizeKeepingCentre (updateW, h));
         header.removeFromRight (Theme::s1);
     }
-    soundboardButton.setBounds (header.removeFromRight (108).withSizeKeepingCentre (108, h));
+    soundboardButton.setBounds (header.removeFromRight (soundboardW).withSizeKeepingCentre (soundboardW, h));
 
-    header.removeFromRight (Theme::s3);
+    header.removeFromRight (divGap);
     transportDividerX = header.getRight();
-    header.removeFromRight (Theme::s3);
+    header.removeFromRight (divGap);
 
-    replayButton.setBounds (header.removeFromRight (104).withSizeKeepingCentre (104, h));
+    replayButton.setBounds (header.removeFromRight (replayW).withSizeKeepingCentre (replayW, h));
     header.removeFromRight (Theme::s1);
     recordMenuButton.setBounds (header.removeFromRight (h).withSizeKeepingCentre (h, h));
     header.removeFromRight (2);
-    recordButton.setBounds (header.removeFromRight (100).withSizeKeepingCentre (100, h));
-    header.removeFromRight (Theme::s4);
+    recordButton.setBounds (header.removeFromRight (recordW).withSizeKeepingCentre (recordW, h));
+    header.removeFromRight (narrowHeader ? Theme::s3 : Theme::s4);
 
-    sceneButton.setBounds (header.removeFromRight (170).withSizeKeepingCentre (170, h));
-    header.removeFromRight (Theme::s3);
+    sceneButton.setBounds (header.removeFromRight (sceneW).withSizeKeepingCentre (sceneW, h));
+    header.removeFromRight (divGap);
 
     // The readout takes what's left, up to a comfortable width.
     const int statusW = juce::jmin (header.getWidth(), 640);

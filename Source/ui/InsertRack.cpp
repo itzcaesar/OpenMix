@@ -187,7 +187,10 @@ void InsertRack::updateRows()
     }
 
     const int visible = getVisibleRowCount();
-    list->setSize (view.getMaximumVisibleWidth() > 0 ? view.getMaximumVisibleWidth() : getWidth(), heightForRows (visible));
+    const int listH = heightForRows (visible);
+    const bool needsScroll = listH > getHeight() && getHeight() > 0;
+    const int listW = juce::jmax (1, getWidth() - (needsScroll ? view.getScrollBarThickness() : 0));
+    list->setSize (listW, listH);
     list->layoutRows (visible);
 
     // The owner sizes the rack: tell it when the number of rows changed.

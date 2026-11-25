@@ -445,18 +445,23 @@ void BusView::paint (juce::Graphics& g)
         OpenMixLookAndFeel::drawLamp (g, la.removeFromLeft (10).withSizeKeepingCentre (8, 8).toFloat(), limiting, t.mute);
         la.removeFromLeft (5);
         g.setColour (limiting ? t.text : t.textFaint);
-        g.drawText (limiting ? "LIMITING" : "LIMIT", la.removeFromLeft (58), juce::Justification::centredLeft);
-        g.setFont (Theme::ui (10.0f));
-        g.setColour (t.textFaint);
-        g.drawText ("Safety limiter", la, juce::Justification::centredRight);
+        const auto limitText = limiting ? juce::String ("LIMITING") : juce::String ("LIMIT");
+        g.drawText (limitText, la.removeFromLeft (58), juce::Justification::centredLeft);
+        if (la.getWidth() >= 72)
+        {
+            g.setFont (Theme::ui (10.0f));
+            g.setColour (t.textFaint);
+            g.drawText ("Safety limiter", la, juce::Justification::centredRight);
+        }
 
         g.setFont (Theme::ui (9.0f, true));
         g.setColour (t.textFaint);
-        g.drawText ("GAIN REDUCTION", grHeadArea, juce::Justification::centredLeft);
+        g.drawText (grHeadArea.getWidth() < 130 ? "GR" : "GAIN REDUCTION",
+                    grHeadArea.withTrimmedRight (52), juce::Justification::centredLeft);
         g.setFont (Theme::mono (11.0f));
         g.setColour (limiterReductionDb > 0.05f ? t.text : t.textFaint);
         g.drawText (limiterReductionDb < 0.05f ? juce::String ("0.0 dB") : "-" + juce::String (limiterReductionDb, 1) + " dB",
-                    grHeadArea, juce::Justification::centredRight);
+                    grHeadArea.withTrimmedLeft (grHeadArea.getWidth() - 54), juce::Justification::centredRight);
 
         auto bar = grTrackArea.toFloat();
         g.setColour (t.meterWell);
@@ -473,10 +478,19 @@ void BusView::paint (juce::Graphics& g)
         g.setFont (Theme::mono (8.0f));
         g.setColour (t.textFaint);
         const int sw = grScaleArea.getWidth();
-        g.drawText ("0", grScaleArea.withWidth (sw / 4), juce::Justification::centredLeft);
-        g.drawText ("-3", grScaleArea.withTrimmedLeft (sw / 4).withWidth (sw / 4), juce::Justification::centred);
-        g.drawText ("-6", grScaleArea.withTrimmedLeft (sw / 2).withWidth (sw / 4), juce::Justification::centred);
-        g.drawText ("-12 dB", grScaleArea.withTrimmedLeft (3 * sw / 4), juce::Justification::centredRight);
+        if (sw < 140)
+        {
+            g.drawText ("0", grScaleArea.withWidth (24), juce::Justification::centredLeft);
+            g.drawText ("-6", grScaleArea, juce::Justification::centred);
+            g.drawText ("-12 dB", grScaleArea.withTrimmedLeft (sw - 42), juce::Justification::centredRight);
+        }
+        else
+        {
+            g.drawText ("0", grScaleArea.withWidth (sw / 4), juce::Justification::centredLeft);
+            g.drawText ("-3", grScaleArea.withTrimmedLeft (sw / 4).withWidth (sw / 4), juce::Justification::centred);
+            g.drawText ("-6", grScaleArea.withTrimmedLeft (sw / 2).withWidth (sw / 4), juce::Justification::centred);
+            g.drawText ("-12 dB", grScaleArea.withTrimmedLeft (3 * sw / 4), juce::Justification::centredRight);
+        }
     }
 
     // LOUDNESS: short-term LUFS (3 s), the number streaming platforms normalise to.
@@ -484,13 +498,16 @@ void BusView::paint (juce::Graphics& g)
     Theme::drawLegend (g, "Loudness", loudnessLegend);
     {
         const double st = analysis->loudness.shortTerm();
+        const bool narrow = loudnessValueArea.getWidth() < 155;
+        auto labelRect = loudnessValueArea.withWidth (narrow ? 28 : 62);
+        auto valRect = loudnessValueArea.withTrimmedLeft (labelRect.getWidth() + 4);
         g.setFont (Theme::ui (9.0f, true));
         g.setColour (t.textFaint);
-        g.drawText ("SHORT-TERM", loudnessValueArea, juce::Justification::centredLeft);
-        g.setFont (Theme::mono (15.0f));
+        g.drawText (narrow ? "ST" : "SHORT-TERM", labelRect, juce::Justification::centredLeft);
+        g.setFont (Theme::mono (narrow ? 13.0f : 15.0f));
         g.setColour (std::isfinite (st) ? t.text : t.textFaint);
         g.drawText (std::isfinite (st) ? juce::String (st, 1) + " LUFS" : juce::String ("no signal"),
-                    loudnessValueArea, juce::Justification::centredRight);
+                    valRect, juce::Justification::centredRight, true);
     }
 
     // Channel icon row, as on the strips.
@@ -571,51 +588,53 @@ void BusView::resized()
     dividerYs.push_back (top.getY());
     top.removeFromTop (gap);
 
-    // The analyser, limiter and loudness are fixed heights pinned to the bottom
-    // of the top section; the inserts take whatever is left in the middle.
-    constexpr int analyserH = legendH + 96;
+    // The analyser, limiter, loudness and icon row are fixed heights pinned to
+    // the bottom of the top section; the inserts expand to fill the middle.
+    constexpr int analyserH = legendH + 88;
     constexpr int limiterH = legendH + 18 + 12 + 12 + 10;
     constexpr int loudnessH = legendH + 22 + 5 + 28 + 5 + 16;
     constexpr int iconH = 21;
 
+    iconRowArea = top.removeFromBottom (iconH);
+    top.removeFromBottom (gap);
+
+    auto loudnessBlock = top.removeFromBottom (loudnessH);
+    top.removeFromBottom (gap);
+    auto limiterBlock = top.removeFromBottom (limiterH);
+    top.removeFromBottom (gap);
+    auto analyserBlock = top.removeFromBottom (analyserH);
+
     insertsLegend = top.removeFromTop (legendH);
-    const int insertsAvail = top.getHeight() - analyserH - gap - limiterH - gap - loudnessH - gap - iconH;
+    const int insertsAvail = top.getHeight() - gap;
     const int rackH = insertsAvail <= 0 ? 0
         : juce::jlimit (InsertRack::heightForRows (1), InsertRack::heightForRows (kNumSlots), insertsAvail);
     inserts.setBounds (rackH > 0 ? top.removeFromTop (rackH) : juce::Rectangle<int>());
-    dividerYs.push_back (top.getY());
-    top.removeFromTop (gap);
+    dividerYs.push_back (analyserBlock.getY() - gap);
 
     // ANALYSER: live spectrum only (no LUFS boxes here).
-    spectrumLegend = top.removeFromTop (legendH);
-    spectrum.setBounds (top.removeFromTop (96));
-    dividerYs.push_back (top.getY());
-    top.removeFromTop (gap);
+    spectrumLegend = analyserBlock.removeFromTop (legendH);
+    spectrum.setBounds (analyserBlock);
+    dividerYs.push_back (limiterBlock.getY() - gap);
 
     // LIMITER: lamp + state, gain-reduction head, track, scale.
-    limiterLegend = top.removeFromTop (legendH);
-    limiterArea = top.removeFromTop (18);
-    grHeadArea = top.removeFromTop (12);
-    grTrackArea = top.removeFromTop (12);
-    grScaleArea = top.removeFromTop (10);
+    limiterLegend = limiterBlock.removeFromTop (legendH);
+    limiterArea = limiterBlock.removeFromTop (18);
+    grHeadArea = limiterBlock.removeFromTop (12);
+    grTrackArea = limiterBlock.removeFromTop (12);
+    grScaleArea = limiterBlock.removeFromTop (10);
     limiterSectionArea = juce::Rectangle<int> (limiterLegend.getX(), limiterLegend.getY(),
                                                limiterLegend.getWidth(),
                                                grScaleArea.getBottom() - limiterLegend.getY());
-    dividerYs.push_back (top.getY());
-    top.removeFromTop (gap);
+    dividerYs.push_back (loudnessBlock.getY() - gap);
 
     // LOUDNESS: short-term value, normalisation select, gain being applied.
-    loudnessLegend = top.removeFromTop (legendH);
-    loudnessValueArea = top.removeFromTop (22);
-    top.removeFromTop (5);
-    normCombo.setBounds (top.removeFromTop (28));
-    top.removeFromTop (5);
-    normGainLabel.setBounds (top.removeFromTop (16));
-    dividerYs.push_back (top.getY());
-    top.removeFromTop (gap);
-
-    // Icon row, at the bottom of the top section just above the fader bay.
-    iconRowArea = top.removeFromTop (iconH);
+    loudnessLegend = loudnessBlock.removeFromTop (legendH);
+    loudnessValueArea = loudnessBlock.removeFromTop (22);
+    loudnessBlock.removeFromTop (5);
+    normCombo.setBounds (loudnessBlock.removeFromTop (28));
+    loudnessBlock.removeFromTop (5);
+    normGainLabel.setBounds (loudnessBlock.removeFromTop (16));
+    dividerYs.push_back (iconRowArea.getY());
 
     // Fader bay, aligned with the strips: name bar along the very bottom, mute
     // above it, fader + meter above that.

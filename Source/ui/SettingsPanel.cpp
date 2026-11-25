@@ -315,7 +315,9 @@ void SettingsPanel::updateMidiText()
         }
         AppSettings::get().setMidiMappings (MidiControl::mappingsToJson (maps));
     }
-    content.repaint (midiTextArea);
+    if (content.getWidth() > 0)
+        resized();
+    content.repaint();
 }
 
 SettingsPanel::AccentSwatch::AccentSwatch (juce::Colour c, std::function<void()> onClickFn)
@@ -380,6 +382,10 @@ void SettingsPanel::paintContent (juce::Graphics& g)
     Theme::drawLegend (g, "Network and logs", networkLegend);
     Theme::drawLegend (g, "About", aboutLegend);
 
+    g.setColour (t.line);
+    for (const auto* legend : { &themeLegend, &pluginsLegend, &networkLegend, &aboutLegend })
+        g.fillRect (legend->getX(), legend->getY() - Theme::s2, legend->getWidth(), 1);
+
     g.setFont (Theme::ui (13.0f));
     g.setColour (t.textDim);
     g.drawText ("Accent colour", accentLabelArea, juce::Justification::centredLeft);
@@ -398,7 +404,8 @@ void SettingsPanel::paintContent (juce::Graphics& g)
 
     g.setFont (Theme::ui (13.0f));
     g.setColour (t.textDim);
-    g.drawFittedText (midiText, midiTextArea, juce::Justification::topLeft, 4);
+    const int midiMaxLines = juce::jmax (4, juce::StringArray::fromLines (midiText).size());
+    g.drawFittedText (midiText, midiTextArea, juce::Justification::topLeft, midiMaxLines);
 
     g.drawFittedText ("OpenMix " + juce::JUCEApplication::getInstance()->getApplicationVersion()
                         + ". Licensed under the GNU AGPLv3. Built with JUCE (AGPLv3) and RNNoise (BSD).",
@@ -409,7 +416,9 @@ void SettingsPanel::resized()
 {
     viewport.setBounds (getLocalBounds());
     const int w = juce::jmax (500, viewport.getMaximumVisibleWidth());
-    content.setSize (w, 890);
+    const int midiLines = juce::jmax (4, midiControl != nullptr ? (int) midiControl->getMappings().size() : 4);
+    const int midiH = juce::jmax (64, midiLines * 18 + 8);
+    content.setSize (w, 890 + (midiH - 64));
     layoutContent();
 }
 
@@ -475,7 +484,8 @@ void SettingsPanel::layoutContent()
     midiLearnButton.setBounds (row.removeFromLeft (110));
     row.removeFromLeft (Theme::s2);
     midiClearButton.setBounds (row);
-    midiTextArea = r.removeFromTop (64);
+    const int midiLines = juce::jmax (4, midiControl != nullptr ? (int) midiControl->getMappings().size() : 4);
+    midiTextArea = r.removeFromTop (juce::jmax (64, midiLines * 18 + 8));
     logsButton.setBounds (r.removeFromTop (30).withWidth (190));
     r.removeFromTop (Theme::s4);
 

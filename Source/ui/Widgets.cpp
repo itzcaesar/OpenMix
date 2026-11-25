@@ -643,9 +643,9 @@ void PluginSlotRow::paint (juce::Graphics& g)
 
             g.setFont (Theme::mono (11.0f));
             g.setColour (t.textFaint);
-            if (latencyText.isNotEmpty() && ! faulted)
+            if (latencyText.isNotEmpty() && ! faulted && nameArea.getWidth() > 106)
                 g.drawText (latencyText, nameArea.removeFromRight (52.0f), juce::Justification::centredRight);
-            if (mixText.isNotEmpty() && ! faulted)
+            if (mixText.isNotEmpty() && ! faulted && nameArea.getWidth() > 86)
                 g.drawText (mixText, nameArea.removeFromRight (36.0f), juce::Justification::centredRight);
 
             g.setColour (faulted || bypassed ? t.textDim : t.text);
