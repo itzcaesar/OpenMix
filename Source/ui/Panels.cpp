@@ -2,6 +2,7 @@
 #include "ui/Theme.h"
 #include "dsp/Biquad.h"
 #include "dsp/Dynamics.h"
+#include "app/AppSettings.h"
 
 #include <array>
 #include <cmath>
@@ -1000,8 +1001,8 @@ namespace
             const float thr = fx.deessThresholdDb.load();
             const float maxCut = fx.deessMaxDb.load();
             const double sr = engine.getSampleRate() > 0.0 ? engine.getSampleRate() : 48000.0;
-            const float detectHz = DeEsser::clampDetectorHz (fx.deessFreqHz.load(), sr);
-            const float shelfHz = DeEsser::shelfFrequencyFor (detectHz);
+            const float detectHz = omx::DeEsser::clampDetectorHz (fx.deessFreqHz.load(), sr);
+            const float shelfHz = omx::DeEsser::shelfFrequencyFor (detectHz);
             const float liveCut = getGrDb ? std::min (maxCut, getGrDb()) : 0.0f;
 
             auto inner = drawVisualFrame (g, getLocalBounds(),
@@ -1172,8 +1173,8 @@ namespace
         juce::Point<float> maxPos() const noexcept
         {
             const double sr = engine.getSampleRate() > 0.0 ? engine.getSampleRate() : 48000.0;
-            const float detectHz = DeEsser::clampDetectorHz (fx.deessFreqHz.load(), sr);
-            return { freqToX (DeEsser::shelfFrequencyFor (detectHz), plot.getX(), plot.getWidth(), kFMin, kFMax),
+            const float detectHz = omx::DeEsser::clampDetectorHz (fx.deessFreqHz.load(), sr);
+            return { freqToX (omx::DeEsser::shelfFrequencyFor (detectHz), plot.getX(), plot.getWidth(), kFMin, kFMax),
                      dbToY (-fx.deessMaxDb.load(), plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
         }
 
@@ -1374,7 +1375,7 @@ namespace
             : fx (p), notifyEdit (std::move (onEdit))
         {
             makeClickable (*this);
-            setTooltip ("Shows live voice detection vs steady noise. Drag across the amount lane to set suppression.");
+            setTooltip ("Shows live activity estimate vs steady noise. Drag across the amount lane to set suppression.");
         }
 
         void pushSample()
@@ -1390,15 +1391,18 @@ namespace
         {
             const auto& t = Theme::p();
             const bool unavail = fx.denoiseUnavailable.load();
+            const bool loading = fx.denoiseLoading.load();
+            const bool deepFilter = fx.denoiseModel.load() == (int) omx::Denoiser::Model::DeepFilterNet;
             const bool active = fx.denoiseOn.load() && ! unavail;
             const int pct = juce::roundToInt (fx.denoiseAmount.load() * 100.0f);
             const int voicePct = juce::roundToInt (fx.voiceProbability.load() * 100.0f);
 
             auto inner = drawVisualFrame (g, getLocalBounds(),
                 {
-                    { "MODEL", unavail ? "ERR" : "RNNoise", ! unavail },
+                    { "MODEL", unavail ? (deepFilter ? "NO MODEL" : "ERR")
+                                        : loading ? "LOADING" : deepFilter ? "DFN3" : "RNNoise", ! unavail && ! loading },
                     { "AMT",   juce::String (pct) + "%", active },
-                    { "VOICE", active ? (juce::String (voicePct) + "%") : "--", active && voicePct >= 40 },
+                    { "ACT",   active ? (juce::String (voicePct) + "%") : "--", active && voicePct >= 40 },
                     { "LAT",   juce::String (fx.denoiseLatencyMs.load()) + " ms", false }
                 }, active);
 
@@ -1440,7 +1444,7 @@ namespace
             }
             g.setFont (Theme::ui (9.5f, true));
             g.setColour (t.textFaint);
-            g.drawText ("VOICE PROBABILITY HISTORY",
+            g.drawText ("VOICE ACTIVITY ESTIMATE",
                         juce::Rectangle<float> (plot.getX(), plot.getBottom() + 1.0f, plot.getWidth(), 11.0f),
                         juce::Justification::centredLeft);
 
@@ -1733,11 +1737,82 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             setVisual (std::make_unique<DenoiseVisual> (fx, onVisualEdit), 146);
             addKnob ({ "Amount", 0, 100, 1, " %", fx.denoiseAmount, 0.0, 100.0 });
             setMeter (nullptr, {});
-            setHelp (fx.denoiseUnavailable.load()
-                       ? "Noise removal couldn't start. Restart OpenMix and try again."
-                       : "Removes steady background noise from voice. Adds "
-                         + juce::String (fx.denoiseLatencyMs.load()) + " ms latency (other strips align automatically).");
-            height = 374;
+
+            denoiseModel.addItem ("RNNoise", (int) omx::Denoiser::Model::RNNoise + 1);
+            denoiseModel.addItem ("DeepFilterNet 3", (int) omx::Denoiser::Model::DeepFilterNet + 1);
+            denoiseModel.setSelectedId (juce::jlimit (0, 1, fx.denoiseModel.load()) + 1, juce::dontSendNotification);
+            denoiseModel.setTitle ("Noise removal model");
+            denoiseModel.setTooltip ("RNNoise is lightweight. DeepFilterNet 3 gives higher quality at higher CPU and latency.");
+            denoiseModel.onChange = [this]
+            {
+                fx.denoiseModel.store (denoiseModel.getSelectedId() - 1);
+                repaintVisual();
+                if (onChange) onChange();
+            };
+            makeClickable (denoiseModel);
+            addAndMakeVisible (denoiseModel);
+
+            getDeepFilterModelButton.setTooltip ("Open the official DeepFilterNet 3 model archive download.");
+            getDeepFilterModelButton.onClick = []
+            {
+                juce::URL ("https://raw.githubusercontent.com/Rikorose/DeepFilterNet/v0.5.6/models/DeepFilterNet3_onnx.tar.gz")
+                    .launchInDefaultBrowser();
+            };
+            addAndMakeVisible (getDeepFilterModelButton);
+
+            installDeepFilterModelButton.setTooltip ("Install a downloaded DeepFilterNet3_onnx.tar.gz model archive.");
+            installDeepFilterModelButton.onClick = [this]
+            {
+                deepFilterModelChooser = std::make_unique<juce::FileChooser> (
+                    "Select the official DeepFilterNet 3 model archive", juce::File(), "*.tar.gz");
+                juce::Component::SafePointer<ProcessorPanel> safe (this);
+                deepFilterModelChooser->launchAsync (
+                    juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                    [safe] (const juce::FileChooser& chooser)
+                    {
+                        if (safe == nullptr || chooser.getResult() == juce::File())
+                            return;
+
+                        const auto source = chooser.getResult();
+                        if (source.getSize() < 1024 * 1024)
+                        {
+                            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                "Model file is too small", "Choose the official DeepFilterNet3_onnx.tar.gz archive.");
+                            return;
+                        }
+
+                        const auto modelFolder = AppSettings::getLogFolder().getChildFile ("Models");
+                        modelFolder.createDirectory();
+                        const auto modelFile = modelFolder.getChildFile ("DeepFilterNet3_onnx.tar.gz");
+                        const auto temporary = modelFolder.getChildFile ("DeepFilterNet3_onnx.tar.gz.installing");
+                        temporary.deleteFile();
+                        if (! source.copyFileTo (temporary))
+                        {
+                            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                "Model not installed", "OpenMix couldn't copy the model archive.");
+                            return;
+                        }
+
+                        modelFile.deleteFile();
+                        if (! temporary.moveFileTo (modelFile))
+                        {
+                            temporary.deleteFile();
+                            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                "Model not installed", "OpenMix couldn't install the model archive.");
+                            return;
+                        }
+
+                        omx::Denoiser::refreshDeepFilterNetAvailability();
+                        safe->repaintVisual();
+                        safe->setHelp ("DeepFilterNet 3 model installed. Select DeepFilterNet 3 above; it loads on a worker thread.");
+                        if (safe->onChange) safe->onChange();
+                    });
+            };
+            addAndMakeVisible (installDeepFilterModelButton);
+
+            setHelp ("RNNoise is lightweight. DeepFilterNet 3 gives higher quality with more CPU and about 100 ms latency. "
+                     "Download the official model archive, then choose Install. Amount blends processed audio with delayed dry audio.");
+            height = 410;
             break;
 
         case Processor::Gate:
@@ -2016,6 +2091,19 @@ void ProcessorPanel::syncFromVisual()
 
 void ProcessorPanel::layoutExtra (juce::Rectangle<int>& r)
 {
+    if (kind == Processor::Denoise)
+    {
+        auto row = r.removeFromTop (30);
+        row.removeFromLeft (46);
+        denoiseModel.setBounds (row.removeFromLeft (128));
+        row.removeFromLeft (4);
+        getDeepFilterModelButton.setBounds (row.removeFromLeft (78));
+        row.removeFromLeft (4);
+        installDeepFilterModelButton.setBounds (row.removeFromLeft (78));
+        r.removeFromTop (Theme::s3);
+        return;
+    }
+
     if (kind == Processor::Duck)
     {
         auto row = r.removeFromTop (30);

@@ -9,7 +9,7 @@ them up, and send a separate mix to your headphones, the stream and the call.
 - **Inputs:** up to 8 strips. Each takes a channel or stereo pair of the main device
   (ASIO, WASAPI or DirectSound), any other Windows input, one app's audio, or a loopback of
   a Windows output device.
-- **Voice processing built in:** RNNoise noise removal, gate, high- and low-pass filters,
+- **Voice processing built in:** RNNoise and DeepFilterNet 3 noise removal, gate, high- and low-pass filters,
   8-band EQ, compressor, de-esser and ducking on every strip, plus a voice pad (XY pad with
   voice, pan, colour and space modes).
 - **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning, bypass without
@@ -43,7 +43,8 @@ Full user guide: [OpenMix wiki](https://itzcaesar.github.io/OpenMix/docs/).
 ## Build it yourself
 
 Requirements: Windows 10 2004 or later, Visual Studio 2026 with the **Desktop development
-with C++** workload (it includes CMake). Clone with submodules (JUCE and RNNoise):
+with C++** workload (it includes CMake), and the stable Rust toolchain (Cargo builds the
+DeepFilterNet runtime). Clone with submodules (JUCE and RNNoise):
 
 ```powershell
 git clone --recursive https://github.com/itzcaesar/OpenMix.git
@@ -123,9 +124,11 @@ PROCESSING, INSERT, SENDS, the **Voice pad** button, then the fader bay.
      feed the sound back into itself.
 2. **Processing** keys in two columns, amber when on. Click for settings, Space switches
    on or off.
-   - **NR** noise removal: fans, hum and keyboard noise. Adds 20 ms at 48 kHz (RNNoise's own
-     rate); at other rates it resamples to 48 kHz and back, about 1 ms more. Other strips are
-     delayed to match.
+   - **NR** noise removal: choose lightweight RNNoise or higher-quality DeepFilterNet 3.
+     DeepFilterNet adds about 100 ms at 48 kHz and uses more CPU; other strips are delayed to
+     match. Its model weights are not bundled. Use **Get model** in the NR panel, then
+     **Install...** to select the downloaded `DeepFilterNet3_onnx.tar.gz` archive. The model
+     is stored in `%APPDATA%\OpenMix\Models` and the choice is saved per strip.
    - **Gate** turns the strip down while it's quiet. **EQ**: 8 bands (a low shelf, six bells
      with gain, frequency and width, a high shelf) plus the HPF and LPF. **Comp** evens out loud and quiet parts. **DS** softens
      harsh S sounds. **Duck** lowers this strip while another strip has signal (music under
@@ -438,7 +441,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 | `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `RemoteCommands` (one remote language for OSC, WebSocket and MIDI), `RemoteServer` (phone page, HTTP and WebSocket API), `MidiControl` (learnable MIDI mappings), `UpdateChecker` |
 | `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `CpuMeter` |
 | `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
-| `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, K-weighted loudness normaliser); plus `Denoiser` (RNNoise at any sample rate) |
+| `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, K-weighted loudness normaliser); plus `Denoiser` (RNNoise at any sample rate and DeepFilterNet 3 on a worker thread) |
 | `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send, wet/dry and global FX pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |
 | `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |
 | `tests/` | `CoreTests.cpp` (DSP, no JUCE), `AppTests.cpp` (engine, remote, MIDI), run via `ctest` |
@@ -474,4 +477,6 @@ runs the tests, and attaches the zip and `OpenMix-<version>-setup.exe` to a GitH
 
 OpenMix is licensed under the GNU AGPLv3 (see `LICENSE`). It's built on JUCE, used here
 under its AGPLv3 option, and includes RNNoise v0.1.1 (BSD-3-Clause, see
-`Source/third_party/rnnoise/COPYING`).
+`Source/third_party/rnnoise/COPYING`) and DeepFilterNet `libDF` v0.5.6 (MIT or Apache-2.0,
+see `external/DeepFilterNet/LICENSE-MIT` and `LICENSE-APACHE`). DeepFilterNet model weights
+are downloaded separately by the user and are not included in OpenMix releases.

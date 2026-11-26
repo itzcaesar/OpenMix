@@ -90,6 +90,9 @@ private:
     int stripIndex;
     juce::ComboBox duckSource;
     juce::Label duckLabel;
+    juce::ComboBox denoiseModel;
+    juce::TextButton getDeepFilterModelButton { "Get model" }, installDeepFilterModelButton { "Install..." };
+    std::unique_ptr<juce::FileChooser> deepFilterModelChooser;
 
     // EQ: one key per band selects it; three knobs edit the selected band.
     void selectEqBand (int band);

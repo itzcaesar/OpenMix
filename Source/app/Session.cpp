@@ -60,6 +60,7 @@ static void saveProcessing (juce::XmlElement& x, const ProcessingParams& fx)
     auto* e = x.createNewChildElement ("Processing");
     e->setAttribute ("denoiseOn", fx.denoiseOn.load());
     e->setAttribute ("denoiseAmount", fx.denoiseAmount.load());
+    e->setAttribute ("denoiseModel", fx.denoiseModel.load());
     e->setAttribute ("gateOn", fx.gateOn.load());
     e->setAttribute ("gateThreshold", fx.gateThresholdDb.load());
     e->setAttribute ("gateRange", fx.gateRangeDb.load());
@@ -120,6 +121,7 @@ static void loadProcessing (const juce::XmlElement* e, ProcessingParams& fx)
     auto f = [e] (const char* name, double def) { return (float) e->getDoubleAttribute (name, def); };
     fx.denoiseOn.store (e->getBoolAttribute ("denoiseOn"));
     fx.denoiseAmount.store (f ("denoiseAmount", 1.0));
+    fx.denoiseModel.store (juce::jlimit (0, 1, e->getIntAttribute ("denoiseModel", 0)));
     fx.gateOn.store (e->getBoolAttribute ("gateOn"));
     fx.gateThresholdDb.store (f ("gateThreshold", -50.0));
     fx.gateRangeDb.store (f ("gateRange", -40.0));
@@ -276,6 +278,7 @@ static void saveStripPresetXml (juce::XmlElement& parent, const juce::String& na
     auto* fx = e->createNewChildElement ("Processing");
     fx->setAttribute ("denoiseOn", p.denoiseOn);
     fx->setAttribute ("denoiseAmount", p.denoiseAmount);
+    fx->setAttribute ("denoiseModel", p.denoiseModel);
     fx->setAttribute ("gateOn", p.gateOn);
     fx->setAttribute ("gateThreshold", p.gateThresholdDb);
     fx->setAttribute ("gateRange", p.gateRangeDb);
@@ -357,6 +360,7 @@ static bool loadStripPresetXml (const juce::XmlElement& e, juce::String& name, o
     {
         p.denoiseOn = fx->getBoolAttribute ("denoiseOn");
         p.denoiseAmount = (float) fx->getDoubleAttribute ("denoiseAmount", 1.0);
+        p.denoiseModel = juce::jlimit (0, 1, fx->getIntAttribute ("denoiseModel", 0));
         p.gateOn = fx->getBoolAttribute ("gateOn");
         p.gateThresholdDb = (float) fx->getDoubleAttribute ("gateThreshold", -50.0);
         p.gateRangeDb = (float) fx->getDoubleAttribute ("gateRange", -40.0);

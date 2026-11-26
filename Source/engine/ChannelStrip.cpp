@@ -15,8 +15,10 @@ void ChannelStrip::prepare (double newSampleRate, int maxBlockSize)
     denoiser.prepare (sampleRate);
     rmsMeterL.prepare (sampleRate);
     rmsMeterR.prepare (sampleRate);
-    fx.denoiseUnavailable.store (! denoiser.isAvailable());
-    fx.denoiseLatencyMs.store ((int) std::lround (1000.0 * denoiser.getLatency() / sampleRate));
+    const auto denoiseModel = (omx::Denoiser::Model) juce::jlimit (0, 1, fx.denoiseModel.load());
+    fx.denoiseUnavailable.store (! denoiser.isAvailable (denoiseModel));
+    fx.denoiseLoading.store (false);
+    fx.denoiseLatencyMs.store ((int) std::lround (1000.0 * denoiser.getLatency (denoiseModel) / sampleRate));
     gate.prepare (sampleRate);
     hpf.reset(); lpf.reset();
     lastHpfHz = -1.0f; lastLpfHz = -1.0f;
@@ -81,7 +83,7 @@ void ChannelStrip::resetToDefaults()
     pad.y.store (-1.0f);
     pad.mode.store (VoicePadParams::Voice);
 
-    fx.denoiseOn.store (false);  fx.denoiseAmount.store (1.0f);
+    fx.denoiseOn.store (false);  fx.denoiseAmount.store (1.0f); fx.denoiseModel.store (0);
     fx.gateOn.store (false);     fx.gateThresholdDb.store (-50.0f); fx.gateRangeDb.store (-40.0f);
     fx.gateAttackMs.store (1.0f); fx.gateHoldMs.store (80.0f); fx.gateReleaseMs.store (120.0f);
     fx.hpfOn.store (false);      fx.hpfHz.store (80.0f);
@@ -109,6 +111,7 @@ omx::StripPreset ChannelStrip::savePreset() const
     p.soloSafe = soloSafe.load();
 
     p.denoiseOn = fx.denoiseOn.load();       p.denoiseAmount = fx.denoiseAmount.load();
+    p.denoiseModel = fx.denoiseModel.load();
     p.gateOn = fx.gateOn.load();             p.gateThresholdDb = fx.gateThresholdDb.load(); p.gateRangeDb = fx.gateRangeDb.load();
     p.gateAttackMs = fx.gateAttackMs.load(); p.gateHoldMs = fx.gateHoldMs.load(); p.gateReleaseMs = fx.gateReleaseMs.load();
     p.hpfOn = fx.hpfOn.load();               p.hpfHz = fx.hpfHz.load();
@@ -166,6 +169,7 @@ int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormat
     soloSafe.store (p.soloSafe);
 
     fx.denoiseOn.store (p.denoiseOn);       fx.denoiseAmount.store (juce::jlimit (0.0f, 1.0f, p.denoiseAmount));
+    fx.denoiseModel.store (juce::jlimit (0, 1, p.denoiseModel));
     fx.gateOn.store (p.gateOn);             fx.gateThresholdDb.store (p.gateThresholdDb); fx.gateRangeDb.store (p.gateRangeDb);
     fx.gateAttackMs.store (juce::jlimit (0.1f, 100.0f, p.gateAttackMs));
     fx.gateHoldMs.store (juce::jlimit (0.0f, 500.0f, p.gateHoldMs));
@@ -301,17 +305,26 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
     // 2. Built-in processing
     int latency = 0;
 
-    const bool denoiseOn = fx.denoiseOn.load() && denoiser.isAvailable();
-    if (denoiseOn != denoiseWasOn)
+    const auto denoiseModel = (omx::Denoiser::Model) juce::jlimit (0, 1, fx.denoiseModel.load());
+    const bool denoiseAvailable = denoiser.isAvailable (denoiseModel);
+    fx.denoiseUnavailable.store (! denoiseAvailable);
+    fx.denoiseLatencyMs.store ((int) std::lround (1000.0 * denoiser.getLatency (denoiseModel) / sampleRate));
+    const bool denoiseOn = fx.denoiseOn.load() && denoiseAvailable;
+    if (denoiseOn != denoiseWasOn || denoiseModel != denoiseWasModel)
     {
         denoiser.reset();
         denoiseWasOn = denoiseOn;
+        denoiseWasModel = denoiseModel;
     }
     if (denoiseOn)
     {
-        fx.voiceProbability.store (denoiser.process (L, R, numSamples, fx.denoiseAmount.load(), monoSource || mono.load()));
-        latency += denoiser.getLatency();
+        fx.voiceProbability.store (denoiser.process (L, R, numSamples, fx.denoiseAmount.load(),
+                                                    monoSource || mono.load(), denoiseModel));
+        fx.denoiseLoading.store (denoiseModel == omx::Denoiser::Model::DeepFilterNet && ! denoiser.isDeepFilterNetReady());
+        latency += denoiser.getLatency (denoiseModel);
     }
+    else
+        fx.denoiseLoading.store (false);
 
     if (fx.gateOn.load())
     {

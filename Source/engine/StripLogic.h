@@ -65,7 +65,7 @@ namespace omx
         bool mono = false, invertPolarity = false, soloSafe = false;
 
         // Built-in processing (mirrors ProcessingParams; HPF/LPF included).
-        bool denoiseOn = false;   float denoiseAmount = 1.0f;
+        bool denoiseOn = false;   float denoiseAmount = 1.0f; int denoiseModel = 0;
         bool gateOn = false;      float gateThresholdDb = -50.0f, gateRangeDb = -40.0f;
         float gateAttackMs = 1.0f, gateHoldMs = 80.0f, gateReleaseMs = 120.0f;
         bool eqOn = false;

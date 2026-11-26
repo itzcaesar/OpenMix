@@ -37,6 +37,7 @@ struct ProcessingParams
 {
     std::atomic<bool>  denoiseOn { false };
     std::atomic<float> denoiseAmount { 1.0f };      // 0..1
+    std::atomic<int>   denoiseModel { 0 };           // omx::Denoiser::Model
 
     std::atomic<bool>  gateOn { false };
     std::atomic<float> gateThresholdDb { -50.0f };
@@ -88,7 +89,8 @@ struct ProcessingParams
     // Meters for the UI: lowest gain since the UI last read it (1 = nothing happening).
     std::atomic<float> gateGain { 1.0f }, compGain { 1.0f }, deessGain { 1.0f }, duckGain { 1.0f };
     std::atomic<float> voiceProbability { 0.0f };
-    std::atomic<bool>  denoiseUnavailable { false }; // RNNoise couldn't start
+    std::atomic<bool>  denoiseUnavailable { false }; // selected denoiser or model isn't available
+    std::atomic<bool>  denoiseLoading { false };
     std::atomic<int>   denoiseLatencyMs { 20 };      // for the panel text
 };
 
@@ -217,6 +219,7 @@ private:
     omx::Compressor comp;
     omx::DeEsser deesser;
     bool denoiseWasOn = false;
+    omx::Denoiser::Model denoiseWasModel = omx::Denoiser::Model::RNNoise;
 
     DelayLine alignLine;                            // strip-level latency alignment
     juce::SmoothedValue<float> inGain, muteGain, faderGain, duckGain;

@@ -16,6 +16,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # CI keeps this OFF, so the default build needs no SDK.
 # Checked here, before JUCE is fetched, so a missing SDK fails fast.
 option(OPENMIX_ENABLE_VST2 "Enable VST2 plugin hosting (requires a licensed VST2 SDK supplied via VST2_SDK_DIR)" OFF)
+option(OPENMIX_ENABLE_DEEPFILTERNET "Build the DeepFilterNet 3 high-quality denoiser runtime (requires Cargo)" ON)
 set(VST2_SDK_DIR "" CACHE PATH "Path to a licensed VST2 SDK (folder containing pluginterfaces/vst2.x/aeffect.h)")
 if(OPENMIX_ENABLE_VST2)
     if(NOT VST2_SDK_DIR OR NOT EXISTS "${VST2_SDK_DIR}/pluginterfaces/vst2.x/aeffect.h")
@@ -24,6 +25,32 @@ if(OPENMIX_ENABLE_VST2)
     set(OPENMIX_VST2_HOST 1)
 else()
     set(OPENMIX_VST2_HOST 0)
+endif()
+
+# DeepFilterNet's Rust C-API is built as a small runtime DLL. Its model weights are
+# intentionally kept out of the app and repository; users install the official model file.
+if(OPENMIX_ENABLE_DEEPFILTERNET)
+    find_program(OPENMIX_CARGO_EXECUTABLE cargo HINTS "$ENV{USERPROFILE}/.cargo/bin")
+    if(NOT OPENMIX_CARGO_EXECUTABLE)
+        message(FATAL_ERROR "OPENMIX_ENABLE_DEEPFILTERNET=ON requires Rust Cargo. Install Rust from https://rust-lang.org/install or configure with -DOPENMIX_ENABLE_DEEPFILTERNET=OFF.")
+    endif()
+
+    set(OPENMIX_DF_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/external/DeepFilterNet/libDF/Cargo.toml")
+    set(OPENMIX_DF_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/DeepFilterNet")
+    set(OPENMIX_DF_LIBRARY "${OPENMIX_DF_TARGET_DIR}/release/df.dll")
+    file(GLOB_RECURSE OPENMIX_DF_RUST_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/DeepFilterNet/libDF/src/*.rs")
+    add_custom_command(OUTPUT "${OPENMIX_DF_LIBRARY}"
+        COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${OPENMIX_DF_TARGET_DIR}"
+            "${OPENMIX_CARGO_EXECUTABLE}" build --locked --release --no-default-features --features capi
+            --manifest-path "${OPENMIX_DF_MANIFEST}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external/DeepFilterNet/libDF"
+        DEPENDS "${OPENMIX_DF_MANIFEST}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/external/DeepFilterNet/libDF/Cargo.lock"
+            ${OPENMIX_DF_RUST_SOURCES}
+        COMMENT "Building DeepFilterNet 3 runtime"
+        VERBATIM)
+    add_custom_target(OpenMixDeepFilterNetRuntime ALL DEPENDS "${OPENMIX_DF_LIBRARY}")
 endif()
 
 # JUCE lives in external/JUCE (pinned to 9.0.5). If it's missing, fetch it.
@@ -61,6 +88,13 @@ juce_add_gui_app(OpenMix
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon.png"   # drawn by resources/make_icon.py
     NEEDS_WEB_BROWSER FALSE
     NEEDS_CURL FALSE)
+
+if(OPENMIX_ENABLE_DEEPFILTERNET)
+    add_dependencies(OpenMix OpenMixDeepFilterNetRuntime)
+    add_custom_command(TARGET OpenMix POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${OPENMIX_DF_LIBRARY}" "$<TARGET_FILE_DIR:OpenMix>/df.dll"
+        VERBATIM)
+endif()
 
 juce_generate_juce_header(OpenMix)
 
@@ -113,6 +147,7 @@ if(OPENMIX_ENABLE_VST2)
 endif()
 
 target_compile_definitions(OpenMix PRIVATE
+    OPENMIX_DEEPFILTERNET_ENABLED=$<BOOL:${OPENMIX_ENABLE_DEEPFILTERNET}>
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_ASIO=1                 # uses JUCE's bundled ASIO headers
@@ -134,6 +169,7 @@ if(OPENMIX_BUILD_TESTS)
     enable_testing()
     add_executable(OpenMixCoreTests tests/CoreTests.cpp Source/dsp/Denoiser.cpp)
     target_include_directories(OpenMixCoreTests PRIVATE Source)
+    target_compile_definitions(OpenMixCoreTests PRIVATE OPENMIX_DEEPFILTERNET_ENABLED=$<BOOL:${OPENMIX_ENABLE_DEEPFILTERNET}>)
     target_compile_options(OpenMixCoreTests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
     target_link_libraries(OpenMixCoreTests PRIVATE rnnoise)
     add_test(NAME OpenMixCoreTests COMMAND OpenMixCoreTests)
@@ -162,6 +198,7 @@ if(OPENMIX_BUILD_TESTS)
     target_compile_options(OpenMixAppTests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
     add_dependencies(OpenMixAppTests OpenMix)
     target_compile_definitions(OpenMixAppTests PRIVATE
+        OPENMIX_DEEPFILTERNET_ENABLED=$<BOOL:${OPENMIX_ENABLE_DEEPFILTERNET}>
         JUCE_MODAL_LOOPS_PERMITTED=1   # tests run the message loop to deliver async callbacks
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0

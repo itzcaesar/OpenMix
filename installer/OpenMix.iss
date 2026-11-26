@@ -37,8 +37,11 @@ Name: "startup"; Description: "Start OpenMix when Windows starts (in the tray)";
 
 [Files]
 Source: "{#SourceDir}\OpenMix.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\df.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
+Source: "{#SourceDir}\DeepFilterNet\LICENSE-MIT"; DestDir: "{app}\licenses\DeepFilterNet"; Flags: ignoreversion
+Source: "{#SourceDir}\DeepFilterNet\LICENSE-APACHE"; DestDir: "{app}\licenses\DeepFilterNet"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\OpenMix"; Filename: "{app}\OpenMix.exe"

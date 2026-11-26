@@ -18,7 +18,7 @@ stands:
 | Strips and buses added and removed at runtime (up to 8 and 6) instead of fixed layouts | 3 | Done |
 | VST3 chains on every strip **and** every bus, drag to reorder, wet/dry, per-slot bypass | 1, 5 | Done |
 | Crash-safe plugin scanning: one bad plugin doesn't kill your audio | 5 | Done (loading probe done; full audio sandbox open) |
-| Built-in neural-network denoise, no plugin needed | 4 | RNNoise done, DeepFilterNet open |
+| Built-in neural-network denoise, no plugin needed | 4 | RNNoise and DeepFilterNet 3 done |
 | Built-in pitch correction and voice changer (formant shift, robot, radio) | 4 | Open |
 | **Per-app routing**: Spotify, a game or Discord on its own strip without changing the Windows default device | 3 | Done |
 | Capture what any output device plays, no virtual cable | 3 | Done |
@@ -103,7 +103,7 @@ Built-in so the basics work without third-party plugins:
 - [x] RMS alongside peak on the meters (solid bar inside the peak ladder, on strips, buses and the soundboard)
 - [x] Loudness normalisation per bus: slow gain towards -14 / -16 / -23 LUFS, clamped to +/-12 dB, saved with the session and scenes
 - [x] Built-in neural-network denoise: RNNoise (light, 10 ms frames, any sample rate)
-- [ ] DeepFilterNet as a "high quality" option (more CPU, adds latency)
+- [x] DeepFilterNet 3 as a "high quality" option (more CPU, adds latency; external model archive)
 - [ ] Built-in pitch correction (YIN/McLeod pitch detection + PSOLA shift, key/scale, speed)
       and voice changer presets (formant shift, robot, radio, megaphone)
 - [x] Replay buffer: keep the last 30-120 s of one bus in RAM, save on Ctrl+Shift+S

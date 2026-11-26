@@ -21,6 +21,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Configure
         # No preset here: let CMake pick whichever Visual Studio the runner has.
         run: cmake -S . -B build -A x64
@@ -36,7 +41,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item build/OpenMix_artefacts/Release/OpenMix.exe dist/
+          Copy-Item build/OpenMix_artefacts/Release/df.dll dist/
           Copy-Item README.md, LICENSE dist/
+          New-Item -ItemType Directory -Force dist/DeepFilterNet | Out-Null
+          Copy-Item external/DeepFilterNet/LICENSE-MIT, external/DeepFilterNet/LICENSE-APACHE dist/DeepFilterNet/
           Compress-Archive -Path dist/* -DestinationPath OpenMix-windows-x64.zip -Force
 
       - name: Upload artifact
