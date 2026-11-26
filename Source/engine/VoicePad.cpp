@@ -41,14 +41,13 @@ void VoicePadProcessor::updateFilters (float x, float y01) noexcept
         return;
 
     lastX = x; lastY = y01;
-    // Sweep between bass, mid-forward, and treble voice colors.
-    const float lowGain  = x < 0.0f ? 5.0f * (1.0f + x) : -3.0f * x;
-    const float midGain  = 2.5f * (1.0f - std::abs (x));
-    const float highGain = x < 0.0f ? 3.0f * x : 5.0f * x;
-    lowShelf.setLowShelf   (fs, 180.0, lowGain);
-    midPeak.setPeak        (fs, 900.0, 0.8, midGain);
-    highShelf.setHighShelf (fs, 4200.0, highGain);
-    presence.setPeak       (fs, 5000.0, 0.9, 0.0);
+    // Deep is warm and full, with a low-mid cut to keep speech clear; centre is natural.
+    const float deep = juce::jmax (0.0f, -x);
+    const float clear = juce::jmax (0.0f, x);
+    lowShelf.setLowShelf   (fs, 120.0, 3.5f * deep - clear);
+    midPeak.setPeak        (fs, 250.0, 0.9, -2.5f * deep);
+    presence.setPeak       (fs, 2800.0, 0.9, 2.0f * deep + 2.5f * clear);
+    highShelf.setHighShelf (fs, 8000.0, -1.5f * deep + 1.5f * clear);
 }
 
 // Color: bilinear blend of four voice characters (gains in dB for low shelf 200 Hz,
@@ -232,7 +231,7 @@ VoicePadComponent::VoicePadComponent (VoicePadParams& p, const juce::String& own
 
     voiceButton.setTitle (ownerName + " pad mode: voice");
     panButton.setTitle (ownerName + " pad mode: pan");
-    voiceButton.setTooltip ("Voice: sweep left to right from bass through mid to treble color; the upper half adds subtle short room reverb.");
+    voiceButton.setTooltip ("Voice: move left for a warm, clear podcast tone, centre for natural, and right for added clarity; the upper half adds subtle room reverb.");
     panButton.setTooltip ("Pan: left/right places the sound, up makes it wider.");
     voiceButton.onClick = [this] { setMode (VoicePadParams::Voice); };
     panButton.onClick   = [this] { setMode (VoicePadParams::Pan); };
@@ -283,12 +282,11 @@ juce::String VoicePadComponent::readout() const
 
     if (params.mode.load() == VoicePadParams::Voice)
     {
-        const juce::String color = x < -0.08f ? "Bass" : x > 0.08f ? "Treble" : "Mid";
-        const float colorGain = x < -0.08f ? 5.0f * (1.0f + x)
-                               : x > 0.08f ? 5.0f * x
-                                           : 2.5f * (1.0f - std::abs (x));
+        const juce::String color = x < -0.08f ? "Deep " + juce::String (juce::roundToInt (-x * 100.0f)) + "%"
+                                 : x > 0.08f ? "Clear " + juce::String (juce::roundToInt (x * 100.0f)) + "%"
+                                             : "Natural";
         const float reverb = juce::jlimit (0.0f, 1.0f, (y01 - 0.5f) * 2.0f);
-        return color + " +" + juce::String (colorGain, 1) + " dB  Reverb "
+        return color + "  Reverb "
              + juce::String (juce::roundToInt (reverb * 100.0f)) + "%";
     }
 
@@ -358,10 +356,10 @@ void VoicePadComponent::paint (juce::Graphics& g)
     {
         const bool space = padMode == VoicePadParams::Space;
         g.drawText (padMode == VoicePadParams::Voice ? "REVERB" : space ? "FAR" : "WIDE", legends, juce::Justification::centredTop);
-        g.drawText (padMode == VoicePadParams::Voice ? "BASS" : "L", legends.withTrimmedBottom (20), juce::Justification::bottomLeft);
-        g.drawText (padMode == VoicePadParams::Voice ? "TREBLE" : "R", legends.withTrimmedBottom (20), juce::Justification::bottomRight);
+        g.drawText (padMode == VoicePadParams::Voice ? "DEEP" : "L", legends.withTrimmedBottom (20), juce::Justification::bottomLeft);
+        g.drawText (padMode == VoicePadParams::Voice ? "CLEAR" : "R", legends.withTrimmedBottom (20), juce::Justification::bottomRight);
         if (padMode == VoicePadParams::Voice)
-            g.drawText ("MID", legends.withTrimmedBottom (20), juce::Justification::centredBottom);
+            g.drawText ("NATURAL", legends.withTrimmedBottom (20), juce::Justification::centredBottom);
     }
 
     // Readout: what the position does, in numbers. It is two values, drawn
