@@ -416,7 +416,7 @@ int main()
 
         p.gainDb = 6.0f; p.faderDb = -3.0f; p.soloSafe = true;
         p.hpfOn = true; p.hpfHz = 120.0f; p.lpfOn = true; p.lpfHz = 12000.0f;
-        p.eqOn = true; p.eqLowDb = 3.0f; p.eqMidHz = 800.0f;
+        p.eqOn = true; p.eqDb[0] = 3.0f; p.eqHz[3] = 800.0f; p.eqQ[5] = 4.0f;
         p.compThresholdDb = -24.0f; p.duckOn = true; p.duckSource = 2;
         p.padX = 0.5f; p.padY = 0.25f; p.padMode = 1;
         p.busOn[3] = true; p.sendDb[3] = -6.0f; p.sendPre[3] = true;
@@ -427,7 +427,8 @@ int main()
         const omx::StripPreset q = p;   // copy, as Session save/load and the engine store do
         CHECK (q.gainDb == 6.0f && q.faderDb == -3.0f && q.soloSafe, "level/solo-safe lost in copy");
         CHECK (q.hpfOn && q.hpfHz == 120.0f && q.lpfOn && q.lpfHz == 12000.0f, "filter settings lost in copy");
-        CHECK (q.eqOn && q.eqLowDb == 3.0f && q.eqMidHz == 800.0f, "EQ lost in copy");
+        CHECK (q.eqOn && q.eqDb[0] == 3.0f && q.eqHz[3] == 800.0f && q.eqQ[5] == 4.0f, "EQ lost in copy");
+        CHECK (p.eqHz[7] == 8000.0f && p.eqDb[7] == 0.0f && p.eqQ[1] == 1.0f, "EQ defaults wrong");
         CHECK (q.compThresholdDb == -24.0f && q.duckOn && q.duckSource == 2, "comp/duck lost in copy");
         CHECK (q.padX == 0.5f && q.padY == 0.25f && q.padMode == 1, "VoicePad lost in copy");
         CHECK (q.busOn[3] && q.sendDb[3] == -6.0f && q.sendPre[3], "send lost in copy");
@@ -525,7 +526,7 @@ int main()
 
     run ("EQ: flat at 0 dB, low shelf boosts the lows", [&]
     {
-        omx::Eq3 eq;
+        omx::ParametricEq eq;
         eq.prepare (48000.0);
         auto l = sine (0.5f, 1000.0, 9600), r = l, ref = l;
         eq.process (l.data(), r.data(), (int) l.size());
@@ -533,12 +534,57 @@ int main()
         for (size_t i = 0; i < l.size(); ++i) maxErr = std::max (maxErr, (double) std::abs (l[i] - ref[i]));
         CHECK (maxErr < 1e-4, "flat EQ changed the signal by %g", maxErr);
 
-        eq.lowDb = 6.0f;
+        eq.db[0] = 6.0f;
         eq.prepare (48000.0);
         auto lo = sine (0.25f, 50.0, 48000), loR = lo;
         eq.process (lo.data(), loR.data(), (int) lo.size());
         const float gainDb = omx::toDb (peakOf (lo, 24000) / 0.25f);
         CHECK (std::abs (gainDb - 6.0f) < 0.7f, "50 Hz with +6 dB low shelf: %+.2f dB", gainDb);
+    });
+
+    run ("EQ: each of the 8 bands acts at its own frequency", [&]
+    {
+        // Every band +9 dB on its own, measured at its centre (shelves: well inside the shelf)
+        // and two octaves away, where a narrow bell must leave the signal nearly alone.
+        for (int band = 0; band < omx::kEqBands; ++band)
+        {
+            omx::ParametricEq eq;
+            eq.db[(size_t) band] = 9.0f;
+            eq.q[(size_t) band] = 2.0f;
+            eq.prepare (48000.0);
+            const float centre = eq.hz[(size_t) band];
+            const double at = band == 0 ? centre / 4.0 : band == omx::kEqBands - 1 ? std::min (centre * 2.0, 18000.0) : centre;
+
+            auto s = sine (0.1f, at, 48000), sR = s;
+            eq.process (s.data(), sR.data(), (int) s.size());
+            const float boost = omx::toDb (peakOf (s, 24000) / 0.1f);
+            CHECK (boost > 7.0f && boost < 10.0f, "band %d at %.0f Hz: %+.2f dB", band + 1, at, boost);
+
+            if (omx::eqBandType (band) == omx::EqBandType::bell)
+            {
+                eq.reset();
+                const double away = centre >= 4000.0 ? centre / 4.0 : centre * 4.0;
+                auto f = sine (0.1f, away, 48000), fR = f;
+                eq.process (f.data(), fR.data(), (int) f.size());
+                const float leak = omx::toDb (peakOf (f, 24000) / 0.1f);
+                CHECK (std::abs (leak) < 1.5f, "band %d leaks %+.2f dB at %.0f Hz", band + 1, leak, away);
+            }
+        }
+    });
+
+    run ("EQ: a cut and a boost on different bands add up", [&]
+    {
+        omx::ParametricEq eq;
+        eq.db[2] = -8.0f;   eq.hz[2] = 400.0f;  eq.q[2] = 1.4f;
+        eq.db[5] = 6.0f;    eq.hz[5] = 3500.0f; eq.q[5] = 1.4f;
+        eq.prepare (48000.0);
+        auto a = sine (0.2f, 400.0, 48000), aR = a;
+        eq.process (a.data(), aR.data(), (int) a.size());
+        CHECK (std::abs (omx::toDb (peakOf (a, 24000) / 0.2f) + 8.0f) < 1.0f, "400 Hz cut wrong");
+        eq.reset();
+        auto b = sine (0.2f, 3500.0, 48000), bR = b;
+        eq.process (b.data(), bR.data(), (int) b.size());
+        CHECK (std::abs (omx::toDb (peakOf (b, 24000) / 0.2f) - 6.0f) < 1.0f, "3.5 kHz boost wrong");
     });
 
     run ("De-esser: cuts 7 kHz sibilance, leaves 300 Hz alone", [&]

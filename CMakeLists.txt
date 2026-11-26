@@ -162,6 +162,7 @@ if(OPENMIX_BUILD_TESTS)
     target_compile_options(OpenMixAppTests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
     add_dependencies(OpenMixAppTests OpenMix)
     target_compile_definitions(OpenMixAppTests PRIVATE
+        JUCE_MODAL_LOOPS_PERMITTED=1   # tests run the message loop to deliver async callbacks
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_ASIO=1

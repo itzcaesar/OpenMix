@@ -14,7 +14,7 @@ is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 
 - **Core mixer:** up to 8 strips and 6 buses at runtime; per-app routing;
   multi-device I/O with drift-correcting resampling.
-- **Voice and strips:** RNNoise noise removal, gate, 3-band EQ, compressor,
+- **Voice and strips:** RNNoise noise removal, gate, 8-band EQ, compressor,
   de-esser, ducking, voice pad; gain, HPF and LPF knobs on every strip;
   per-strip presets (in the strip menu); solo-safe; latency compensation
   with a per-strip readout.

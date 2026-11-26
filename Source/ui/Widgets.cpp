@@ -318,8 +318,7 @@ void TapeLabel::setText (const juce::String& text)
 
 void TapeLabel::resized()
 {
-    const int badgeW = badges_.isEmpty() ? 0 : juce::GlyphArrangement::getStringWidthInt (Theme::ui (11.0f, true), badges_) + 10;
-    label.setBounds (getLocalBounds().reduced (4, 1).withTrimmedRight (badgeW));
+    label.setBounds (getLocalBounds().reduced (4, 1));
 }
 
 // Name plate: a solid bar in the channel's colour at the bottom of the column (the colour
@@ -333,14 +332,6 @@ void TapeLabel::paint (juce::Graphics& g)
     g.fillRoundedRectangle (r, Theme::controlRadius);
     g.setColour (bar.darker (0.4f));
     g.drawRoundedRectangle (r.reduced (0.5f), Theme::controlRadius, 1.0f);
-
-    // Status badges (mono, polarity): real state.
-    if (badges_.isNotEmpty())
-    {
-        g.setColour (Theme::textOn (bar).withAlpha (0.8f));
-        g.setFont (Theme::ui (11.0f, true));
-        g.drawText (badges_, getLocalBounds().withTrimmedTop (3).reduced (8, 0), juce::Justification::centredRight);
-    }
 
     if (hasKeyboardFocus (false))
         Theme::drawFocusRing (g, getLocalBounds().toFloat().expanded (0.0f), 3.0f);

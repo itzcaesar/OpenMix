@@ -91,6 +91,14 @@ private:
     juce::ComboBox duckSource;
     juce::Label duckLabel;
 
+    // EQ: one key per band selects it; three knobs edit the selected band.
+    void selectEqBand (int band);
+    void syncEqKnobs();
+    int eqBand = omx::kEqLegacyMid;
+    std::array<StripKey, omx::kEqBands> eqBandKeys;
+    DbSlider eqGainKnob, eqFreqKnob, eqQKnob;
+    juce::Label eqGainLabel, eqFreqLabel, eqQLabel;
+
     // High-pass / low-pass filters, shown in the EQ panel on strips only
     // (there is deliberately no FILTER section on the strip itself).
     juce::TextButton hpfToggle { "HPF" }, lpfToggle { "LPF" };

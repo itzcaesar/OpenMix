@@ -178,6 +178,48 @@ int main()
         tmp.deleteFile();
     });
 
+    run ("GlobalHotkeys: push to talk fires once per press, releases, and ignores key repeat", []
+    {
+        GlobalHotkeys hotkeys;
+        std::vector<std::pair<int, bool>> events;   // (index, down)
+        hotkeys.onAction = [&] (const GlobalHotkeys::Binding& b, bool down) { events.push_back ({ b.index, down }); };
+        GlobalHotkeys::Binding ptt;
+        ptt.keys.vk = 0x7B;   // F12, no modifiers
+        ptt.action = GlobalHotkeys::Action::PushToTalk;
+        ptt.index = 2;
+        hotkeys.setBindings ({ ptt });
+
+        auto pump = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+        hotkeys.handleKey (0x7B, true);
+        hotkeys.handleKey (0x7B, true);   // Windows key repeat
+        pump();
+        CHECK (events.size() == 1 && events[0] == std::make_pair (2, true), "one press expected, got %d events", (int) events.size());
+        hotkeys.handleKey (0x7B, false);
+        pump();
+        CHECK (events.size() == 2 && events[1] == std::make_pair (2, false), "release expected");
+        hotkeys.handleKey (0x7A, true);   // F11: not bound
+        pump();
+        CHECK (events.size() == 2, "an unbound key fired");
+
+        // Held while the hotkeys change: the strip is released, not left open.
+        hotkeys.handleKey (0x7B, true);
+        pump();
+        hotkeys.setBindings ({});
+        pump();
+        CHECK (events.size() == 4 && events[3] == std::make_pair (2, false), "PTT not released when bindings changed");
+    });
+
+    run ("Session: a bus keeps its output device when it can't be opened", []
+    {
+        const auto xml = juce::parseXML (R"(<OpenMixSession version="2">
+            <Bus name="B1" active="1" target="2" device="OpenMix test device that does not exist"/></OpenMixSession>)");
+        MixerEngine engine;
+        Session::apply (*xml, engine, false);
+        auto& bus = engine.getBus (3);
+        CHECK ((BusTarget) bus.target.load() == BusTarget::Device, "bus fell back to %d", bus.target.load());
+        CHECK (bus.deviceName == "OpenMix test device that does not exist" && bus.sink == nullptr, "device choice lost");
+    });
+
     run ("GlobalHotkeys: the hook thread starts and stops without hanging", []
     {
         GlobalHotkeys hotkeys;
@@ -244,13 +286,33 @@ int main()
         CHECK (fresh.getBus (4).active.load() && fresh.getBusName (4) == "Stream" && fresh.getBus (4).faderDb.load() == -1.0f, "bus B2");
         CHECK (fresh.getMonitorBus() == 0, "no monitor in the file: A1 by default");
         const auto* preset = fresh.findStripPreset ("Voice");
-        CHECK (preset != nullptr && preset->faderDb == -3.0f && preset->eqOn && preset->eqMidDb == 2.5f, "strip preset");
+        CHECK (preset != nullptr && preset->faderDb == -3.0f && preset->eqOn && preset->eqDb[omx::kEqLegacyMid] == 2.5f, "strip preset");
 
         // Version 1 saved buses by position: 0 = A1, 1 = A2, 2 = B1.
         const auto v1 = juce::parseXML (R"(<OpenMixSession><Bus index="2" fader="-9"/></OpenMixSession>)");
         MixerEngine old;
         Session::apply (*v1, old, false);
         CHECK (old.getBus (3).faderDb.load() == -9.0f, "v1 bus 2 should map to B1");
+
+        // A 3-band EQ from before lands in bands 1, 4 and 8 and sounds the same.
+        const auto oldEq = juce::parseXML (R"(<OpenMixSession version="2"><Strip index="0" active="1" sourceType="0">
+              <Processing eqOn="1" eqLow="4" eqMid="-3" eqMidHz="2500" eqHigh="2"/></Strip></OpenMixSession>)");
+        MixerEngine legacy;
+        Session::apply (*oldEq, legacy, false);
+        const auto& fx = legacy.getStrip (0).fx;
+        CHECK (fx.eqDb[0].load() == 4.0f && fx.eqHz[0].load() == 120.0f, "old low shelf");
+        CHECK (fx.eqDb[3].load() == -3.0f && fx.eqHz[3].load() == 2500.0f && fx.eqQ[3].load() == 1.0f, "old mid");
+        CHECK (fx.eqDb[7].load() == 2.0f && fx.eqHz[7].load() == 8000.0f, "old high shelf");
+        CHECK (fx.eqDb[1].load() == 0.0f && fx.eqDb[5].load() == 0.0f, "new bands start flat");
+
+        // And the 8 bands round-trip through a scene.
+        auto& eqStrip = legacy.getStrip (0);
+        eqStrip.fx.eqDb[5].store (-6.5f); eqStrip.fx.eqHz[5].store (4200.0f); eqStrip.fx.eqQ[5].store (3.0f);
+        const auto eqScene = Session::captureScene (legacy);
+        eqStrip.fx.resetEq();
+        Session::applyScene (*eqScene, legacy);
+        CHECK (eqStrip.fx.eqDb[5].load() == -6.5f && eqStrip.fx.eqHz[5].load() == 4200.0f && eqStrip.fx.eqQ[5].load() == 3.0f,
+               "band 6 lost in a scene");
     });
 
     run ("PluginChain: moving and removing keep each plugin's bypass and mix", []

@@ -169,6 +169,8 @@ public:
 
     void setBusOff (int bus);
     void setBusMainPair (int bus, int pair);
+    // The bus stays set to this device even when it can't be opened now (shown as
+    // unplugged); maintainSources() connects it when the device appears.
     bool setBusDevice (int bus, const juce::String& deviceName, juce::String& error);
 
     // Message thread, call every couple of seconds. Drops sources/outputs that died
@@ -216,7 +218,7 @@ private:
     std::array<omx::LoudnessNormaliser, kNumBuses> busNorm;
     std::array<omx::RmsMeter, kNumBuses> busRmsL;
     std::array<omx::RmsMeter, kNumBuses> busRmsR;
-    std::array<omx::Eq3, kNumBuses> busEq;
+    std::array<omx::ParametricEq, kNumBuses> busEq;
     std::array<omx::Compressor, kNumBuses> busComp;
     std::array<juce::SmoothedValue<float>, kNumBuses> busEqMix, busCompMix;   // on/off crossfades
     juce::AudioBuffer<float> busDry;                                           // dry copy while fading

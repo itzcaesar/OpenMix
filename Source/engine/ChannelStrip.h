@@ -43,7 +43,19 @@ struct ProcessingParams
     std::atomic<float> gateRangeDb { -40.0f };
 
     std::atomic<bool>  eqOn { false };
-    std::atomic<float> eqLowDb { 0.0f }, eqMidDb { 0.0f }, eqMidHz { 1000.0f }, eqHighDb { 0.0f };
+    // 8 bands (dsp/EqBands.h): band 0 low shelf, 1..6 bells, 7 high shelf.
+    std::array<std::atomic<float>, omx::kEqBands> eqDb {};
+    std::array<std::atomic<float>, omx::kEqBands> eqHz { 120.0f, 200.0f, 400.0f, 1000.0f, 2000.0f, 3500.0f, 6000.0f, 8000.0f };
+    std::array<std::atomic<float>, omx::kEqBands> eqQ { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+    void resetEq() noexcept
+    {
+        for (int b = 0; b < omx::kEqBands; ++b)
+        {
+            eqDb[(size_t) b].store (0.0f);
+            eqHz[(size_t) b].store (omx::kEqDefaultHz[(size_t) b]);
+            eqQ[(size_t) b].store (omx::kEqDefaultQ);
+        }
+    }
 
     std::atomic<bool>  compOn { false };
     std::atomic<float> compThresholdDb { -18.0f };
@@ -194,7 +206,7 @@ private:
     Biquad hpf, lpf;
     juce::SmoothedValue<float> hpfMix, lpfMix;
     float lastHpfHz = -1.0f, lastLpfHz = -1.0f;   // -1 forces a coefficient update
-    omx::Eq3 eq;
+    omx::ParametricEq eq;
     omx::Compressor comp;
     omx::DeEsser deesser;
     bool denoiseWasOn = false;

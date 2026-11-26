@@ -36,9 +36,6 @@ public:
     static int minWidth() { return Theme::isCompact() ? 96 : 106; }
     static int maxWidth() { return Theme::isCompact() ? 118 : 132; }
 
-    // Height of the fader bay's fixed rows under the fader (keys, latency, name plate).
-    static int bayFooterHeight() { return 20 + 3 + 14 + 24; }
-
 private:
     // Source + strip menu
     void showSourceMenu();

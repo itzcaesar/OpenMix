@@ -600,14 +600,14 @@ void OpenMixLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int 
     const float alpha = slider.isEnabled() ? 1.0f : 0.45f;
 
     // Ring: the full travel in the recessed colour, the value in green (grey while off).
-    // Bipolar controls (gain) light from the centre, others from the start.
+    // Gain controls (property "bipolar") light from 0 dB, others from the start.
     juce::Path track;
     track.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f, startAngle, endAngle, true);
     g.setColour (t.meterWell.withMultipliedAlpha (alpha));
     g.strokePath (track, juce::PathStrokeType (ringW, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
 
     const float angle = startAngle + pos * (endAngle - startAngle);
-    const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0 && slider.getMaximum() <= 24.0;
+    const bool bipolar = slider.getProperties()["bipolar"];
     const float from = bipolar ? startAngle + (float) slider.valueToProportionOfLength (0.0) * (endAngle - startAngle) : startAngle;
     if (std::abs (angle - from) > 0.01f)
     {

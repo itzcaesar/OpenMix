@@ -85,7 +85,7 @@ void ChannelStrip::resetToDefaults()
     fx.gateOn.store (false);     fx.gateThresholdDb.store (-50.0f); fx.gateRangeDb.store (-40.0f);
     fx.hpfOn.store (false);      fx.hpfHz.store (80.0f);
     fx.lpfOn.store (false);      fx.lpfHz.store (18000.0f);
-    fx.eqOn.store (false);       fx.eqLowDb.store (0.0f); fx.eqMidDb.store (0.0f); fx.eqMidHz.store (1000.0f); fx.eqHighDb.store (0.0f);
+    fx.eqOn.store (false);       fx.resetEq();
     fx.compOn.store (false);     fx.compThresholdDb.store (-18.0f); fx.compRatio.store (3.0f);
     fx.deessOn.store (false);    fx.deessThresholdDb.store (-30.0f); fx.deessMaxDb.store (10.0f);
     fx.duckOn.store (false);     fx.duckSource.store (-1); fx.duckDepthDb.store (-12.0f); fx.duckThresholdDb.store (-40.0f);
@@ -108,8 +108,11 @@ omx::StripPreset ChannelStrip::savePreset() const
     p.gateOn = fx.gateOn.load();             p.gateThresholdDb = fx.gateThresholdDb.load(); p.gateRangeDb = fx.gateRangeDb.load();
     p.hpfOn = fx.hpfOn.load();               p.hpfHz = fx.hpfHz.load();
     p.lpfOn = fx.lpfOn.load();               p.lpfHz = fx.lpfHz.load();
-    p.eqOn = fx.eqOn.load();                 p.eqLowDb = fx.eqLowDb.load(); p.eqMidDb = fx.eqMidDb.load();
-    p.eqMidHz = fx.eqMidHz.load();           p.eqHighDb = fx.eqHighDb.load();
+    p.eqOn = fx.eqOn.load();
+    for (size_t b = 0; b < (size_t) omx::kEqBands; ++b)
+    {
+        p.eqDb[b] = fx.eqDb[b].load(); p.eqHz[b] = fx.eqHz[b].load(); p.eqQ[b] = fx.eqQ[b].load();
+    }
     p.compOn = fx.compOn.load();             p.compThresholdDb = fx.compThresholdDb.load(); p.compRatio = fx.compRatio.load();
     p.deessOn = fx.deessOn.load();           p.deessThresholdDb = fx.deessThresholdDb.load(); p.deessMaxDb = fx.deessMaxDb.load();
     p.duckOn = fx.duckOn.load();             p.duckSource = fx.duckSource.load();
@@ -158,8 +161,13 @@ int ChannelStrip::loadPreset (const omx::StripPreset& p, juce::AudioPluginFormat
     fx.gateOn.store (p.gateOn);             fx.gateThresholdDb.store (p.gateThresholdDb); fx.gateRangeDb.store (p.gateRangeDb);
     setHpfEnabled (p.hpfOn);                setHpfCutoff (p.hpfHz);
     setLpfEnabled (p.lpfOn);                setLpfCutoff (p.lpfHz);
-    fx.eqOn.store (p.eqOn);                 fx.eqLowDb.store (p.eqLowDb); fx.eqMidDb.store (p.eqMidDb);
-    fx.eqMidHz.store (p.eqMidHz);           fx.eqHighDb.store (p.eqHighDb);
+    fx.eqOn.store (p.eqOn);
+    for (int b = 0; b < omx::kEqBands; ++b)
+    {
+        fx.eqDb[(size_t) b].store (juce::jlimit (-omx::kEqMaxDb, omx::kEqMaxDb, p.eqDb[(size_t) b]));
+        fx.eqHz[(size_t) b].store (juce::jlimit (omx::eqMinHz (b), omx::eqMaxHz (b), p.eqHz[(size_t) b]));
+        fx.eqQ[(size_t) b].store (juce::jlimit (omx::kEqMinQ, omx::kEqMaxQ, p.eqQ[(size_t) b]));
+    }
     fx.compOn.store (p.compOn);             fx.compThresholdDb.store (p.compThresholdDb); fx.compRatio.store (std::max (1.0f, p.compRatio));
     fx.deessOn.store (p.deessOn);           fx.deessThresholdDb.store (p.deessThresholdDb); fx.deessMaxDb.store (p.deessMaxDb);
     fx.duckOn.store (p.duckOn);
@@ -321,10 +329,10 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
 
     if (fx.eqOn.load())
     {
-        eq.lowDb = fx.eqLowDb.load();
-        eq.midDb = fx.eqMidDb.load();
-        eq.midHz = fx.eqMidHz.load();
-        eq.highDb = fx.eqHighDb.load();
+        for (size_t b = 0; b < (size_t) omx::kEqBands; ++b)
+        {
+            eq.db[b] = fx.eqDb[b].load(); eq.hz[b] = fx.eqHz[b].load(); eq.q[b] = fx.eqQ[b].load();
+        }
         eq.process (L, R, numSamples);
     }
 

@@ -10,7 +10,7 @@ them up, and send a separate mix to your headphones, the stream and the call.
   (ASIO, WASAPI or DirectSound), any other Windows input, one app's audio, or a loopback of
   a Windows output device.
 - **Voice processing built in:** RNNoise noise removal, gate, high- and low-pass filters,
-  3-band EQ, compressor, de-esser and ducking on every strip, plus a voice pad (XY pad with
+  8-band EQ, compressor, de-esser and ducking on every strip, plus a voice pad (XY pad with
   voice, pan, colour and space modes).
 - **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning, bypass without
   clicks, wet/dry, A/B compare, presets, latency compensation, and crash-safe loading (each
@@ -126,8 +126,8 @@ PROCESSING, INSERT, SENDS, the **Voice pad** button, then the fader bay.
    - **NR** noise removal: fans, hum and keyboard noise. Adds 20 ms at 48 kHz (RNNoise's own
      rate); at other rates it resamples to 48 kHz and back, about 1 ms more. Other strips are
      delayed to match.
-   - **Gate** turns the strip down while it's quiet. **EQ**: low shelf, sweepable mid, high
-     shelf, plus the HPF and LPF. **Comp** evens out loud and quiet parts. **DS** softens
+   - **Gate** turns the strip down while it's quiet. **EQ**: 8 bands (a low shelf, six bells
+     with gain, frequency and width, a high shelf) plus the HPF and LPF. **Comp** evens out loud and quiet parts. **DS** softens
      harsh S sounds. **Duck** lowers this strip while another strip has signal (music under
      your voice).
    - Gate, compressor, de-esser and ducking show a gain-reduction meter in their panel.

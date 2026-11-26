@@ -28,7 +28,7 @@ namespace Theme
 
         juce::Colour text, textDim, textFaint;
 
-        juce::Colour tape, tapeText, tapeEdge;   // scribble strip
+        juce::Colour tape;                       // tray icon highlight
 
         juce::Colour accent, onAccent, accentEdge;   // lamp amber
         juce::Colour mute, onMute;
@@ -45,7 +45,7 @@ namespace Theme
             juce::Colour (0xff101013), juce::Colour (0xff1a1a1e), juce::Colour (0xff3a3a41),
             juce::Colour (0xff3d3d44), juce::Colour (0xff787884),
             juce::Colour (0xffececf0), juce::Colour (0xffb9b9c2), juce::Colour (0xff9696a1),
-            juce::Colour (0xffe6dfcc), juce::Colour (0xff1e1e1e), juce::Colour (0xffe6dfcc),
+            juce::Colour (0xffe6dfcc),
             juce::Colour (0xfff0a23b), juce::Colour (0xff1a1a1a), juce::Colour (0xfff0a23b),
             juce::Colour (0xffd9383e), juce::Colour (0xffffffff),
             juce::Colour (0xffececf0),
@@ -62,7 +62,7 @@ namespace Theme
             juce::Colour (0xff16161a), juce::Colour (0xfff4f4f6), juce::Colour (0xffefeff1),
             juce::Colour (0xffb9b9be), juce::Colour (0xff6d6d76),
             juce::Colour (0xff1c1c20), juce::Colour (0xff45454c), juce::Colour (0xff55555e),
-            juce::Colour (0xfffbf6e6), juce::Colour (0xff1e1e1e), juce::Colour (0xff6d6d76),
+            juce::Colour (0xfffbf6e6),
             // Amber is low-contrast on the light panel, so "on" states also get a dark edge.
             juce::Colour (0xfff0a23b), juce::Colour (0xff1a1a1a), juce::Colour (0xff1c1c20),
             juce::Colour (0xffd9383e), juce::Colour (0xffffffff),
@@ -133,7 +133,6 @@ namespace Theme
         const double withWhite = 1.05 / (bg + 0.05), withBlack = (bg + 0.05) / (luminance (juce::Colour (0xff141414)) + 0.05);
         return withWhite >= withBlack ? juce::Colours::white : juce::Colour (0xff141414);
     }
-    inline juce::Colour nameBarTextColour (int index) { return textOn (nameBarColour (index)); }
 
     // Bus name bars: fixed saturated hues per slot, echoing the mockup
     // (A1 dark gold, B1 red, B2 green). White text reads on all of them.

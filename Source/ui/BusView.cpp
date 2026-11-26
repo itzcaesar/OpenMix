@@ -510,8 +510,6 @@ void BusView::paint (juce::Graphics& g)
     g.drawText (latencyText, latencyArea, juce::Justification::centred);
 }
 
-void BusView::paintOverChildren (juce::Graphics&) {}
-
 void BusView::resized()
 {
     const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);

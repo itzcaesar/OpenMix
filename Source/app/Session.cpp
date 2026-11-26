@@ -68,10 +68,13 @@ static void saveProcessing (juce::XmlElement& x, const ProcessingParams& fx)
     e->setAttribute ("lpfOn", fx.lpfOn.load());
     e->setAttribute ("lpfHz", fx.lpfHz.load());
     e->setAttribute ("eqOn", fx.eqOn.load());
-    e->setAttribute ("eqLow", fx.eqLowDb.load());
-    e->setAttribute ("eqMid", fx.eqMidDb.load());
-    e->setAttribute ("eqMidHz", fx.eqMidHz.load());
-    e->setAttribute ("eqHigh", fx.eqHighDb.load());
+    for (int b = 0; b < omx::kEqBands; ++b)
+    {
+        const juce::String n (b + 1);
+        e->setAttribute ("eq" + n + "Db", fx.eqDb[(size_t) b].load());
+        e->setAttribute ("eq" + n + "Hz", fx.eqHz[(size_t) b].load());
+        e->setAttribute ("eq" + n + "Q", fx.eqQ[(size_t) b].load());
+    }
     e->setAttribute ("compOn", fx.compOn.load());
     e->setAttribute ("compThreshold", fx.compThresholdDb.load());
     e->setAttribute ("compRatio", fx.compRatio.load());
@@ -82,6 +85,24 @@ static void saveProcessing (juce::XmlElement& x, const ProcessingParams& fx)
     e->setAttribute ("duckSource", fx.duckSource.load());
     e->setAttribute ("duckDepth", fx.duckDepthDb.load());
     e->setAttribute ("duckThreshold", fx.duckThresholdDb.load());
+}
+
+// EQ bands from a <Processing> element, clamped to each band's range. Files from the
+// 3-band EQ (eqLow / eqMid / eqMidHz / eqHigh) land in the bands that sound the same.
+static void readEqXml (const juce::XmlElement& e, float* db, float* hz, float* q)
+{
+    for (int b = 0; b < omx::kEqBands; ++b)
+    {
+        const juce::String n (b + 1);
+        float legacyDb = 0.0f, legacyHz = omx::kEqDefaultHz[(size_t) b];
+        if (b == omx::kEqLegacyLow)  legacyDb = (float) e.getDoubleAttribute ("eqLow", 0.0);
+        if (b == omx::kEqLegacyMid)  { legacyDb = (float) e.getDoubleAttribute ("eqMid", 0.0); legacyHz = (float) e.getDoubleAttribute ("eqMidHz", legacyHz); }
+        if (b == omx::kEqLegacyHigh) legacyDb = (float) e.getDoubleAttribute ("eqHigh", 0.0);
+
+        db[b] = juce::jlimit (-omx::kEqMaxDb, omx::kEqMaxDb, (float) e.getDoubleAttribute ("eq" + n + "Db", legacyDb));
+        hz[b] = juce::jlimit (omx::eqMinHz (b), omx::eqMaxHz (b), (float) e.getDoubleAttribute ("eq" + n + "Hz", legacyHz));
+        q[b]  = juce::jlimit (omx::kEqMinQ, omx::kEqMaxQ, (float) e.getDoubleAttribute ("eq" + n + "Q", omx::kEqDefaultQ));
+    }
 }
 
 static void loadProcessing (const juce::XmlElement* e, ProcessingParams& fx)
@@ -100,10 +121,14 @@ static void loadProcessing (const juce::XmlElement* e, ProcessingParams& fx)
     fx.lpfOn.store (e->getBoolAttribute ("lpfOn"));
     fx.lpfHz.store (f ("lpfHz", 18000.0));
     fx.eqOn.store (e->getBoolAttribute ("eqOn"));
-    fx.eqLowDb.store (f ("eqLow", 0.0));
-    fx.eqMidDb.store (f ("eqMid", 0.0));
-    fx.eqMidHz.store (f ("eqMidHz", 1000.0));
-    fx.eqHighDb.store (f ("eqHigh", 0.0));
+    {
+        float db[omx::kEqBands], hz[omx::kEqBands], q[omx::kEqBands];
+        readEqXml (*e, db, hz, q);
+        for (size_t b = 0; b < (size_t) omx::kEqBands; ++b)
+        {
+            fx.eqDb[b].store (db[b]); fx.eqHz[b].store (hz[b]); fx.eqQ[b].store (q[b]);
+        }
+    }
     fx.compOn.store (e->getBoolAttribute ("compOn"));
     fx.compThresholdDb.store (f ("compThreshold", -18.0));
     fx.compRatio.store (f ("compRatio", 3.0));
@@ -245,10 +270,13 @@ static void saveStripPresetXml (juce::XmlElement& parent, const juce::String& na
     fx->setAttribute ("lpfOn", p.lpfOn);
     fx->setAttribute ("lpfHz", p.lpfHz);
     fx->setAttribute ("eqOn", p.eqOn);
-    fx->setAttribute ("eqLow", p.eqLowDb);
-    fx->setAttribute ("eqMid", p.eqMidDb);
-    fx->setAttribute ("eqMidHz", p.eqMidHz);
-    fx->setAttribute ("eqHigh", p.eqHighDb);
+    for (int b = 0; b < omx::kEqBands; ++b)
+    {
+        const juce::String n (b + 1);
+        fx->setAttribute ("eq" + n + "Db", p.eqDb[(size_t) b]);
+        fx->setAttribute ("eq" + n + "Hz", p.eqHz[(size_t) b]);
+        fx->setAttribute ("eq" + n + "Q", p.eqQ[(size_t) b]);
+    }
     fx->setAttribute ("compOn", p.compOn);
     fx->setAttribute ("compThreshold", p.compThresholdDb);
     fx->setAttribute ("compRatio", p.compRatio);
@@ -316,10 +344,7 @@ static bool loadStripPresetXml (const juce::XmlElement& e, juce::String& name, o
         p.lpfOn = fx->getBoolAttribute ("lpfOn");
         p.lpfHz = (float) fx->getDoubleAttribute ("lpfHz", 18000.0);
         p.eqOn = fx->getBoolAttribute ("eqOn");
-        p.eqLowDb = (float) fx->getDoubleAttribute ("eqLow", 0.0);
-        p.eqMidDb = (float) fx->getDoubleAttribute ("eqMid", 0.0);
-        p.eqMidHz = (float) fx->getDoubleAttribute ("eqMidHz", 1000.0);
-        p.eqHighDb = (float) fx->getDoubleAttribute ("eqHigh", 0.0);
+        readEqXml (*fx, p.eqDb.data(), p.eqHz.data(), p.eqQ.data());
         p.compOn = fx->getBoolAttribute ("compOn");
         p.compThresholdDb = (float) fx->getDoubleAttribute ("compThreshold", -18.0);
         p.compRatio = (float) fx->getDoubleAttribute ("compRatio", 3.0);
@@ -705,8 +730,7 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
             case BusTarget::Off:      engine.setBusOff (b); break;
             case BusTarget::MainPair: engine.setBusMainPair (b, xb->getIntAttribute ("output", 0)); break;
             case BusTarget::Device:
-                if (! engine.setBusDevice (b, xb->getStringAttribute ("device"), error))
-                    bus.deviceName = xb->getStringAttribute ("device");   // show as unplugged, keep the choice
+                engine.setBusDevice (b, xb->getStringAttribute ("device"), error);   // unplugged: kept, retried
                 break;
         }
     }

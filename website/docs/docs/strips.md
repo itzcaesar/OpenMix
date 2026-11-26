@@ -57,12 +57,28 @@ Space switches it on or off without opening the panel.
 - **NR** noise removal (RNNoise): fans, hum and keyboard noise. Adds
   20 ms at 48 kHz (RNNoise's own rate); at other rates it resamples to
   48 kHz and back, about 1 ms more. Other strips are delayed to match.
-- **Gate** turns the strip down while it's quiet. **EQ**: low shelf,
-  sweepable mid, high shelf, plus the HPF and LPF. **Comp** evens out loud
+- **Gate** turns the strip down while it's quiet. **Comp** evens out loud
   and quiet parts. **DS** softens harsh S sounds. **Duck** lowers this
   strip while another strip has signal (music under your voice).
 - Gate, compressor, de-esser and ducking show a gain-reduction meter in
   their panel.
+
+### The EQ
+
+Eight bands, on every strip and bus: a low shelf (**LS**), six bells
+(**2** to **7**) and a high shelf (**HS**), each up to +/-15 dB.
+
+- Pick a band with its key under the graph, or click its point on the
+  curve. **GAIN**, **FREQ** and **Q** then edit that band. Q is the width
+  of a bell (higher is narrower); shelves have a fixed slope, so Q is off
+  for them.
+- Drag a point on the curve to set its frequency and gain; scroll over it
+  to change its width. Double-click a point to reset that band.
+- Bands at 0 dB do nothing and cost nothing. The faint line shows what
+  the selected band alone does; the solid line is the whole EQ.
+- On strips the panel also holds the HPF and LPF.
+- Sessions and presets from the 3-band EQ open in bands LS, 4 and HS and
+  sound the same.
 
 ## 3. Insert
 

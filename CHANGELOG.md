@@ -28,7 +28,8 @@ This is OpenMix's first public release. There was no earlier release:
 **Voice and strip processing**
 
 - Built-in voice processing on every strip: RNNoise noise removal, gate,
-  3-band EQ, compressor, de-esser and ducking (any strip as sidechain).
+  8-band parametric EQ (low shelf, six bells, high shelf; on buses too),
+  compressor, de-esser and ducking (any strip as sidechain).
 - VoicePad XY pad with Voice, Pan, Colour and Space modes.
 - **Gain, HPF and LPF knobs on every strip** (gain -24 to +24 dB, HPF 20 Hz
   to 1 kHz, LPF 1 to 20 kHz; a filter knob at its end is off), sitting before

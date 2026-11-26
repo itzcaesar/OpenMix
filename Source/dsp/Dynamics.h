@@ -1,12 +1,14 @@
 #pragma once
 
-// Built-in strip processors: gate, compressor, 3-band EQ, de-esser.
+// Built-in strip processors: gate, compressor, 8-band EQ, de-esser.
 // Plain C++, allocation-free in process(), so they are real-time safe and unit-testable.
 // Each process() works in place on a stereo pair and returns its lowest gain in the block
 // (1 = untouched), which the UI shows as a gain-reduction meter.
 
 #include "dsp/Biquad.h"
+#include "dsp/EqBands.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace omx
@@ -125,42 +127,87 @@ namespace omx
     };
 
     //==========================================================================
-    // 3-band EQ: low shelf 120 Hz, sweepable mid bell, high shelf 8 kHz (all +/-12 dB).
-    class Eq3
+    // 8-band parametric EQ (see dsp/EqBands.h): low shelf, six bells, high shelf.
+    // A band at 0 dB is skipped; it starts from a clean state when it is turned up.
+    class ParametricEq
     {
     public:
-        float lowDb = 0, midDb = 0, midHz = 1000, highDb = 0;
+        std::array<float, kEqBands> db {}, hz = kEqDefaultHz, q = defaultQ();
 
         void prepare (double sampleRate)
         {
             fs = sampleRate;
-            low.reset(); mid.reset(); high.reset();
-            last[0] = 1.0e9f;   // force a coefficient update
+            reset();
+            for (auto& l : last) l = { 1.0e9f, 0.0f, 0.0f };   // force coefficient updates
         }
 
-        void reset() noexcept { low.reset(); mid.reset(); high.reset(); }
+        void reset() noexcept
+        {
+            for (auto& b : bands) b.reset();
+            active.fill (false);
+        }
 
         void process (float* l, float* r, int n) noexcept
         {
-            if (lowDb != last[0] || midDb != last[1] || midHz != last[2] || highDb != last[3])
+            int on[kEqBands], numOn = 0;
+            for (int b = 0; b < kEqBands; ++b)
             {
-                low.setLowShelf (fs, 120.0, lowDb);
-                mid.setPeak (fs, std::clamp (midHz, 100.0f, 10000.0f), 1.0, midDb);
-                high.setHighShelf (fs, 8000.0, highDb);
-                last[0] = lowDb; last[1] = midDb; last[2] = midHz; last[3] = highDb;
+                if (std::abs (db[(size_t) b]) < 0.01f)
+                {
+                    active[(size_t) b] = false;
+                    continue;
+                }
+                update (b);
+                if (! active[(size_t) b])
+                {
+                    bands[(size_t) b].reset();
+                    active[(size_t) b] = true;
+                }
+                on[numOn++] = b;
             }
 
             for (int i = 0; i < n; ++i)
             {
-                l[i] = high.process (mid.process (low.process (l[i], 0), 0), 0);
-                r[i] = high.process (mid.process (low.process (r[i], 1), 1), 1);
+                float x = l[i], y = r[i];
+                for (int k = 0; k < numOn; ++k)
+                {
+                    auto& f = bands[(size_t) on[k]];
+                    x = f.process (x, 0);
+                    y = f.process (y, 1);
+                }
+                l[i] = x;
+                r[i] = y;
+            }
+        }
+
+        // Coefficients for one band (also used by the UI to draw the curve).
+        static void design (Biquad& f, int band, double fs, float gainDb, float freq, float bandQ) noexcept
+        {
+            const double hzSafe = std::clamp ((double) freq, 10.0, fs * 0.45);
+            switch (eqBandType (band))
+            {
+                case EqBandType::lowShelf:  f.setLowShelf (fs, hzSafe, gainDb); break;
+                case EqBandType::highShelf: f.setHighShelf (fs, hzSafe, gainDb); break;
+                case EqBandType::bell:      f.setPeak (fs, hzSafe, std::clamp (bandQ, kEqMinQ, kEqMaxQ), gainDb); break;
             }
         }
 
     private:
+        static std::array<float, kEqBands> defaultQ() { std::array<float, kEqBands> a; a.fill (kEqDefaultQ); return a; }
+
+        void update (int b) noexcept
+        {
+            auto& l = last[(size_t) b];
+            if (l[0] == db[(size_t) b] && l[1] == hz[(size_t) b] && l[2] == q[(size_t) b])
+                return;
+            design (bands[(size_t) b], b, fs, db[(size_t) b], hz[(size_t) b], q[(size_t) b]);
+            l = { db[(size_t) b], hz[(size_t) b], q[(size_t) b] };
+        }
+
         double fs = 48000.0;
-        Biquad low, mid, high;
-        float last[4] {};
+        std::array<Biquad, kEqBands> bands;
+        std::array<std::array<float, 3>, kEqBands> last {};
+        std::array<bool, kEqBands> active {};
     };
 
     //==========================================================================

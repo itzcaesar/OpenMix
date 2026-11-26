@@ -82,7 +82,6 @@ public:
     void setText (const juce::String&);
     void setTapeColour (int colourIndex)          { colourIndex_ = colourIndex; applyColours(); repaint(); }
     void setBarColour (juce::Colour c)            { barOverride = c; applyColours(); repaint(); }   // buses: fixed colour
-    void setBadges (const juce::String& badges)    { badges_ = badges; resized(); repaint(); }   // e.g. "MONO  Ø"
     juce::String getText() const { return label.getText(); }
     std::function<void (const juce::String&)> onRename;
 
@@ -101,7 +100,6 @@ private:
     juce::Colour barOverride;   // transparent = use the colour index
     bool editable;
     int colourIndex_ = 0;
-    juce::String badges_;
 };
 
 //==============================================================================

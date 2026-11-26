@@ -13,6 +13,7 @@
 // either (see StripPluginSlot): a preset re-loads each plugin by identifier and
 // a missing plugin is skipped, never fatal.
 
+#include "dsp/EqBands.h"
 #include <algorithm>
 #include <array>
 #include <string>
@@ -66,7 +67,8 @@ namespace omx
         // Built-in processing (mirrors ProcessingParams; HPF/LPF included).
         bool denoiseOn = false;   float denoiseAmount = 1.0f;
         bool gateOn = false;      float gateThresholdDb = -50.0f, gateRangeDb = -40.0f;
-        bool eqOn = false;        float eqLowDb = 0.0f, eqMidDb = 0.0f, eqMidHz = 1000.0f, eqHighDb = 0.0f;
+        bool eqOn = false;
+        std::array<float, kEqBands> eqDb {}, eqHz = kEqDefaultHz, eqQ { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
         bool compOn = false;      float compThresholdDb = -18.0f, compRatio = 3.0f;
         bool deessOn = false;     float deessThresholdDb = -30.0f, deessMaxDb = 10.0f;
         bool duckOn = false;      int duckSource = -1;   // strip index, -1 = none

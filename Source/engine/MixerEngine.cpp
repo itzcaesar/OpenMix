@@ -308,7 +308,7 @@ void MixerEngine::removeBus (int b)
     bus.normGain.store (1.0f);
     bus.inserts.removeAllPlugins();
     bus.customName.clear();
-    bus.fx.eqOn.store (false);   bus.fx.eqLowDb.store (0.0f); bus.fx.eqMidDb.store (0.0f); bus.fx.eqMidHz.store (1000.0f); bus.fx.eqHighDb.store (0.0f);
+    bus.fx.eqOn.store (false);   bus.fx.resetEq();
     bus.fx.compOn.store (false); bus.fx.compThresholdDb.store (-18.0f); bus.fx.compRatio.store (3.0f);
     for (auto& s : strips)
         s->busOn[b].store (false);
@@ -608,6 +608,9 @@ bool MixerEngine::setBusDevice (int b, const juce::String& name, juce::String& e
     setBusOff (b);
     auto& bus = getBus (b);
     bus.deviceName = name;
+    // Stays a device bus even if opening fails (unplugged): maintainSources() reconnects it,
+    // and the session keeps the choice. The audio thread skips a missing sink.
+    bus.target.store ((int) BusTarget::Device);
 
     auto* type = getWindowsAudioType();
     if (type == nullptr)
@@ -625,7 +628,6 @@ bool MixerEngine::setBusDevice (int b, const juce::String& name, juce::String& e
         const juce::ScopedLock sl (bus.sinkLock);
         bus.sink = std::move (sink);
     }
-    bus.target.store ((int) BusTarget::Device);
     return true;
 }
 
@@ -903,10 +905,10 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
             eq.reset();   // starting from off: no stale filter state
         runFaded (busEqMix[(size_t) b], bus.fx.eqOn.load(), [&]
         {
-            eq.lowDb = bus.fx.eqLowDb.load();
-            eq.midDb = bus.fx.eqMidDb.load();
-            eq.midHz = bus.fx.eqMidHz.load();
-            eq.highDb = bus.fx.eqHighDb.load();
+            for (size_t k = 0; k < (size_t) omx::kEqBands; ++k)
+            {
+                eq.db[k] = bus.fx.eqDb[k].load(); eq.hz[k] = bus.fx.eqHz[k].load(); eq.q[k] = bus.fx.eqQ[k].load();
+            }
             eq.process (L, R, n);
         });
 

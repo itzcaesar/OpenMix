@@ -110,11 +110,19 @@ void GlobalHotkeys::stopHookThread()
 
 void GlobalHotkeys::setBindings (std::vector<Binding> b)
 {
+    // A push-to-talk key held right now would never see its release once `held` is
+    // cleared, leaving the mic open: release it first (message thread).
+    std::vector<Binding> release;
     {
         const std::lock_guard<std::mutex> l (lock);
+        for (const auto& old : bindings)
+            if (old.action == Action::PushToTalk && std::find (held.begin(), held.end(), old.keys.vk) != held.end())
+                release.push_back (old);
         bindings = std::move (b);
         held.clear();
     }
+    for (const auto& r : release)
+        if (onAction) onAction (r, false);
     updateHook();
 }
 

@@ -43,6 +43,7 @@ StripView::StripView (MixerEngine& e, int i)
 
     // Input gain, -24..+24 dB. Double-click or Home resets to 0 dB.
     setupKnob (gainKnob, -24.0, 24.0, 0.0, 0.0);
+    gainKnob.getProperties().set ("bipolar", true);
     gainKnob.setTooltip ("Input gain. Drag, scroll or use the arrow keys. Double-click or Home for 0 dB.");
     gainKnob.onValueChange = [this]
     {
@@ -352,7 +353,7 @@ void StripView::openProcessorPanel (int k)
 {
     auto panel = std::make_unique<ProcessorPanel> (engine, strip.fx, (Processor) k, index);
     juce::Component::SafePointer<StripView> safe (this);
-    panel->onChange = [safe] { if (safe != nullptr) safe->updateKeys(); };
+    panel->onChange = [safe] { if (safe != nullptr) safe->refreshFromStrip(); };   // HPF/LPF knobs too
 
     auto& key = processKeys[(size_t) k];
     auto* top = popupParent();

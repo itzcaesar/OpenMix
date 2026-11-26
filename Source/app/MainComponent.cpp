@@ -508,10 +508,6 @@ MainComponent::MainComponent()
     // Bottom status bar: device / rate / buffer / engine CPU / LIVE.
     addAndMakeVisible (statusBar);
 
-    appSettingsButton.setTooltip ("Light or dark theme, startup and tray, plugins, remote control, updates.");
-    appSettingsButton.onClick = [this] { showSettings(); };
-    makeClickable (appSettingsButton);
-    addChildComponent (appSettingsButton);   // reached from the Setup menu
 
     fixButton.onClick = [this] { showAudioSettings(); };
     makeClickable (fixButton);

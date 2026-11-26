@@ -18,7 +18,6 @@ public:
     BusView (MixerEngine&, int index);
 
     void paint (juce::Graphics&) override;
-    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
     void refreshDevice();

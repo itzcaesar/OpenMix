@@ -14,7 +14,7 @@ microphone.
 
 - Strips and buses added/removed at runtime (up to 8 and 6); per-app
   routing; loopback capture; multi-device I/O with drift correction.
-- Built-in processing: RNNoise denoise, gate, 3-band EQ, compressor,
+- Built-in processing: RNNoise denoise, gate, 8-band EQ, compressor,
   de-esser, ducking; HPF/LPF.
 - VST3 chains on strips and buses; crash-safe scanning and crash-safe
   loading; VST2 opt-in only; latency compensation; per-strip presets.

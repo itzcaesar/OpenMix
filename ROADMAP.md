@@ -94,7 +94,7 @@ fader, and the mic + effects go to B1 as Discord's input.
 
 Built-in so the basics work without third-party plugins:
 
-- [x] Gate, compressor, 3-band EQ and de-esser per strip; safety limiter per bus
+- [x] Gate, compressor, 8-band EQ and de-esser per strip; safety limiter per bus
 - [x] Bus EQ and compressor, VST3 inserts on every bus; safety limiter per bus
 - [x] Solo, mono, polarity invert, per-send levels (send matrix instead of on/off)
 - [x] Ducking: lower music when the mic talks (sidechain from one strip to another)

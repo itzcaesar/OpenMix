@@ -270,12 +270,17 @@ namespace
     class EqVisual final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
-        EqVisual (MixerEngine& e, ProcessingParams& p, bool hasFilters, std::function<void()> onEdit)
-            : engine (e), fx (p), showFilters (hasFilters), notifyEdit (std::move (onEdit))
+        // onSelect: a band's handle was clicked or dragged (the panel's knobs follow it).
+        EqVisual (MixerEngine& e, ProcessingParams& p, bool hasFilters, std::function<void()> onEdit,
+                  std::function<void (int)> onSelectBand)
+            : engine (e), fx (p), showFilters (hasFilters), notifyEdit (std::move (onEdit)), onSelect (std::move (onSelectBand))
         {
             makeClickable (*this);
-            setTooltip ("Drag Low, Mid, High (and active HPF/LPF) handles directly on the curve. Double-click a handle to reset.");
+            setTooltip ("Drag a band's handle to set its frequency and gain; scroll over it to change the width (Q). "
+                        "Double-click a handle to reset that band.");
         }
+
+        void setSelected (int band) { selected = band; repaint(); }
 
         void paint (juce::Graphics& g) override
         {
@@ -283,34 +288,29 @@ namespace
             const bool active = fx.eqOn.load();
             const bool hpfOn = showFilters && fx.hpfOn.load();
             const bool lpfOn = showFilters && fx.lpfOn.load();
-            const float lowDb = fx.eqLowDb.load();
-            const float midDb = fx.eqMidDb.load();
-            const float midHz = fx.eqMidHz.load();
-            const float highDb = fx.eqHighDb.load();
-            const float hpfHz = fx.hpfHz.load();
-            const float lpfHz = fx.lpfHz.load();
+            const size_t sb = (size_t) selected;
+            const float selDb = fx.eqDb[sb].load(), selHz = fx.eqHz[sb].load(), selQ = fx.eqQ[sb].load();
+            const bool selBell = omx::eqBandType (selected) == omx::EqBandType::bell;
 
             juce::Rectangle<int> inner;
             if (showFilters)
-            {
                 inner = drawVisualFrame (g, getLocalBounds(),
                     {
-                        { "HPF",  hpfOn ? formatHzShort (hpfHz) + " Hz" : "Off", hpfOn },
-                        { "LOW",  formatSignedDb (lowDb),  std::abs (lowDb) >= 0.1f },
-                        { "MID",  formatSignedDb (midDb) + "@" + formatHzShort (midHz), std::abs (midDb) >= 0.1f },
-                        { "HIGH", formatSignedDb (highDb), std::abs (highDb) >= 0.1f },
-                        { "LPF",  lpfOn ? formatHzShort (lpfHz) + " Hz" : "Off", lpfOn }
+                        { "HPF",  hpfOn ? formatHzShort (fx.hpfHz.load()) + " Hz" : "Off", hpfOn },
+                        { "BAND", juce::String (omx::eqBandShortName (selected)), true },
+                        { "GAIN", formatSignedDb (selDb) + " dB", std::abs (selDb) >= 0.1f },
+                        { "FREQ", formatHzShort (selHz) + " Hz", false },
+                        { "Q",    selBell ? juce::String (selQ, 2) : juce::String ("shelf"), false },
+                        { "LPF",  lpfOn ? formatHzShort (fx.lpfHz.load()) + " Hz" : "Off", lpfOn }
                     }, active || hpfOn || lpfOn);
-            }
             else
-            {
                 inner = drawVisualFrame (g, getLocalBounds(),
                     {
-                        { "LOW",  formatSignedDb (lowDb) + " dB",  std::abs (lowDb) >= 0.1f },
-                        { "MID",  formatSignedDb (midDb) + " @ " + formatHzShort (midHz), std::abs (midDb) >= 0.1f },
-                        { "HIGH", formatSignedDb (highDb) + " dB", std::abs (highDb) >= 0.1f }
+                        { "BAND", juce::String (omx::eqBandShortName (selected)), true },
+                        { "GAIN", formatSignedDb (selDb) + " dB", std::abs (selDb) >= 0.1f },
+                        { "FREQ", formatHzShort (selHz) + " Hz", false },
+                        { "Q",    selBell ? juce::String (selQ, 2) : juce::String ("shelf"), false }
                     }, active);
-            }
 
             inner.removeFromBottom (13);   // X frequency axis labels
             inner.removeFromLeft (24);     // Y dB axis labels
@@ -330,7 +330,7 @@ namespace
                 { 50.0f, "50" }, { 100.0f, "100" }, { 500.0f, "500" },
                 { 1000.0f, "1k" }, { 5000.0f, "5k" }, { 10000.0f, "10k" }
             };
-            g.setFont (Theme::mono (9.5f));
+            g.setFont (Theme::mono (10.0f));
             g.setColour (t.textFaint);
             for (const auto& [f, lbl] : fLabels)
             {
@@ -354,17 +354,20 @@ namespace
                 }
             }
 
+            // The same coefficients the audio uses (omx::ParametricEq::design).
             const double sr = engine.getSampleRate() > 0.0 ? engine.getSampleRate() : 48000.0;
-            Biquad qLow, qMid, qHigh, qHpf, qLpf;
-            qLow.setLowShelf (sr, 120.0, lowDb);
-            qMid.setPeak (sr, std::clamp (midHz, 100.0f, 10000.0f), 1.0, midDb);
-            qHigh.setHighShelf (sr, 8000.0, highDb);
-            if (hpfOn) qHpf.setHighPass (sr, hpfHz);
-            if (lpfOn) qLpf.setLowPass (sr, lpfHz);
+            std::array<Biquad, omx::kEqBands> bands;
+            for (int b = 0; b < omx::kEqBands; ++b)
+                omx::ParametricEq::design (bands[(size_t) b], b, sr, fx.eqDb[(size_t) b].load(),
+                                           fx.eqHz[(size_t) b].load(), fx.eqQ[(size_t) b].load());
+            Biquad qHpf, qLpf;
+            if (hpfOn) qHpf.setHighPass (sr, fx.hpfHz.load());
+            if (lpfOn) qLpf.setLowPass (sr, fx.lpfHz.load());
 
-            const int steps = std::clamp ((int) plot.getWidth(), 80, 260);
+            const int steps = std::clamp ((int) plot.getWidth(), 80, 300);
             const float zeroY = dbToY (0.0f, plot.getY(), plot.getHeight(), kDbMin, kDbMax);
-            juce::Path totalCurve, fillArea, midBandCurve;
+            juce::Path totalCurve, fillArea, selectedCurve;
+            const bool showSelected = active && std::abs (selDb) > 0.1f;
 
             for (int i = 0; i <= steps; ++i)
             {
@@ -372,26 +375,28 @@ namespace
                 const float x = plot.getX() + frac * plot.getWidth();
                 const float hz = kFMin * std::pow (kFMax / kFMin, frac);
 
-                const float midPart = biquadDbAt (qMid, hz, sr);
-                float totalDb = (active ? (biquadDbAt (qLow, hz, sr) + midPart + biquadDbAt (qHigh, hz, sr)) : 0.0f);
+                float totalDb = 0.0f;
+                if (active)
+                    for (const auto& b : bands)
+                        totalDb += biquadDbAt (b, hz, sr);
                 if (hpfOn) totalDb += biquadDbAt (qHpf, hz, sr);
                 if (lpfOn) totalDb += biquadDbAt (qLpf, hz, sr);
 
                 const float y = dbToY (std::clamp (totalDb, kDbMin, kDbMax), plot.getY(), plot.getHeight(), kDbMin, kDbMax);
-                const float ym = dbToY (std::clamp (midPart, kDbMin, kDbMax), plot.getY(), plot.getHeight(), kDbMin, kDbMax);
-
+                const float ys = dbToY (std::clamp (biquadDbAt (bands[sb], hz, sr), kDbMin, kDbMax),
+                                        plot.getY(), plot.getHeight(), kDbMin, kDbMax);
                 if (i == 0)
                 {
                     totalCurve.startNewSubPath (x, y);
                     fillArea.startNewSubPath (x, zeroY);
                     fillArea.lineTo (x, y);
-                    midBandCurve.startNewSubPath (x, ym);
+                    selectedCurve.startNewSubPath (x, ys);
                 }
                 else
                 {
                     totalCurve.lineTo (x, y);
                     fillArea.lineTo (x, y);
-                    midBandCurve.lineTo (x, ym);
+                    selectedCurve.lineTo (x, ys);
                 }
             }
             fillArea.lineTo (plot.getRight(), zeroY);
@@ -404,37 +409,32 @@ namespace
             g.setColour (curveCol.withAlpha (active ? 0.16f : 0.08f));
             g.fillPath (fillArea);
 
-            if (active && std::abs (midDb) > 0.1f)
+            // The selected band's own shape, faint, so you see what it contributes.
+            if (showSelected)
             {
-                g.setColour (t.accent.withAlpha (0.28f));
-                g.strokePath (midBandCurve, juce::PathStrokeType (1.0f));
+                g.setColour (t.accent.withAlpha (0.30f));
+                g.strokePath (selectedCurve, juce::PathStrokeType (1.0f));
             }
 
             g.setColour (curveCol);
             g.strokePath (totalCurve, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             g.restoreState();
 
-            // Band handles
-            if (hpfOn)
-                drawNodeHandle (g, nodePos (Node::Hpf), "HP", true, hovered == Node::Hpf, dragging == Node::Hpf, true);
-            if (lpfOn)
-                drawNodeHandle (g, nodePos (Node::Lpf), "LP", true, hovered == Node::Lpf, dragging == Node::Lpf, true);
-            drawNodeHandle (g, nodePos (Node::Low),  "L", active, hovered == Node::Low,  dragging == Node::Low);
-            drawNodeHandle (g, nodePos (Node::Mid),  "M", active, hovered == Node::Mid,  dragging == Node::Mid);
-            drawNodeHandle (g, nodePos (Node::High), "H", active, hovered == Node::High, dragging == Node::High);
+            // Handles: filters, then the bands (the selected one drawn last, on top).
+            if (hpfOn) drawNodeHandle (g, nodePos (kHpf), "HP", true, hovered == kHpf, dragging == kHpf, true);
+            if (lpfOn) drawNodeHandle (g, nodePos (kLpf), "LP", true, hovered == kLpf, dragging == kLpf, true);
+            for (int b = 0; b < omx::kEqBands; ++b)
+                if (b != selected)
+                    drawNodeHandle (g, nodePos (b), omx::eqBandShortName (b), active, hovered == b, dragging == b);
+            drawNodeHandle (g, nodePos (selected), omx::eqBandShortName (selected), active, true, dragging == selected);
 
-            if (dragging != Node::None)
+            if (dragging != kNone)
             {
                 juce::String readout;
-                switch (dragging)
-                {
-                    case Node::Hpf:  readout = "HPF " + formatHzShort (hpfHz) + " Hz"; break;
-                    case Node::Lpf:  readout = "LPF " + formatHzShort (lpfHz) + " Hz"; break;
-                    case Node::Low:  readout = "Low " + formatSignedDb (lowDb) + " dB"; break;
-                    case Node::Mid:  readout = formatHzShort (midHz) + " Hz  " + formatSignedDb (midDb) + " dB"; break;
-                    case Node::High: readout = "High " + formatSignedDb (highDb) + " dB"; break;
-                    case Node::None: break;
-                }
+                if (dragging == kHpf)      readout = "HPF " + formatHzShort (fx.hpfHz.load()) + " Hz";
+                else if (dragging == kLpf) readout = "LPF " + formatHzShort (fx.lpfHz.load()) + " Hz";
+                else readout = formatHzShort (fx.eqHz[(size_t) dragging].load()) + " Hz  "
+                             + formatSignedDb (fx.eqDb[(size_t) dragging].load()) + " dB";
                 drawFloatingTag (g, plot, nodePos (dragging), readout);
             }
         }
@@ -442,127 +442,127 @@ namespace
         void mouseMove (const juce::MouseEvent& e) override
         {
             const auto h = hitTestNode (e.position);
-            if (h != hovered)
-            {
-                hovered = h;
-                repaint();
-            }
+            if (h != hovered) { hovered = h; repaint(); }
         }
 
         void mouseExit (const juce::MouseEvent&) override
         {
-            if (hovered != Node::None)
-            {
-                hovered = Node::None;
-                repaint();
-            }
+            if (hovered != kNone) { hovered = kNone; repaint(); }
         }
 
         void mouseDown (const juce::MouseEvent& e) override
         {
             dragging = hitTestNode (e.position);
             hovered = dragging;
-            if (dragging != Node::None)
+            if (dragging >= 0)
+                select (dragging);
+            if (dragging != kNone)
                 applyDrag (e.position);
         }
 
         void mouseDrag (const juce::MouseEvent& e) override
         {
-            if (dragging != Node::None)
+            if (dragging != kNone)
                 applyDrag (e.position);
         }
 
         void mouseUp (const juce::MouseEvent&) override
         {
-            if (dragging != Node::None)
-            {
-                dragging = Node::None;
-                repaint();
-            }
+            if (dragging != kNone) { dragging = kNone; repaint(); }
+        }
+
+        // Scroll over a bell (or anywhere, for the selected bell) to change its width.
+        void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+        {
+            int band = hitTestNode (e.position);
+            if (band < 0)
+                band = selected;
+            if (omx::eqBandType (band) != omx::EqBandType::bell || wheel.deltaY == 0.0f)
+                return;
+            select (band);
+            auto& q = fx.eqQ[(size_t) band];
+            q.store (std::clamp (q.load() * std::pow (1.25f, wheel.deltaY * 4.0f), omx::kEqMinQ, omx::kEqMaxQ));
+            if (notifyEdit) notifyEdit();
+            repaint();
         }
 
         void mouseDoubleClick (const juce::MouseEvent& e) override
         {
-            const auto node = hitTestNode (e.position);
-            switch (node)
+            const int node = hitTestNode (e.position);
+            if (node == kNone)
+                return;
+            if (node == kHpf)      fx.hpfHz.store (80.0f);
+            else if (node == kLpf) fx.lpfHz.store (18000.0f);
+            else
             {
-                case Node::Low:  fx.eqLowDb.store (0.0f); break;
-                case Node::Mid:  fx.eqMidDb.store (0.0f); fx.eqMidHz.store (1000.0f); break;
-                case Node::High: fx.eqHighDb.store (0.0f); break;
-                case Node::Hpf:  fx.hpfHz.store (80.0f); break;
-                case Node::Lpf:  fx.lpfHz.store (18000.0f); break;
-                case Node::None: return;
+                fx.eqDb[(size_t) node].store (0.0f);
+                fx.eqHz[(size_t) node].store (omx::kEqDefaultHz[(size_t) node]);
+                fx.eqQ[(size_t) node].store (omx::kEqDefaultQ);
             }
             if (notifyEdit) notifyEdit();
             repaint();
         }
 
     private:
-        enum class Node { None, Hpf, Low, Mid, High, Lpf };
-        static constexpr float kFMin = 20.0f, kFMax = 20000.0f, kDbMin = -15.0f, kDbMax = 15.0f;
+        static constexpr int kNone = -1, kHpf = 100, kLpf = 101;
+        static constexpr float kFMin = 20.0f, kFMax = 20000.0f, kDbMin = -16.0f, kDbMax = 16.0f;
 
-        juce::Point<float> nodePos (Node n) const noexcept
+        void select (int band)
         {
-            switch (n)
-            {
-                case Node::Hpf:  return { freqToX (fx.hpfHz.load(),   plot.getX(), plot.getWidth(), kFMin, kFMax),
-                                          dbToY (-3.0f, plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
-                case Node::Lpf:  return { freqToX (fx.lpfHz.load(),   plot.getX(), plot.getWidth(), kFMin, kFMax),
-                                          dbToY (-3.0f, plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
-                case Node::Low:  return { freqToX (120.0f,            plot.getX(), plot.getWidth(), kFMin, kFMax),
-                                          dbToY (fx.eqLowDb.load(), plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
-                case Node::Mid:  return { freqToX (fx.eqMidHz.load(), plot.getX(), plot.getWidth(), kFMin, kFMax),
-                                          dbToY (fx.eqMidDb.load(), plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
-                case Node::High: return { freqToX (8000.0f,           plot.getX(), plot.getWidth(), kFMin, kFMax),
-                                          dbToY (fx.eqHighDb.load(), plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
-                case Node::None: break;
-            }
-            return {};
+            if (band == selected)
+                return;
+            selected = band;
+            if (onSelect) onSelect (band);
+            repaint();
         }
 
-        Node hitTestNode (juce::Point<float> pt) const noexcept
+        juce::Point<float> nodePos (int n) const noexcept
+        {
+            if (n == kHpf || n == kLpf)
+                return { freqToX ((n == kHpf ? fx.hpfHz : fx.lpfHz).load(), plot.getX(), plot.getWidth(), kFMin, kFMax),
+                         dbToY (-3.0f, plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
+            if (n < 0 || n >= omx::kEqBands)
+                return {};
+            return { freqToX (fx.eqHz[(size_t) n].load(), plot.getX(), plot.getWidth(), kFMin, kFMax),
+                     dbToY (fx.eqDb[(size_t) n].load(), plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
+        }
+
+        int hitTestNode (juce::Point<float> pt) const noexcept
         {
             if (plot.isEmpty())
-                return Node::None;
-            Node best = Node::None;
-            float bestD = 18.0f;
-            auto test = [&] (Node n)
+                return kNone;
+            int best = kNone;
+            float bestD = 14.0f;
+            auto test = [&] (int n)
             {
                 const float d = pt.getDistanceFrom (nodePos (n));
                 if (d < bestD) { bestD = d; best = n; }
             };
-            test (Node::Mid);
-            test (Node::Low);
-            test (Node::High);
-            if (showFilters && fx.hpfOn.load()) test (Node::Hpf);
-            if (showFilters && fx.lpfOn.load()) test (Node::Lpf);
+            test (selected);   // the selected band wins ties
+            for (int b = 0; b < omx::kEqBands; ++b)
+                if (b != selected) test (b);
+            if (showFilters && fx.hpfOn.load()) test (kHpf);
+            if (showFilters && fx.lpfOn.load()) test (kLpf);
             return best;
         }
 
         void applyDrag (juce::Point<float> pt)
         {
             auto quantize = [] (float v, float step) { return std::round (v / step) * step; };
-            switch (dragging)
+            const float hz = xToFreq (pt.x, plot.getX(), plot.getWidth(), kFMin, kFMax);
+            if (dragging == kHpf)
+                fx.hpfHz.store (std::clamp (quantize (hz, 1.0f), 20.0f, 1000.0f));
+            else if (dragging == kLpf)
+                fx.lpfHz.store (std::clamp (quantize (hz, 10.0f), 1000.0f, 20000.0f));
+            else if (dragging >= 0)
             {
-                case Node::Low:
-                    fx.eqLowDb.store (std::clamp (quantize (yToDb (pt.y, plot.getY(), plot.getHeight(), kDbMin, kDbMax), 0.1f), -12.0f, 12.0f));
-                    break;
-                case Node::Mid:
-                    fx.eqMidHz.store (std::clamp (quantize (xToFreq (pt.x, plot.getX(), plot.getWidth(), kFMin, kFMax), 1.0f), 100.0f, 10000.0f));
-                    fx.eqMidDb.store (std::clamp (quantize (yToDb (pt.y, plot.getY(), plot.getHeight(), kDbMin, kDbMax), 0.1f), -12.0f, 12.0f));
-                    break;
-                case Node::High:
-                    fx.eqHighDb.store (std::clamp (quantize (yToDb (pt.y, plot.getY(), plot.getHeight(), kDbMin, kDbMax), 0.1f), -12.0f, 12.0f));
-                    break;
-                case Node::Hpf:
-                    fx.hpfHz.store (std::clamp (quantize (xToFreq (pt.x, plot.getX(), plot.getWidth(), kFMin, kFMax), 1.0f), 20.0f, 1000.0f));
-                    break;
-                case Node::Lpf:
-                    fx.lpfHz.store (std::clamp (quantize (xToFreq (pt.x, plot.getX(), plot.getWidth(), kFMin, kFMax), 10.0f), 1000.0f, 20000.0f));
-                    break;
-                case Node::None:
-                    return;
+                fx.eqHz[(size_t) dragging].store (std::clamp (quantize (hz, hz >= 1000.0f ? 10.0f : 1.0f),
+                                                              omx::eqMinHz (dragging), omx::eqMaxHz (dragging)));
+                fx.eqDb[(size_t) dragging].store (std::clamp (quantize (yToDb (pt.y, plot.getY(), plot.getHeight(), kDbMin, kDbMax), 0.1f),
+                                                              -omx::kEqMaxDb, omx::kEqMaxDb));
             }
+            else
+                return;
             if (notifyEdit) notifyEdit();
             repaint();
         }
@@ -571,8 +571,9 @@ namespace
         ProcessingParams& fx;
         bool showFilters;
         std::function<void()> notifyEdit;
+        std::function<void (int)> onSelect;
         juce::Rectangle<float> plot;
-        Node hovered = Node::None, dragging = Node::None;
+        int hovered = kNone, dragging = kNone, selected = omx::kEqLegacyMid;
     };
 
     //==========================================================================
@@ -1740,14 +1741,72 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
 
         case Processor::Eq:
             width = 460;
-            setVisual (std::make_unique<EqVisual> (engine, fx, ! onBus, onVisualEdit), 184);
-            addKnob ({ "Low", -12, 12, 0.1, " dB", fx.eqLowDb });
-            addKnob ({ "Mid", -12, 12, 0.1, " dB", fx.eqMidDb });
-            addKnob ({ "Mid freq", 100, 10000, 1, " Hz", fx.eqMidHz, 1000.0 });
-            addKnob ({ "High", -12, 12, 0.1, " dB", fx.eqHighDb });
-            setHelp (onBus ? "Bus EQ: 120 Hz low shelf, sweepable mid bell, 8 kHz high shelf. Drag handles on the graph."
-                           : "Low shelf 120 Hz, sweepable mid bell, high shelf 8 kHz. Drag nodes directly or switch HPF/LPF below.");
-            height = 412;
+            width = 560;
+            setVisual (std::make_unique<EqVisual> (engine, fx, ! onBus, onVisualEdit, [this] (int b) { selectEqBand (b); }), 220);
+            {
+                for (int b = 0; b < omx::kEqBands; ++b)
+                {
+                    auto& key = eqBandKeys[(size_t) b];
+                    key.setButtonText (omx::eqBandShortName (b));
+                    makeLamp (key, "key");
+                    key.setTitle (b == 0 ? "Low shelf" : b == omx::kEqBands - 1 ? "High shelf" : "Band " + juce::String (b + 1));
+                    key.onClick = [this, b] { selectEqBand (b); };
+                    addAndMakeVisible (key);
+                }
+
+                auto setupKnob = [this] (DbSlider& k, juce::Label& label, const juce::String& text)
+                {
+                    k.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+                    k.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 72, 18);
+                    k.setWantsKeyboardFocus (true);
+                    makeClickable (k);
+                    addAndMakeVisible (k);
+                    label.setText (text, juce::dontSendNotification);
+                    label.setFont (Theme::ui (11.5f, true));
+                    label.setColour (juce::Label::textColourId, Theme::p().textFaint);
+                    label.setJustificationType (juce::Justification::centred);
+                    addAndMakeVisible (label);
+                };
+                setupKnob (eqGainKnob, eqGainLabel, "GAIN");
+                setupKnob (eqFreqKnob, eqFreqLabel, "FREQ");
+                setupKnob (eqQKnob, eqQLabel, "Q");
+
+                eqGainKnob.setRange (-omx::kEqMaxDb, omx::kEqMaxDb, 0.1);
+                eqGainKnob.getProperties().set ("bipolar", true);
+                eqGainKnob.setDoubleClickReturnValue (true, 0.0);
+                eqGainKnob.textFromValueFunction = [] (double v) { return (v > 0.05 ? "+" : "") + juce::String (v, 1) + " dB"; };
+                eqGainKnob.onValueChange = [this]
+                {
+                    fx.eqDb[(size_t) eqBand].store ((float) eqGainKnob.getValue());
+                    repaintVisual();
+                    if (onChange) onChange();
+                };
+
+                eqFreqKnob.textFromValueFunction = [] (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 2) + " kHz" : juce::String (juce::roundToInt (v)) + " Hz"; };
+                eqFreqKnob.valueFromTextFunction = [] (const juce::String& s) { const double v = s.getDoubleValue(); return s.containsIgnoreCase ("k") ? v * 1000.0 : v; };
+                eqFreqKnob.onValueChange = [this]
+                {
+                    fx.eqHz[(size_t) eqBand].store ((float) eqFreqKnob.getValue());
+                    repaintVisual();
+                };
+
+                eqQKnob.setRange (omx::kEqMinQ, omx::kEqMaxQ, 0.01);
+                eqQKnob.setSkewFactorFromMidPoint (1.5);
+                eqQKnob.setDoubleClickReturnValue (true, omx::kEqDefaultQ);
+                eqQKnob.homeValue = omx::kEqDefaultQ;
+                eqQKnob.keyStep = 0.1; eqQKnob.pageStep = 1.0;
+                eqQKnob.textFromValueFunction = [] (double v) { return juce::String (v, 2); };
+                eqQKnob.onValueChange = [this]
+                {
+                    fx.eqQ[(size_t) eqBand].store ((float) eqQKnob.getValue());
+                    repaintVisual();
+                };
+
+                selectEqBand (eqBand);
+            }
+            setHelp ("Eight bands: a low shelf (LS), six bells (2 to 7) and a high shelf (HS). Pick a band with its key "
+                     "or its handle; drag handles on the graph, scroll over one to change its width.");
+            height = 466;
             if (! onBus)
             {
                 makeLamp (hpfToggle, "key");
@@ -1823,7 +1882,7 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
                 };
                 addAndMakeVisible (lpfCutoffSlider);
 
-                height = 478;
+                height = 532;
             }
             break;
 
@@ -1883,9 +1942,48 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
     setSize (width, height);
 }
 
+void ProcessorPanel::selectEqBand (int band)
+{
+    eqBand = juce::jlimit (0, omx::kEqBands - 1, band);
+    for (int b = 0; b < omx::kEqBands; ++b)
+        eqBandKeys[(size_t) b].setToggleState (b == eqBand, juce::dontSendNotification);
+
+    eqFreqKnob.setRange (omx::eqMinHz (eqBand), omx::eqMaxHz (eqBand), 1.0);
+    eqFreqKnob.setSkewFactorFromMidPoint (std::sqrt ((double) omx::eqMinHz (eqBand) * omx::eqMaxHz (eqBand)));
+    eqFreqKnob.setDoubleClickReturnValue (true, omx::kEqDefaultHz[(size_t) eqBand]);
+    eqFreqKnob.homeValue = omx::kEqDefaultHz[(size_t) eqBand];
+    eqFreqKnob.keyStep = 10.0; eqFreqKnob.pageStep = 100.0;
+
+    // Shelves have a fixed slope: no width control.
+    const bool bell = omx::eqBandType (eqBand) == omx::EqBandType::bell;
+    eqQKnob.setEnabled (bell);
+    eqQKnob.setAlpha (bell ? 1.0f : 0.45f);
+
+    const auto name = eqBandKeys[(size_t) eqBand].getTitle();
+    eqGainKnob.setTitle (name + " gain");
+    eqFreqKnob.setTitle (name + " frequency");
+    eqQKnob.setTitle (name + " width (Q)");
+
+    syncEqKnobs();
+    if (auto* v = dynamic_cast<EqVisual*> (getVisual()))
+        v->setSelected (eqBand);
+}
+
+void ProcessorPanel::syncEqKnobs()
+{
+    const auto b = (size_t) eqBand;
+    eqGainKnob.setValue (fx.eqDb[b].load(), juce::dontSendNotification);
+    eqFreqKnob.setValue (fx.eqHz[b].load(), juce::dontSendNotification);
+    eqQKnob.setValue (fx.eqQ[b].load(), juce::dontSendNotification);
+    for (auto* k : { &eqGainKnob, &eqFreqKnob, &eqQKnob })
+        k->updateText();
+}
+
 void ProcessorPanel::syncFromVisual()
 {
     syncKnobsFromTargets();
+    if (kind == Processor::Eq)
+        syncEqKnobs();
     if (kind == Processor::Eq && stripIndex >= 0)
     {
         hpfCutoffSlider.setValue (fx.hpfHz.load(), juce::dontSendNotification);
@@ -1906,6 +2004,30 @@ void ProcessorPanel::layoutExtra (juce::Rectangle<int>& r)
         duckSource.setBounds (row);
         r.removeFromTop (Theme::s3);
         return;
+    }
+
+    if (kind == Processor::Eq)
+    {
+        // Band keys, then the selected band's Gain / Freq / Q.
+        auto keys = r.removeFromTop (24);
+        const int kw = (keys.getWidth() - (omx::kEqBands - 1) * 4) / omx::kEqBands;
+        for (auto& key : eqBandKeys)
+        {
+            key.setBounds (keys.removeFromLeft (kw));
+            keys.removeFromLeft (4);
+        }
+        r.removeFromTop (Theme::s2);
+        auto labels = r.removeFromTop (16);
+        auto knobsRow = r.removeFromTop (76);
+        const int w = knobsRow.getWidth() / 3;
+        juce::Label* ls[] { &eqGainLabel, &eqFreqLabel, &eqQLabel };
+        DbSlider* ks[] { &eqGainKnob, &eqFreqKnob, &eqQKnob };
+        for (int i = 0; i < 3; ++i)
+        {
+            ls[i]->setBounds (labels.removeFromLeft (w));
+            ks[i]->setBounds (knobsRow.removeFromLeft (w).reduced (4, 0));
+        }
+        r.removeFromTop (Theme::s2);
     }
 
     if (kind == Processor::Eq && stripIndex >= 0)

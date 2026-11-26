@@ -168,7 +168,6 @@ private:
     juce::TooltipWindow tooltips { this, 600 };
     StatusDisplay statusDisplay;
     StatusBar statusBar;
-    juce::TextButton appSettingsButton { "Settings" };
     juce::TextButton fixButton { "Open audio settings" };
     StripKey recordButton { "Record" };
     MenuDotsButton recordMenuButton;
