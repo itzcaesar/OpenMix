@@ -57,9 +57,15 @@ Space switches it on or off without opening the panel.
 - **NR** noise removal (RNNoise): fans, hum and keyboard noise. Adds
   20 ms at 48 kHz (RNNoise's own rate); at other rates it resamples to
   48 kHz and back, about 1 ms more. Other strips are delayed to match.
-- **Gate** turns the strip down while it's quiet. **Comp** evens out loud
-  and quiet parts. **DS** softens harsh S sounds. **Duck** lowers this
-  strip while another strip has signal (music under your voice).
+- **Gate** turns the strip down while it's quiet. Set Attack (0.1–100 ms),
+  Hold (0–500 ms), and Release (10–1000 ms) to control how it opens and
+  closes around speech. **Comp** evens out loud
+  and quiet parts; its panel lets you set Threshold, Ratio, Knee, Attack
+  and Release. Knee ranges from 0 to 18 dB, Attack from 0.1 to 100 ms,
+  and Release from 10 to 1000 ms. **DS** softens harsh S sounds. **Duck**
+  lowers this strip while another strip has signal (music under your voice).
+- In the **DS** panel, set the detector between 2.5 and 12 kHz to suit the
+  voice; its high-shelf cut follows just below that frequency.
 - Gate, compressor, de-esser and ducking show a gain-reduction meter in
   their panel.
 

@@ -67,10 +67,14 @@ namespace omx
         // Built-in processing (mirrors ProcessingParams; HPF/LPF included).
         bool denoiseOn = false;   float denoiseAmount = 1.0f;
         bool gateOn = false;      float gateThresholdDb = -50.0f, gateRangeDb = -40.0f;
+        float gateAttackMs = 1.0f, gateHoldMs = 80.0f, gateReleaseMs = 120.0f;
         bool eqOn = false;
         std::array<float, kEqBands> eqDb {}, eqHz = kEqDefaultHz, eqQ { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
         bool compOn = false;      float compThresholdDb = -18.0f, compRatio = 3.0f;
+        float compKneeDb = 6.0f;
+        float compAttackMs = 5.0f, compReleaseMs = 120.0f;
         bool deessOn = false;     float deessThresholdDb = -30.0f, deessMaxDb = 10.0f;
+        float deessFreqHz = 6500.0f;
         bool duckOn = false;      int duckSource = -1;   // strip index, -1 = none
         float duckDepthDb = -12.0f, duckThresholdDb = -40.0f;
         bool hpfOn = false;       float hpfHz = 80.0f;    // 20..1000 Hz

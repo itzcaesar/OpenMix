@@ -24,14 +24,17 @@ namespace omx
     public:
         float thresholdDb = -50.0f;   // opens above this
         float rangeDb     = -40.0f;   // attenuation while closed (not full silence: sounds natural)
+        float attackMs    = 1.0f;     // gain rise time after opening
+        float holdMs      = 80.0f;    // stay open after the detector falls below the close threshold
+        float releaseMs   = 120.0f;   // gain fall time after closing
 
         void prepare (double fs)
         {
-            envAttack  = coeff (fs, 0.5);
-            envRelease = coeff (fs, 60.0);
-            openCoef   = coeff (fs, 1.0);
-            closeCoef  = coeff (fs, 120.0);
-            holdSamples = (int) (fs * 0.08);
+            sampleRate = fs > 0.0 ? fs : 48000.0;
+            envAttack  = coeff (sampleRate, 0.5);
+            envRelease = coeff (sampleRate, 60.0);
+            configuredAttackMs = configuredHoldMs = configuredReleaseMs = -1.0f;
+            updateTiming();
             reset();
         }
 
@@ -39,6 +42,7 @@ namespace omx
 
         float process (float* l, float* r, int n) noexcept
         {
+            updateTiming();
             const float openLevel = toGain (thresholdDb), closeLevel = toGain (thresholdDb - 4.0f);
             const float floorGain = toGain (rangeDb);
             float minGain = 1.0f;
@@ -64,6 +68,31 @@ namespace omx
         }
 
     private:
+        void updateTiming() noexcept
+        {
+            const float nextAttackMs = std::clamp (std::isfinite (attackMs) ? attackMs : 1.0f, 0.1f, 100.0f);
+            const float nextHoldMs = std::clamp (std::isfinite (holdMs) ? holdMs : 80.0f, 0.0f, 500.0f);
+            const float nextReleaseMs = std::clamp (std::isfinite (releaseMs) ? releaseMs : 120.0f, 10.0f, 1000.0f);
+            if (nextAttackMs != configuredAttackMs)
+            {
+                openCoef = coeff (sampleRate, nextAttackMs);
+                configuredAttackMs = nextAttackMs;
+            }
+            if (nextHoldMs != configuredHoldMs)
+            {
+                holdSamples = (int) std::lround (sampleRate * 0.001 * nextHoldMs);
+                holdCount = std::min (holdCount, holdSamples);
+                configuredHoldMs = nextHoldMs;
+            }
+            if (nextReleaseMs != configuredReleaseMs)
+            {
+                closeCoef = coeff (sampleRate, nextReleaseMs);
+                configuredReleaseMs = nextReleaseMs;
+            }
+        }
+
+        double sampleRate = 48000.0;
+        float configuredAttackMs = -1.0f, configuredHoldMs = -1.0f, configuredReleaseMs = -1.0f;
         float envAttack = 0, envRelease = 0, openCoef = 0, closeCoef = 0;
         float env = 0, gain = 1;
         int holdSamples = 0, holdCount = 0;
@@ -71,18 +100,22 @@ namespace omx
     };
 
     //==========================================================================
-    // Feed-forward compressor, stereo-linked, 6 dB soft knee, smoothing in the dB domain.
+    // Feed-forward compressor, stereo-linked, adjustable soft knee, smoothing in the dB domain.
     // Make-up gain is automatic (half the reduction at 0 dBFS), capped at +12 dB.
     class Compressor
     {
     public:
         float thresholdDb = -18.0f;
         float ratio       = 3.0f;
+        float kneeDb      = 6.0f;
+        float attackMs    = 5.0f;
+        float releaseMs   = 120.0f;
 
         void prepare (double fs)
         {
-            attack  = coeff (fs, 5.0);
-            release = coeff (fs, 120.0);
+            sampleRate = fs > 0.0 ? fs : 48000.0;
+            configuredAttackMs = configuredReleaseMs = -1.0f;
+            updateTiming();
             reset();
         }
 
@@ -90,11 +123,7 @@ namespace omx
 
         static float staticReductionDb (float inputDb, float thresholdDb, float ratio, float kneeDb = 6.0f) noexcept
         {
-            const float over = inputDb - thresholdDb;
-            const float slope = 1.0f - 1.0f / std::max (1.0f, ratio);
-            if (2.0f * over < -kneeDb)               return 0.0f;
-            if (2.0f * std::abs (over) <= kneeDb)    return slope * (over + kneeDb * 0.5f) * (over + kneeDb * 0.5f) / (2.0f * kneeDb);
-            return slope * over;
+            return reductionForKnee (inputDb, thresholdDb, ratio, safeKneeDb (kneeDb));
         }
 
         float makeupDb() const noexcept
@@ -104,13 +133,15 @@ namespace omx
 
         float process (float* l, float* r, int n) noexcept
         {
+            updateTiming();
             const float makeup = makeupDb();
+            const float activeKneeDb = safeKneeDb (kneeDb);
             float maxGr = 0.0f;
 
             for (int i = 0; i < n; ++i)
             {
                 const float peak = std::max (std::abs (l[i]), std::abs (r[i]));
-                const float target = staticReductionDb (toDb (peak), thresholdDb, ratio);
+                const float target = reductionForKnee (toDb (peak), thresholdDb, ratio, activeKneeDb);
                 const float c = target > grDb ? attack : release;
                 grDb = c * grDb + (1.0f - c) * target;
 
@@ -123,6 +154,40 @@ namespace omx
         }
 
     private:
+        static float safeKneeDb (float value) noexcept
+        {
+            return std::clamp (std::isfinite (value) ? value : 6.0f, 0.0f, 18.0f);
+        }
+
+        static float reductionForKnee (float inputDb, float thresholdDb, float ratio, float kneeDb) noexcept
+        {
+            const float over = inputDb - thresholdDb;
+            const float slope = 1.0f - 1.0f / std::max (1.0f, ratio);
+            if (kneeDb <= 0.0f)
+                return std::max (0.0f, slope * over);
+            if (2.0f * over < -kneeDb)               return 0.0f;
+            if (2.0f * std::abs (over) <= kneeDb)    return slope * (over + kneeDb * 0.5f) * (over + kneeDb * 0.5f) / (2.0f * kneeDb);
+            return slope * over;
+        }
+
+        void updateTiming() noexcept
+        {
+            const float safeAttackMs = std::clamp (std::isfinite (attackMs) ? attackMs : 5.0f, 0.1f, 100.0f);
+            const float safeReleaseMs = std::clamp (std::isfinite (releaseMs) ? releaseMs : 120.0f, 10.0f, 1000.0f);
+            if (safeAttackMs != configuredAttackMs)
+            {
+                attack = coeff (sampleRate, safeAttackMs);
+                configuredAttackMs = safeAttackMs;
+            }
+            if (safeReleaseMs != configuredReleaseMs)
+            {
+                release = coeff (sampleRate, safeReleaseMs);
+                configuredReleaseMs = safeReleaseMs;
+            }
+        }
+
+        double sampleRate = 48000.0;
+        float configuredAttackMs = -1.0f, configuredReleaseMs = -1.0f;
         float attack = 0, release = 0, grDb = 0;
     };
 
@@ -211,18 +276,33 @@ namespace omx
     };
 
     //==========================================================================
-    // De-esser: listens around 6.5 kHz and, only while sibilance is there, turns the top end
-    // down with a high shelf. Leaves the rest of the voice alone.
+    // De-esser: listens around the configured sibilance frequency and, only while it is there,
+    // turns the top end down with a high shelf. Leaves the rest of the voice alone.
     class DeEsser
     {
     public:
         float thresholdDb = -30.0f;
         float maxReductionDb = 10.0f;
+        float detectorHz = 6500.0f;
+
+        static float clampDetectorHz (float hz, double sampleRate) noexcept
+        {
+            const float maxHz = (float) std::min (12000.0, (sampleRate > 0.0 ? sampleRate : 48000.0) * 0.45);
+            const float minHz = std::min (2500.0f, maxHz);
+            return std::clamp (std::isfinite (hz) ? hz : 6500.0f, minHz, maxHz);
+        }
+
+        static float shelfFrequencyFor (float detectorFrequency) noexcept
+        {
+            const float safeHz = std::isfinite (detectorFrequency) ? detectorFrequency : 6500.0f;
+            return safeHz * (4500.0f / 6500.0f);
+        }
 
         void prepare (double sampleRate)
         {
-            fs = sampleRate;
-            detector.setBandPass (fs, 6500.0, 1.4);
+            fs = sampleRate > 0.0 ? sampleRate : 48000.0;
+            configuredDetectorHz = -1.0f;
+            updateDetector();
             attack = coeff (fs, 1.0);
             release = coeff (fs, 60.0);
             reset();
@@ -231,11 +311,13 @@ namespace omx
         void reset() noexcept
         {
             detector.reset(); shelf.reset();
-            env = 0.0f; reductionDb = 0.0f; appliedDb = -1.0f;
+            env = 0.0f; reductionDb = 0.0f; appliedDb = -1.0f; appliedShelfHz = -1.0f;
         }
 
         float process (float* l, float* r, int n) noexcept
         {
+            updateDetector();
+            const float shelfHz = shelfFrequencyFor (configuredDetectorHz);
             float maxRed = 0.0f;
             for (int i = 0; i < n; ++i)
             {
@@ -244,10 +326,11 @@ namespace omx
                 env = c * env + (1.0f - c) * band;
 
                 reductionDb = std::clamp (toDb (env) - thresholdDb, 0.0f, maxReductionDb);
-                if ((i & 31) == 0 && std::abs (reductionDb - appliedDb) > 0.1f)
+                if ((i & 31) == 0 && (std::abs (reductionDb - appliedDb) > 0.1f || shelfHz != appliedShelfHz))
                 {
-                    shelf.setHighShelf (fs, 4500.0, -reductionDb);
+                    shelf.setHighShelf (fs, shelfHz, -reductionDb);
                     appliedDb = reductionDb;
+                    appliedShelfHz = shelfHz;
                 }
 
                 l[i] = shelf.process (l[i], 0);
@@ -258,8 +341,23 @@ namespace omx
         }
 
     private:
+        void updateDetector() noexcept
+        {
+            const float nextHz = clampDetectorHz (detectorHz, fs);
+            if (nextHz != configuredDetectorHz)
+            {
+                detector.setBandPass (fs, nextHz, 1.4);
+                detector.reset();
+                configuredDetectorHz = nextHz;
+                env = 0.0f;
+                appliedDb = -1.0f;
+                appliedShelfHz = -1.0f;
+            }
+        }
+
         double fs = 48000.0;
         Biquad detector, shelf;
+        float configuredDetectorHz = -1.0f, appliedShelfHz = -1.0f;
         float attack = 0, release = 0, env = 0, reductionDb = 0, appliedDb = -1;
     };
 }

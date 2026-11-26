@@ -310,6 +310,8 @@ void MixerEngine::removeBus (int b)
     bus.customName.clear();
     bus.fx.eqOn.store (false);   bus.fx.resetEq();
     bus.fx.compOn.store (false); bus.fx.compThresholdDb.store (-18.0f); bus.fx.compRatio.store (3.0f);
+    bus.fx.compKneeDb.store (6.0f);
+    bus.fx.compAttackMs.store (5.0f); bus.fx.compReleaseMs.store (120.0f);
     for (auto& s : strips)
         s->busOn[b].store (false);
 }
@@ -919,6 +921,9 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         {
             comp.thresholdDb = bus.fx.compThresholdDb.load();
             comp.ratio = bus.fx.compRatio.load();
+            comp.kneeDb = bus.fx.compKneeDb.load();
+            comp.attackMs = bus.fx.compAttackMs.load();
+            comp.releaseMs = bus.fx.compReleaseMs.load();
             const float gr = comp.process (L, R, n);
             if (gr < bus.fx.compGain.load (std::memory_order_relaxed))
                 bus.fx.compGain.store (gr, std::memory_order_relaxed);

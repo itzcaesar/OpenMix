@@ -62,6 +62,8 @@ slots A1–A3 are always **Hardware**, B1–B3 always **Virtual**.
 ## Processing and inserts
 
 **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip.
+The compressor has adjustable Threshold, Ratio, Knee (0–18 dB), Attack
+(0.1–100 ms) and Release (10–1000 ms).
 Switching EQ or Comp fades over about 20 ms, so it never clicks.
 
 **Bus path:** sum, EQ, compressor, inserts, loudness normalisation,

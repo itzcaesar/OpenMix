@@ -586,7 +586,7 @@ namespace
             : fx (p), getGrDb (std::move (grFn)), notifyEdit (std::move (onEdit))
         {
             makeClickable (*this);
-            setTooltip ("Drag T left/right for Threshold, or R up/down for Ratio. Double-click to reset.");
+            setTooltip ("Drag T left/right for Threshold, or R up/down for Ratio. Set Knee, Attack and Release with the knobs below.");
         }
 
         void paint (juce::Graphics& g) override
@@ -595,9 +595,11 @@ namespace
             const bool active = fx.compOn.load();
             const float thr = fx.compThresholdDb.load();
             const float ratio = fx.compRatio.load();
+            const float knee = fx.compKneeDb.load();
             omx::Compressor c;
             c.thresholdDb = thr;
             c.ratio = ratio;
+            c.kneeDb = knee;
             const float makeup = c.makeupDb();
             const float gr = getGrDb ? getGrDb() : 0.0f;
 
@@ -605,8 +607,8 @@ namespace
                 {
                     { "THR",    juce::String (thr, 1) + " dB", false },
                     { "RATIO",  juce::String (ratio, 1) + ":1", false },
-                    { "MAKEUP", "+" + juce::String (makeup, 1) + " dB", makeup > 0.2f },
-                    { "GR",     gr < 0.05f ? juce::String ("0.0 dB") : "-" + juce::String (gr, 1) + " dB", gr > 0.2f }
+                    { "KNEE",   juce::String (knee, 1) + " dB", false },
+                    { "MAKEUP", "+" + juce::String (makeup, 1) + " dB", makeup > 0.2f }
                 }, active);
 
             auto grCol = inner.removeFromRight (44);
@@ -666,7 +668,7 @@ namespace
             {
                 const float inDb = kInMin + (kInMax - kInMin) * ((float) i / (float) N);
                 const float outDb = active
-                    ? (inDb - omx::Compressor::staticReductionDb (inDb, thr, ratio) + makeup)
+                    ? (inDb - omx::Compressor::staticReductionDb (inDb, thr, ratio, knee) + makeup)
                     : inDb;
                 const float x = linearToX (inDb, plot.getX(), plot.getWidth(), kInMin, kInMax);
                 const float y = dbToY (std::clamp (outDb, kOutMin, kOutMax), plot.getY(), plot.getHeight(), kOutMin, kOutMax);
@@ -740,7 +742,8 @@ namespace
             omx::Compressor c;
             c.thresholdDb = fx.compThresholdDb.load();
             c.ratio = fx.compRatio.load();
-            return std::clamp (inDb - omx::Compressor::staticReductionDb (inDb, c.thresholdDb, c.ratio) + c.makeupDb(), kOutMin, kOutMax);
+            c.kneeDb = fx.compKneeDb.load();
+            return std::clamp (inDb - omx::Compressor::staticReductionDb (inDb, c.thresholdDb, c.ratio, c.kneeDb) + c.makeupDb(), kOutMin, kOutMax);
         }
 
         juce::Point<float> threshNodePos() const noexcept
@@ -802,7 +805,7 @@ namespace
             : fx (p), getGrDb (std::move (grFn)), notifyEdit (std::move (onEdit))
         {
             makeClickable (*this);
-            setTooltip ("Drag T left/right for Threshold, or F up/down for Range floor. Double-click to reset.");
+            setTooltip ("Drag T left/right for Threshold, or F up/down for Range floor. Set Attack, Hold and Release with the knobs below.");
         }
 
         void paint (juce::Graphics& g) override
@@ -978,7 +981,7 @@ namespace
     };
 
     //==========================================================================
-    // Interactive De-esser visual (6.5k detector window + dynamic 4.5k high shelf)
+    // Interactive De-esser visual (configurable detector + linked high shelf)
 
     class DeEssVisual final : public juce::Component, public juce::SettableTooltipClient
     {
@@ -987,7 +990,7 @@ namespace
             : engine (e), fx (p), getGrDb (std::move (grFn)), notifyEdit (std::move (onEdit))
         {
             makeClickable (*this);
-            setTooltip ("Drag the Max cut node vertically, or drag the left Threshold marker. Double-click to reset.");
+            setTooltip ("Drag the Max cut node vertically, or drag the left Threshold marker. Set the detector frequency with the knob below.");
         }
 
         void paint (juce::Graphics& g) override
@@ -996,11 +999,14 @@ namespace
             const bool active = fx.deessOn.load();
             const float thr = fx.deessThresholdDb.load();
             const float maxCut = fx.deessMaxDb.load();
+            const double sr = engine.getSampleRate() > 0.0 ? engine.getSampleRate() : 48000.0;
+            const float detectHz = DeEsser::clampDetectorHz (fx.deessFreqHz.load(), sr);
+            const float shelfHz = DeEsser::shelfFrequencyFor (detectHz);
             const float liveCut = getGrDb ? std::min (maxCut, getGrDb()) : 0.0f;
 
             auto inner = drawVisualFrame (g, getLocalBounds(),
                 {
-                    { "DETECT", "6.5k BP", false },
+                    { "DETECT", formatHzShort (detectHz) + " BP", false },
                     { "THR",    juce::String (thr, 1) + " dB", false },
                     { "MAX",    "-" + juce::String (maxCut, 1) + " dB", false },
                     { "CUT",    liveCut < 0.05f ? juce::String ("0.0 dB") : "-" + juce::String (liveCut, 1) + " dB", liveCut > 0.2f }
@@ -1032,22 +1038,24 @@ namespace
             for (const float f : { 1000.0f, 2000.0f, 4500.0f, 6500.0f, 10000.0f })
             {
                 const float x = freqToX (f, plot.getX(), plot.getWidth(), kFMin, kFMax);
-                g.setColour (f == 6500.0f ? t.accent.withAlpha (0.28f) : t.line.withAlpha (0.3f));
+                g.setColour (t.line.withAlpha (0.3f));
                 g.fillRect (x, plot.getY(), 1.0f, plot.getHeight());
                 g.setFont (Theme::mono (9.5f));
-                g.setColour (f == 6500.0f ? t.accent : t.textFaint);
+                g.setColour (t.textFaint);
                 g.drawText (formatHzShort (f), juce::Rectangle<float> (x - 14.0f, plot.getBottom() + 1.0f, 28.0f, 11.0f),
                             juce::Justification::centred);
             }
+            const float detectorX = freqToX (detectHz, plot.getX(), plot.getWidth(), kFMin, kFMax);
+            g.setColour ((active ? t.accent : t.textFaint).withAlpha (0.32f));
+            g.fillRect (detectorX, plot.getY(), 1.0f, plot.getHeight());
             const float zeroY = dbToY (0.0f, plot.getY(), plot.getHeight(), kDbMin, kDbMax);
             g.setColour (t.controlEdge.withAlpha (0.45f));
             g.fillRect (plot.getX(), zeroY, plot.getWidth(), 1.0f);
 
-            const double sr = engine.getSampleRate() > 0.0 ? engine.getSampleRate() : 48000.0;
             Biquad bp, maxShelf, liveShelf;
-            bp.setBandPass (sr, 6500.0, 1.4);
-            maxShelf.setHighShelf (sr, 4500.0, -maxCut);
-            liveShelf.setHighShelf (sr, 4500.0, active ? -liveCut : 0.0);
+            bp.setBandPass (sr, detectHz, 1.4);
+            maxShelf.setHighShelf (sr, shelfHz, -maxCut);
+            liveShelf.setHighShelf (sr, shelfHz, active ? -liveCut : 0.0);
 
             juce::Path bpArea, maxCurve, liveCurve, liveFill;
             constexpr int N = 96;
@@ -1163,7 +1171,9 @@ namespace
 
         juce::Point<float> maxPos() const noexcept
         {
-            return { freqToX (10000.0f, plot.getX(), plot.getWidth(), kFMin, kFMax),
+            const double sr = engine.getSampleRate() > 0.0 ? engine.getSampleRate() : 48000.0;
+            const float detectHz = DeEsser::clampDetectorHz (fx.deessFreqHz.load(), sr);
+            return { freqToX (DeEsser::shelfFrequencyFor (detectHz), plot.getX(), plot.getWidth(), kFMin, kFMax),
                      dbToY (-fx.deessMaxDb.load(), plot.getY(), plot.getHeight(), kDbMin, kDbMax) };
         }
 
@@ -1731,11 +1741,15 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             break;
 
         case Processor::Gate:
+            width = 460;
             setVisual (std::make_unique<GateVisual> (fx, grFn, onVisualEdit), 156);
             addKnob ({ "Threshold", -80, 0, 0.5, " dB", fx.gateThresholdDb });
             addKnob ({ "Range", -80, 0, 0.5, " dB", fx.gateRangeDb });
+            addKnob ({ "Attack", 0.1, 100, 0.1, " ms", fx.gateAttackMs, 1.0 });
+            addKnob ({ "Hold", 0, 500, 1, " ms", fx.gateHoldMs, 80.0 });
+            addKnob ({ "Release", 10, 1000, 1, " ms", fx.gateReleaseMs, 120.0 });
             setMeter (&fx.gateGain, "Reduction");
-            setHelp ("Attenuates the strip while signal falls below Threshold (with 4 dB hysteresis).");
+            setHelp ("Attack: 0.1-100 ms. Hold: 0-500 ms. Release: 10-1000 ms. Controls how quickly the gate opens, waits, and closes. Threshold has 4 dB hysteresis; Range sets the closed level.");
             height = 410;
             break;
 
@@ -1887,12 +1901,16 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             break;
 
         case Processor::Comp:
+            width = 460;
             setVisual (std::make_unique<CompVisual> (fx, grFn, onVisualEdit), 156);
             addKnob ({ "Threshold", -60, 0, 0.5, " dB", fx.compThresholdDb });
             addKnob ({ "Ratio", 1, 20, 0.1, ":1", fx.compRatio, 4.0 });
+            addKnob ({ "Knee", 0, 18, 0.5, " dB", fx.compKneeDb, 6.0 });
+            addKnob ({ "Attack", 0.1, 100, 0.1, " ms", fx.compAttackMs, 5.0 });
+            addKnob ({ "Release", 10, 1000, 1, " ms", fx.compReleaseMs, 120.0 });
             setMeter (&fx.compGain, "Reduction");
-            setHelp (onBus ? "Evens out the bus mix with automatic make-up gain; safety limiter catches peaks after it."
-                           : "Evens out loud and quiet passages with a 6 dB soft knee and automatic make-up gain.");
+            setHelp (onBus ? "Knee: 0-18 dB. Attack: 0.1-100 ms. Release: 10-1000 ms. Attack sets response speed; Release sets recovery. Automatic make-up stays on; the safety limiter catches peaks after it."
+                           : "Knee: 0-18 dB. Attack: 0.1-100 ms. Release: 10-1000 ms. Knee shapes the transition; Attack sets response speed; Release sets recovery. Automatic make-up stays on.");
             height = 410;
             break;
 
@@ -1900,8 +1918,9 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             setVisual (std::make_unique<DeEssVisual> (engine, fx, grFn, onVisualEdit), 156);
             addKnob ({ "Threshold", -60, 0, 0.5, " dB", fx.deessThresholdDb });
             addKnob ({ "Max cut", 0, 20, 0.5, " dB", fx.deessMaxDb });
+            addKnob ({ "Detect Hz", 2500, 12000, 50, " Hz", fx.deessFreqHz, 6500.0 });
             setMeter (&fx.deessGain, "Reduction");
-            setHelp ("Monitors sibilance around 6.5 kHz and ducks a 4.5 kHz high shelf when active.");
+            setHelp ("Moves the sibilance detector from 2.5 to 12 kHz; the high-shelf cut starts just below the selected frequency. Threshold sets when it reacts; Max cut caps the reduction.");
             height = 410;
             break;
 

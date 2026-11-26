@@ -41,6 +41,9 @@ struct ProcessingParams
     std::atomic<bool>  gateOn { false };
     std::atomic<float> gateThresholdDb { -50.0f };
     std::atomic<float> gateRangeDb { -40.0f };
+    std::atomic<float> gateAttackMs { 1.0f };
+    std::atomic<float> gateHoldMs { 80.0f };
+    std::atomic<float> gateReleaseMs { 120.0f };
 
     std::atomic<bool>  eqOn { false };
     // 8 bands (dsp/EqBands.h): band 0 low shelf, 1..6 bells, 7 high shelf.
@@ -60,10 +63,14 @@ struct ProcessingParams
     std::atomic<bool>  compOn { false };
     std::atomic<float> compThresholdDb { -18.0f };
     std::atomic<float> compRatio { 3.0f };
+    std::atomic<float> compKneeDb { 6.0f };
+    std::atomic<float> compAttackMs { 5.0f };
+    std::atomic<float> compReleaseMs { 120.0f };
 
     std::atomic<bool>  deessOn { false };
     std::atomic<float> deessThresholdDb { -30.0f };
     std::atomic<float> deessMaxDb { 10.0f };
+    std::atomic<float> deessFreqHz { 6500.0f };
 
     // HPF/LPF, before the 3-band EQ (see ChannelStrip::process). Cutoffs are clamped
     // by the setters to their useful ranges; the DSP clamps them again to Nyquist.
