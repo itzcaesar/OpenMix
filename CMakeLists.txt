@@ -233,6 +233,7 @@ target_link_libraries(OpenMix
         juce::juce_gui_extra        # tray icon
         juce::juce_dsp
         juce::juce_osc              # remote control
+        juce::juce_cryptography    # pinned model archive verification
         rnnoise
         mmdevapi            # ActivateAudioInterfaceAsync (per-app capture)
         avrt                # MMCSS thread priority for capture threads

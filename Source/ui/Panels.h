@@ -4,6 +4,8 @@
 #include "engine/MixerEngine.h"
 #include "ui/Widgets.h"
 
+#include <cstdint>
+
 // Pop-over panels opened from a strip or bus: one per built-in processor,
 // plus wet/dry insert mix and bus send panels.
 
@@ -73,16 +75,22 @@ private:
     juce::Rectangle<int> titleArea, helpArea, meterArea;
 };
 
-class ProcessorPanel : public PanelBase
+class ProcessorPanel : public PanelBase, private juce::URL::DownloadTaskListener
 {
 public:
     // stripIndex: the strip these settings belong to, or -1 for a bus.
     ProcessorPanel (MixerEngine&, ProcessingParams&, Processor, int stripIndex = -1);
+    ~ProcessorPanel() override;
 
 private:
     void layoutExtra (juce::Rectangle<int>&) override;
     void tick() override;
     void syncFromVisual();
+    void progress (juce::URL::DownloadTask*, juce::int64 bytesDownloaded, juce::int64 totalLength) override;
+    void finished (juce::URL::DownloadTask*, bool success) override;
+    void startDeepFilterModelDownload();
+    void cancelDeepFilterModelDownload();
+    void finishDeepFilterModelDownload (std::uint64_t generation, bool success, int statusCode, const juce::File& file);
 
     MixerEngine& engine;
     ProcessingParams& fx;
@@ -93,6 +101,14 @@ private:
     juce::ComboBox denoiseModel;
     juce::TextButton getDeepFilterModelButton { "Get model" }, installDeepFilterModelButton { "Install..." };
     std::unique_ptr<juce::FileChooser> deepFilterModelChooser;
+    double deepFilterModelProgressValue = 0.0;
+    juce::ProgressBar deepFilterModelProgressBar;
+    juce::File deepFilterDownloadFile;
+    std::unique_ptr<juce::URL::DownloadTask> deepFilterDownloadTask;
+    std::atomic<juce::int64> deepFilterDownloadBytes { 0 }, deepFilterDownloadTotal { 0 };
+    std::atomic<std::uint64_t> deepFilterDownloadGeneration { 0 };
+    bool deepFilterDownloadActive = false, ownsDeepFilterDownloadSlot = false;
+    int deepFilterLastProgressPercent = -1;
 
     // EQ: one key per band selects it; three knobs edit the selected band.
     void selectEqBand (int band);

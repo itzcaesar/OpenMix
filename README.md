@@ -126,8 +126,9 @@ PROCESSING, INSERT, SENDS, the **Voice pad** button, then the fader bay.
    on or off.
    - **NR** noise removal: choose lightweight RNNoise or higher-quality DeepFilterNet 3.
      DeepFilterNet adds about 100 ms at 48 kHz and uses more CPU; other strips are delayed to
-     match. Its model weights are not bundled. Use **Get model** in the NR panel, then
-     **Install...** to select the downloaded `DeepFilterNet3_onnx.tar.gz` archive. The model
+     match. Its model weights are not bundled. Use **Download** in the NR panel to fetch and
+     verify the pinned official `DeepFilterNet3_onnx.tar.gz` archive; **Install...** imports a
+     local copy. The model
      is stored in `%APPDATA%\OpenMix\Models` and the choice is saved per strip.
    - **Gate** turns the strip down while it's quiet. **EQ**: 8 bands (a low shelf, six bells
      with gain, frequency and width, a high shelf) plus the HPF and LPF. **Comp** evens out loud and quiet parts. **DS** softens

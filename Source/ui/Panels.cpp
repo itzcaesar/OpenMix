@@ -3,8 +3,10 @@
 #include "dsp/Biquad.h"
 #include "dsp/Dynamics.h"
 #include "app/AppSettings.h"
+#include <juce_cryptography/juce_cryptography.h>
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <numbers>
 
@@ -52,6 +54,53 @@ std::atomic<bool>& processorOn (ProcessingParams& fx, Processor p)
 
 namespace
 {
+    constexpr char deepFilterModelUrl[] =
+        "https://raw.githubusercontent.com/Rikorose/DeepFilterNet/v0.5.6/models/DeepFilterNet3_onnx.tar.gz";
+    constexpr char deepFilterModelSha256[] = "c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616";
+    constexpr juce::int64 deepFilterModelSize = 7983136;
+    std::atomic<bool> deepFilterModelDownloadClaimed { false };
+
+    juce::File deepFilterModelInstallPath()
+    {
+        return AppSettings::getLogFolder().getChildFile ("Models").getChildFile ("DeepFilterNet3_onnx.tar.gz");
+    }
+
+    bool isOfficialDeepFilterModelArchive (const juce::File& file)
+    {
+        if (! file.existsAsFile() || file.getSize() != deepFilterModelSize)
+            return false;
+
+        return juce::SHA256 (file).toHexString().equalsIgnoreCase (deepFilterModelSha256);
+    }
+
+    enum class ModelInstallResult { installed, invalidArchive, fileError };
+
+    ModelInstallResult installDeepFilterModelArchive (const juce::File& source)
+    {
+        const auto folder = deepFilterModelInstallPath().getParentDirectory();
+        if (! folder.createDirectory())
+            return ModelInstallResult::fileError;
+
+        const auto staging = folder.getChildFile ("DeepFilterNet3_onnx.tar.gz.installing");
+        staging.deleteFile();
+        if (! source.copyFileTo (staging))
+            return ModelInstallResult::fileError;
+
+        if (! isOfficialDeepFilterModelArchive (staging))
+        {
+            staging.deleteFile();
+            return ModelInstallResult::invalidArchive;
+        }
+
+        if (! staging.replaceFileIn (deepFilterModelInstallPath()))
+        {
+            staging.deleteFile();
+            return ModelInstallResult::fileError;
+        }
+
+        return ModelInstallResult::installed;
+    }
+
     struct OverviewItem
     {
         juce::String label;
@@ -1722,7 +1771,8 @@ void PanelBase::resized()
 
 ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Processor p, int strip)
     : PanelBase (processorName (p), &processorOn (params, p)),
-      engine (e), fx (params), kind (p), stripIndex (strip)
+      engine (e), fx (params), kind (p), stripIndex (strip),
+      deepFilterModelProgressBar (deepFilterModelProgressValue)
 {
     const bool onBus = stripIndex < 0;
     auto onVisualEdit = [this] { syncFromVisual(); };
@@ -1752,15 +1802,26 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             makeClickable (denoiseModel);
             addAndMakeVisible (denoiseModel);
 
-            getDeepFilterModelButton.setTooltip ("Open the official DeepFilterNet 3 model archive download.");
-            getDeepFilterModelButton.onClick = []
+            getDeepFilterModelButton.setButtonText ("Download");
+            getDeepFilterModelButton.setTooltip ("Download and install the pinned official DeepFilterNet 3 model.");
+            getDeepFilterModelButton.setTitle ("Download DeepFilterNet 3 model");
+            getDeepFilterModelButton.onClick = [this]
             {
-                juce::URL ("https://raw.githubusercontent.com/Rikorose/DeepFilterNet/v0.5.6/models/DeepFilterNet3_onnx.tar.gz")
-                    .launchInDefaultBrowser();
+                if (deepFilterDownloadActive)
+                    cancelDeepFilterModelDownload();
+                else
+                    startDeepFilterModelDownload();
             };
             addAndMakeVisible (getDeepFilterModelButton);
 
+            deepFilterModelProgressBar.setPercentageDisplay (true);
+            deepFilterModelProgressBar.setTextToDisplay ("Downloading model");
+            deepFilterModelProgressBar.setTooltip ("Verifies the pinned model archive before replacing the installed copy.");
+            addAndMakeVisible (deepFilterModelProgressBar);
+            deepFilterModelProgressBar.setVisible (false);
+
             installDeepFilterModelButton.setTooltip ("Install a downloaded DeepFilterNet3_onnx.tar.gz model archive.");
+            installDeepFilterModelButton.setTitle ("Install DeepFilterNet 3 model archive");
             installDeepFilterModelButton.onClick = [this]
             {
                 deepFilterModelChooser = std::make_unique<juce::FileChooser> (
@@ -1773,32 +1834,14 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
                         if (safe == nullptr || chooser.getResult() == juce::File())
                             return;
 
-                        const auto source = chooser.getResult();
-                        if (source.getSize() < 1024 * 1024)
+                        const auto result = installDeepFilterModelArchive (chooser.getResult());
+                        if (result != ModelInstallResult::installed)
                         {
                             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                "Model file is too small", "Choose the official DeepFilterNet3_onnx.tar.gz archive.");
-                            return;
-                        }
-
-                        const auto modelFolder = AppSettings::getLogFolder().getChildFile ("Models");
-                        modelFolder.createDirectory();
-                        const auto modelFile = modelFolder.getChildFile ("DeepFilterNet3_onnx.tar.gz");
-                        const auto temporary = modelFolder.getChildFile ("DeepFilterNet3_onnx.tar.gz.installing");
-                        temporary.deleteFile();
-                        if (! source.copyFileTo (temporary))
-                        {
-                            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                "Model not installed", "OpenMix couldn't copy the model archive.");
-                            return;
-                        }
-
-                        modelFile.deleteFile();
-                        if (! temporary.moveFileTo (modelFile))
-                        {
-                            temporary.deleteFile();
-                            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                "Model not installed", "OpenMix couldn't install the model archive.");
+                                "Model not installed",
+                                result == ModelInstallResult::invalidArchive
+                                    ? "This file doesn't match the pinned official DeepFilterNet 3 model archive."
+                                    : "OpenMix couldn't copy the model archive into its Models folder.");
                             return;
                         }
 
@@ -1811,8 +1854,8 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
             addAndMakeVisible (installDeepFilterModelButton);
 
             setHelp ("RNNoise is lightweight. DeepFilterNet 3 gives higher quality with more CPU and about 100 ms latency. "
-                     "Download the official model archive, then choose Install. Amount blends processed audio with delayed dry audio.");
-            height = 410;
+                     "Download installs the verified official model. Install... imports a local copy. Amount blends processed audio with delayed dry audio.");
+            height = 430;
             break;
 
         case Processor::Gate:
@@ -2036,6 +2079,165 @@ ProcessorPanel::ProcessorPanel (MixerEngine& e, ProcessingParams& params, Proces
     setSize (width, height);
 }
 
+ProcessorPanel::~ProcessorPanel()
+{
+    deepFilterDownloadGeneration.fetch_add (1, std::memory_order_acq_rel);
+    deepFilterDownloadActive = false;
+    deepFilterDownloadTask.reset();
+    deepFilterDownloadFile.deleteFile();
+
+    if (ownsDeepFilterDownloadSlot)
+        deepFilterModelDownloadClaimed.store (false, std::memory_order_release);
+}
+
+void ProcessorPanel::progress (juce::URL::DownloadTask*, juce::int64 bytesDownloaded, juce::int64 totalLength)
+{
+    deepFilterDownloadBytes.store (bytesDownloaded, std::memory_order_relaxed);
+    deepFilterDownloadTotal.store (totalLength, std::memory_order_relaxed);
+}
+
+void ProcessorPanel::finished (juce::URL::DownloadTask* task, bool success)
+{
+    const auto statusCode = task != nullptr ? task->statusCode() : -1;
+    const auto file = task != nullptr ? task->getTargetLocation() : juce::File();
+    const auto generation = deepFilterDownloadGeneration.load (std::memory_order_acquire);
+    juce::Component::SafePointer<ProcessorPanel> safe (this);
+
+    juce::MessageManager::callAsync ([safe, generation, success, statusCode, file]
+    {
+        if (safe != nullptr)
+            safe->finishDeepFilterModelDownload (generation, success, statusCode, file);
+    });
+}
+
+void ProcessorPanel::startDeepFilterModelDownload()
+{
+    bool expected = false;
+    if (! deepFilterModelDownloadClaimed.compare_exchange_strong (expected, true, std::memory_order_acq_rel))
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+            "Model download already running", "Another Noise removal panel is downloading the model.");
+        return;
+    }
+
+    ownsDeepFilterDownloadSlot = true;
+    const auto folder = deepFilterModelInstallPath().getParentDirectory();
+    if (! folder.createDirectory())
+    {
+        deepFilterModelDownloadClaimed.store (false, std::memory_order_release);
+        ownsDeepFilterDownloadSlot = false;
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+            "Model download failed", "OpenMix couldn't create its Models folder.");
+        return;
+    }
+
+    deepFilterDownloadFile = folder.getChildFile ("DeepFilterNet3_onnx.tar.gz.download");
+    if (! deepFilterDownloadFile.deleteFile() && deepFilterDownloadFile.existsAsFile())
+    {
+        deepFilterModelDownloadClaimed.store (false, std::memory_order_release);
+        ownsDeepFilterDownloadSlot = false;
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+            "Model download failed", "OpenMix couldn't clear an incomplete previous download.");
+        return;
+    }
+
+    const auto generation = deepFilterDownloadGeneration.fetch_add (1, std::memory_order_acq_rel) + 1;
+    juce::ignoreUnused (generation);
+    deepFilterDownloadBytes.store (0, std::memory_order_relaxed);
+    deepFilterDownloadTotal.store (deepFilterModelSize, std::memory_order_relaxed);
+    deepFilterModelProgressValue = 0.0;
+    deepFilterLastProgressPercent = -1;
+    deepFilterDownloadActive = true;
+    deepFilterModelProgressBar.setVisible (true);
+    getDeepFilterModelButton.setButtonText ("Cancel");
+    getDeepFilterModelButton.setTooltip ("Cancel the model download. The installed model will be kept.");
+    getDeepFilterModelButton.setTitle ("Cancel DeepFilterNet 3 model download");
+    setHelp ("Downloading the pinned DeepFilterNet 3 model. Cancel keeps the currently installed model.");
+
+    const auto options = juce::URL::DownloadTaskOptions().withListener (this);
+    deepFilterDownloadTask = juce::URL (deepFilterModelUrl).downloadToFile (deepFilterDownloadFile, options);
+    if (deepFilterDownloadTask == nullptr)
+    {
+        deepFilterDownloadActive = false;
+        deepFilterDownloadFile.deleteFile();
+        deepFilterModelProgressBar.setVisible (false);
+        getDeepFilterModelButton.setButtonText ("Download");
+        getDeepFilterModelButton.setTooltip ("Download and install the pinned official DeepFilterNet 3 model.");
+        getDeepFilterModelButton.setTitle ("Download DeepFilterNet 3 model");
+        deepFilterModelDownloadClaimed.store (false, std::memory_order_release);
+        ownsDeepFilterDownloadSlot = false;
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+            "Model download failed", "OpenMix couldn't start the download. Check your network connection and retry.");
+    }
+}
+
+void ProcessorPanel::cancelDeepFilterModelDownload()
+{
+    if (! deepFilterDownloadActive)
+        return;
+
+    deepFilterDownloadGeneration.fetch_add (1, std::memory_order_acq_rel);
+    deepFilterDownloadActive = false;
+    deepFilterDownloadTask.reset();
+    deepFilterDownloadFile.deleteFile();
+    deepFilterModelProgressValue = 0.0;
+    deepFilterModelProgressBar.setVisible (false);
+    getDeepFilterModelButton.setButtonText ("Download");
+    getDeepFilterModelButton.setTooltip ("Download and install the pinned official DeepFilterNet 3 model.");
+    getDeepFilterModelButton.setTitle ("Download DeepFilterNet 3 model");
+    setHelp ("Model download cancelled. The previous model, if installed, is unchanged.");
+
+    if (ownsDeepFilterDownloadSlot)
+    {
+        deepFilterModelDownloadClaimed.store (false, std::memory_order_release);
+        ownsDeepFilterDownloadSlot = false;
+    }
+}
+
+void ProcessorPanel::finishDeepFilterModelDownload (std::uint64_t generation, bool success,
+                                                    int statusCode, const juce::File& file)
+{
+    if (generation != deepFilterDownloadGeneration.load (std::memory_order_acquire))
+        return;
+
+    deepFilterDownloadTask.reset();
+    deepFilterDownloadActive = false;
+    deepFilterModelProgressValue = success && statusCode == 200 ? 1.0 : 0.0;
+    deepFilterModelProgressBar.setVisible (false);
+    getDeepFilterModelButton.setButtonText ("Download");
+    getDeepFilterModelButton.setTooltip ("Download and install the pinned official DeepFilterNet 3 model.");
+    getDeepFilterModelButton.setTitle ("Download DeepFilterNet 3 model");
+
+    const auto result = success && statusCode == 200 && file.getSize() == deepFilterModelSize
+                      ? installDeepFilterModelArchive (file)
+                      : ModelInstallResult::invalidArchive;
+    file.deleteFile();
+
+    if (ownsDeepFilterDownloadSlot)
+    {
+        deepFilterModelDownloadClaimed.store (false, std::memory_order_release);
+        ownsDeepFilterDownloadSlot = false;
+    }
+
+    if (result == ModelInstallResult::installed)
+    {
+        omx::Denoiser::refreshDeepFilterNetAvailability();
+        denoiseModel.setSelectedId ((int) omx::Denoiser::Model::DeepFilterNet + 1, juce::sendNotification);
+        setHelp ("DeepFilterNet 3 is installed and selected. Turn Noise removal on to use it.");
+        repaintVisual();
+        return;
+    }
+
+    const auto message = result == ModelInstallResult::invalidArchive
+        ? (statusCode == 200 && success
+            ? "The downloaded file didn't match the pinned model checksum. Your previous model is unchanged."
+            : "The upstream download failed (HTTP " + juce::String (statusCode) + "). Retry when the network is available.")
+        : "OpenMix couldn't install the model. Your previous model is unchanged.";
+    setHelp (message);
+    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+        "Model download failed", message);
+}
+
 void ProcessorPanel::selectEqBand (int band)
 {
     eqBand = juce::jlimit (0, omx::kEqBands - 1, band);
@@ -2101,6 +2303,9 @@ void ProcessorPanel::layoutExtra (juce::Rectangle<int>& r)
         row.removeFromLeft (4);
         installDeepFilterModelButton.setBounds (row.removeFromLeft (78));
         r.removeFromTop (Theme::s3);
+        auto progressRow = r.removeFromTop (16);
+        progressRow.removeFromLeft (46);
+        deepFilterModelProgressBar.setBounds (progressRow);
         return;
     }
 
@@ -2154,7 +2359,22 @@ void ProcessorPanel::layoutExtra (juce::Rectangle<int>& r)
 
 void ProcessorPanel::tick()
 {
-    if (kind == Processor::Denoise && fx.denoiseOn.load() && ! fx.denoiseUnavailable.load())
+    if (kind == Processor::Denoise && deepFilterDownloadActive)
+    {
+        const auto bytes = deepFilterDownloadBytes.load (std::memory_order_relaxed);
+        const auto total = deepFilterDownloadTotal.load (std::memory_order_relaxed);
+        deepFilterModelProgressValue = total > 0
+            ? juce::jlimit (0.0, 1.0, (double) bytes / (double) total) : 0.0;
+        deepFilterModelProgressBar.repaint();
+
+        const int percent = juce::roundToInt (deepFilterModelProgressValue * 100.0);
+        if (percent != deepFilterLastProgressPercent)
+        {
+            deepFilterLastProgressPercent = percent;
+            setHelp ("Downloading DeepFilterNet 3 model: " + juce::String (percent) + "%. Cancel keeps the currently installed model.");
+        }
+    }
+    else if (kind == Processor::Denoise && fx.denoiseOn.load() && ! fx.denoiseUnavailable.load())
     {
         const auto voice = juce::roundToInt (fx.voiceProbability.load() * 100.0f);
         setHelp ("Removes steady background noise from voice. Adds "
