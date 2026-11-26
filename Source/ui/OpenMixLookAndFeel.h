@@ -34,6 +34,7 @@ public:
 
     void drawAlertBox (juce::Graphics&, juce::AlertWindow&, const juce::Rectangle<int>& textArea, juce::TextLayout&) override;
     int getAlertWindowButtonHeight() override;
+    std::unique_ptr<juce::AlertWindow> createAlertWindowForOptions (const juce::MessageBoxOptions&) override;
     juce::Font getAlertWindowTitleFont() override;
     juce::Font getAlertWindowMessageFont() override;
     juce::Font getAlertWindowFont() override;
@@ -71,4 +72,11 @@ public:
                                            juce::Rectangle<int> parentArea) override;
 
     static void drawLamp (juce::Graphics&, juce::Rectangle<float> area, bool on, juce::Colour lampColour);
+
+    // Window buttons, one design for the main window's header and every dialog's title bar:
+    // a 34 x 26 key, flat until hovered (raised fill, rounded like the other keys), red on
+    // hover for close; thin 10 px glyphs. kind: 0 = minimise, 1 = maximise, 2 = close.
+    static constexpr int windowButtonW = 34, windowButtonH = 26;
+    static void drawWindowButton (juce::Graphics&, juce::Rectangle<float> bounds, int kind, bool maximised,
+                                  bool highlighted, bool down, bool focused);
 };

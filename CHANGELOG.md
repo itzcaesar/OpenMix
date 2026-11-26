@@ -30,20 +30,18 @@ This is OpenMix's first public release. There was no earlier release:
 - Built-in voice processing on every strip: RNNoise noise removal, gate,
   3-band EQ, compressor, de-esser and ducking (any strip as sidechain).
 - VoicePad XY pad with Voice, Pan, Colour and Space modes.
-- **HPF / LPF per strip**, in the EQ panel, with an on/off key and a cutoff
-  slider each (HPF 20 Hz–1 kHz, LPF 1–20 kHz), sitting before the EQ in the
-  signal path, switchable without clicks.
-- Input gain as a slider directly under the source name (-24 to +24 dB),
-  with Ø invert polarity and MONO below it.
+- **Gain, HPF and LPF knobs on every strip** (gain -24 to +24 dB, HPF 20 Hz
+  to 1 kHz, LPF 1 to 20 kHz; a filter knob at its end is off), sitting before
+  the EQ in the signal path, switchable without clicks, with Ø invert polarity
+  and MONO below them.
 - **Per-strip presets**: save a strip's sound under a name and recall it on
   any strip. A preset carries gain, fader, processing, inserts, sends and
   the VoicePad, never the name, source, mute or solo state.
 - **Solo-safe (SAFE)**: keeps a strip playing on the monitor bus while
   another strip is soloed.
 - **Latency compensation**: each strip is delayed to match the slowest strip
-  (noise removal + plugins), so sends stay aligned. The overall device
-  latency is shown in the header readout; there is no per-strip latency readout
-  on the desk.
+  (noise removal + plugins), so sends stay aligned. Each strip shows its own
+  latency in the fader bay.
 
 **Plugins**
 
@@ -82,11 +80,16 @@ This is OpenMix's first public release. There was no earlier release:
 - Resizable UI with light and dark themes, channel colours and names.
 - Compact mode: narrower strips and buses, tighter gaps, shorter plugin rows
   and soundboard bar, so more channels fit on a laptop screen.
-- Gain slider under the source name, monitor bus shown by a 1px amber
-  outline and a lit name bar, and the bus row split into Hardware / Virtual
-  groups with a divider.
-- The strip reads top to bottom as INPUT, PROCESSING, INSERTS, VOICE PAD,
-  SENDS (one key per bus, in a row), then the fader bay.
+- A desk of narrow, identical columns: every strip reads INPUT, PROCESSING,
+  INSERT, SENDS (a key and a level knob per bus), the voice pad button, then
+  one fader bay aligned across the desk with M / S / SAFE, latency and a
+  coloured name plate. Buses follow the same grid, with a MON key for the
+  monitor bus, and are split into Hardware / Virtual groups.
+- Colour means state: amber for keys that are on, red for mute, yellow for
+  solo, green for level.
+- A menu bar (Mixer, View, Setup) with a scene stepper that is also the
+  title bar, one window-button design for the main window and dialogs,
+  and a two-column Settings window.
 
 ### Known limits
 

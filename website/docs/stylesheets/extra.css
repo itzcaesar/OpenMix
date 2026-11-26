@@ -1,0 +1,69 @@
+/*
+  OpenMix wiki theme on top of MkDocs Material.
+  Why: the wiki should read like the app it documents, not like a default theme.
+  - Colours are the app's tokens (Source/ui/Theme.h), in both schemes.
+  - Amber is the single accent (links, active nav), as in the app where amber means "on".
+  - Segoe UI and Cascadia Mono are the app's own fonts on Windows.
+*/
+
+:root {
+  --md-text-font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --md-code-font: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+
+/* Light scheme: the app's light theme, with a darker amber so links keep 4.5:1 on white. */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #2b2b30;
+  --md-primary-fg-color--light: #3a3a41;
+  --md-primary-fg-color--dark: #1d1d21;
+  --md-primary-bg-color: #ececf0;
+  --md-primary-bg-color--light: #c4c4cc;
+  --md-accent-fg-color: #9a5a00;
+  --md-typeset-a-color: #8a5100;
+  --md-default-bg-color: #f6f6f7;
+  --md-code-bg-color: #ececef;
+}
+
+/* Dark scheme: the desk itself. */
+[data-md-color-scheme="slate"] {
+  --md-hue: 240;
+  --md-primary-fg-color: #2b2b30;
+  --md-primary-fg-color--light: #3a3a41;
+  --md-primary-fg-color--dark: #1d1d21;
+  --md-primary-bg-color: #ececf0;
+  --md-primary-bg-color--light: #c4c4cc;
+  --md-accent-fg-color: #ffbf66;
+  --md-typeset-a-color: #f0a23b;
+  --md-default-bg-color: #1d1d21;
+  --md-default-fg-color: rgba(236, 236, 240, 0.92);
+  --md-default-fg-color--light: rgba(236, 236, 240, 0.72);
+  --md-default-fg-color--lighter: rgba(236, 236, 240, 0.42);
+  --md-code-bg-color: #18181b;
+  --md-footer-bg-color: #18181b;
+  --md-footer-bg-color--dark: #141417;
+}
+
+/* Header and tabs: a flat console bar with a hairline, no drop shadow. */
+.md-header { box-shadow: none; border-bottom: 1px solid #3d3d44; }
+.md-header__title { font-weight: 700; }
+
+/* Headings in the app's display face, tighter than Material's default. */
+.md-typeset h1, .md-typeset h2, .md-typeset h3 {
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+.md-typeset h1 { font-weight: 700; color: var(--md-default-fg-color); }
+.md-typeset h2 { font-weight: 700; margin-top: 2em; }
+
+/* Keys and code read like the app's readouts. */
+.md-typeset code { border-radius: 3px; }
+.md-typeset kbd { font-family: var(--md-code-font); }
+
+/* Active page in the nav: amber, as an "on" key. */
+.md-nav__link--active, .md-nav__item .md-nav__link--active { color: var(--md-typeset-a-color); font-weight: 600; }
+
+/* Admonitions: square-ish, without Material's coloured title band. */
+.md-typeset .admonition, .md-typeset details { border-radius: 4px; box-shadow: none; }
+
+/* Screenshot on the home page. */
+.md-typeset img.desk-shot { border: 1px solid #3d3d44; border-radius: 6px; }

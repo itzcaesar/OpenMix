@@ -1,15 +1,17 @@
 # OpenMix
 
-A virtual audio mixer for Windows. Bring in mics, other devices, single apps (Spotify, a
-game, Discord) or everything an output device plays, process them, and send separate mixes
-to your headphones, speakers, stream and calls.
+A free, open-source audio mixer for Windows. Put your mic, other devices, single apps
+(Spotify, a game, Discord) or everything an output device plays on their own strips, clean
+them up, and send a separate mix to your headphones, the stream and the call.
+
+![The OpenMix desk: three input strips (Mic, Music, Room mic) and three buses (Phones, Stream, Call).](website/docs/assets/openmix-desk.png)
 
 - **Inputs:** up to 8 strips. Each takes a channel or stereo pair of the main device
   (ASIO, WASAPI or DirectSound), any other Windows input, one app's audio, or a loopback of
   a Windows output device.
-- **Voice processing built in:** AI noise removal (RNNoise), gate, 3-band EQ, compressor,
-  de-esser and ducking on every strip, plus a VoicePad (XY pad with voice, pan, colour and
-  space modes).
+- **Voice processing built in:** RNNoise noise removal, gate, high- and low-pass filters,
+  3-band EQ, compressor, de-esser and ducking on every strip, plus a voice pad (XY pad with
+  voice, pan, colour and space modes).
 - **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning, bypass without
   clicks, wet/dry, A/B compare, presets, latency compensation, and crash-safe loading (each
   plugin is test-started in a separate process first).
@@ -17,7 +19,8 @@ to your headphones, speakers, stream and calls.
   main device or to any Windows output device, with EQ, compressor, plugins and a safety
   limiter. Buses are grouped **Hardware** / **Virtual** on the desk, and each bus can have a
   custom name (its group never changes when you rename it).
-- **Status bar** along the bottom: LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
+- **A desk of narrow columns:** every strip and bus uses the same sections, knobs for gain,
+  filters and send levels, one aligned fader bay, and a coloured name plate at the bottom.
 - **Creator tools:** multitrack recorder, replay buffer, soundboard, spectrum and LUFS
   loudness on every bus.
 - **Scenes and global hotkeys:** save whole mixes and switch between them; mute, push to
@@ -60,96 +63,99 @@ ctest --test-dir build -C Release
 
 ## Quick start: mic to Discord, music to your headphones
 
-1. Click the **status readout** in the header (it shows the device) and choose your audio
-   device. ASIO gives the lowest latency; Windows Audio works with anything.
+1. Click the **device readout** on the right of the bottom bar (or **Setup > Audio device**)
+   and choose your audio device. ASIO gives the lowest latency; Windows Audio works with
+   anything.
 2. On **Input 1**, open the source picker and choose your mic. Switch on **NR** to remove
-   background noise.
+   background noise, and turn **HPF** up to about 100 Hz.
 3. On **Input 2**, choose **Application audio** and pick Spotify (or a game).
 4. Bus **A1** is what you hear: point its output at your headphones.
 5. Bus **B1** is for apps that need a microphone: point it at a virtual cable (for example
    VB-Audio Virtual Cable's "CABLE Input"), then choose the cable's other end ("CABLE
    Output") as the microphone in Discord or OBS.
-6. On each strip, the send keys in the SENDS section decide where it goes: mic on A1 and B1,
-   music on A1 only (or on B1 too, if the call should hear it). Right-click a send key to set
-   its level or make it pre-fader.
+6. On each strip, the **SENDS** keys decide where it goes and the knobs beside them how loud:
+   mic on A1 and B1, music on A1 only (or on B1 too, if the call should hear it).
 
 Everything is saved automatically.
 
 ## The window
 
-- **Header:** app name, the status readout (device, sample rate, latency, CPU, dropouts;
-  click it for Audio settings), the **Scene** picker, **Record** and its options,
-  **Replay**, **Soundboard** (shows or hides the soundboard bar) and **Settings**.
-- **Inputs** on the left, **outputs** (buses) on the right. **+ Strip** and **+ Bus** sit
-  next to the section names. The bus row is split into **Hardware** (A1-A3) and **Virtual**
-  (B1-B3) groups with a divider between them; **+ Bus** asks for the group first, then an
-  optional custom name, and takes the next free slot in that group.
-- The **status bar** along the bottom shows LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
-- Every strip and bus ends in the same **fader bay**, so faders, meters and mute rows line
-  up across the desk. The number above each meter is the held peak; a red bar under it marks
+- **Header:** OpenMix, the **Mixer**, **View** and **Setup** menus, the scene stepper
+  (**<**, the scene picker, **>**, **Store**, **New**), **Record** and its options,
+  **Replay**, **Soundboard** (shows or hides the soundboard bar), and the window buttons.
+  The header is the title bar: drag it to move the window, double-click it to maximise.
+  **Settings** is in the Setup menu.
+- **Inputs** on the left, **buses** on the right. **+ Strip** and **+ Bus** sit next to the
+  section names. Buses are grouped **Hardware** (A1-A3) and **Virtual** (B1-B3) with a
+  divider between them; **+ Bus** asks for the group first, then an optional custom name,
+  and takes the next free slot in that group.
+- Every strip and bus ends in the same **fader bay**, so faders, meters and keys line up
+  across the desk. The number above each meter is the held peak; a red bar under it marks
   0 dBFS or more.
-- The **soundboard** is a bar along the bottom.
+- The **bottom bar** shows LIVE, the engine's own CPU%, plugin scanning and recording
+  progress, a lamp for each remote you switched on (OSC, phone, MIDI), and on the right the
+  audio device, sample rate, buffer, latency and dropouts (click it for Audio settings).
+- The **soundboard** is a bar under the desk.
 - A warning banner appears if the main device's input and output are two different Windows
   devices, because their clocks drift and that crackles. The banner explains the fix.
+- **Colour means state:** amber for a key that is on, red for mute and clipping, yellow for
+  solo, green for level (knob rings, meters). Panels stay neutral grey.
 
 ## Strips
 
-Top to bottom, in the order the audio flows: INPUT, PROCESSING, INSERTS, VOICE PAD,
-SENDS, then the fader. There is no PRESET or FILTER section on the strip:
-presets and solo-safe live in the strip's three-dot menu, and HPF/LPF live
-in the EQ panel.
+Every strip is the same narrow column, top to bottom in the order the audio flows: INPUT,
+PROCESSING, INSERT, SENDS, the **Voice pad** button, then the fader bay.
 
-1. **Name plate** (double-click, Enter or F2 to rename) and the three-dot menu: rename,
-   colour, mono, invert polarity, solo-safe, strip presets, remove the strip.
-   A strip preset saves the strip's sound under a name and recalls it here (or on any
-   other strip). It carries gain, fader, processing, inserts, sends and the VoicePad, and
-   never the name, source, mute or solo state. If a preset's plugins are missing on recall
-   (or are on the crash skip list), those slots are skipped and you are told how many.
-   Open plugin windows on the strip close first. A preset does not store plugin state, and
-   a preset never makes a strip duck under itself.
-2. **Source**, then the **input gain slider** directly under the source name (-24 to
-   +24 dB, value readout, double-click or Home for 0 dB), then **Ø** (invert polarity) and
-   **MONO** below the slider. Sources:
+1. **Input:** **INPUT n** with the three-dot menu (rename, colour, mono, invert polarity,
+   solo-safe, strip presets, remove), the **source** picker, then three knobs: **GAIN**
+   (-24 to +24 dB), **HPF** (20 Hz to 1 kHz, all the way left is off) and **LPF** (1 to
+   20 kHz, all the way right is off). The value under each knob shows the setting or "off".
+   **Ø** inverts the polarity, **MONO** sums to mono. Sources:
    - **Main device:** one channel (spread to stereo) or a **stereo pair**.
    - **Windows input device:** any other mic or capture device, alongside the main device.
    - **Application audio:** one app's sound, using Windows' per-process loopback. If the
-     app quits, the strip shows "(not running)" and reconnects when it starts again.
-     **App's own output** (in the same menu) moves the app's direct sound to a device you
-     don't listen to, so you only hear it through OpenMix; it goes back to normal when the
-     strip's source changes or OpenMix quits.
+     app isn't playing or quits, the picker says "(not running)" and the strip reconnects
+     when it starts again. **App's own output** (in the same menu) moves the app's direct
+     sound to a device you don't listen to, so you only hear it through OpenMix; it goes back
+     to normal when the strip's source changes or OpenMix quits.
    - **Windows output (loopback):** everything one output device plays, without a virtual
      cable. Devices OpenMix itself plays into are greyed out, because capturing them would
      feed the sound back into itself.
-3. **Processing** keys, lit when on. Click for settings, Space switches on or off.
+2. **Processing** keys in two columns, amber when on. Click for settings, Space switches
+   on or off.
    - **NR** noise removal: fans, hum and keyboard noise. Adds 20 ms at 48 kHz (RNNoise's own
      rate); at other rates it resamples to 48 kHz and back, about 1 ms more. Other strips are
      delayed to match.
    - **Gate** turns the strip down while it's quiet. **EQ**: low shelf, sweepable mid, high
-     shelf. **Comp** evens out loud and quiet parts. **DS** softens harsh S sounds.
-     **Duck** lowers this strip while another strip has signal (music under your voice).
+     shelf, plus the HPF and LPF. **Comp** evens out loud and quiet parts. **DS** softens
+     harsh S sounds. **Duck** lowers this strip while another strip has signal (music under
+     your voice).
    - Gate, compressor, de-esser and ducking show a gain-reduction meter in their panel.
-   - **HPF / LPF** live in the EQ panel, not as their own strip section: an on/off key
-     and a cutoff slider each (HPF 20 Hz-1 kHz, LPF 1-20 kHz). The filters sit before the
-     EQ in the signal path and switch on/off without clicks.
-4. **Inserts:** up to 6 VST3 plugins, see [Plugins](#plugins).
-5. **Voice pad** (double-click or Home resets the puck):
+3. **Insert:** up to 6 VST3 plugins, see [Plugins](#plugins).
+4. **Sends:** one row per active bus, a key with the bus's name and a level knob.
+   - The key switches the send; the knob sets its level (double-click or Home for 0 dB).
+     Right-click the key (or M) for **pre-fader** (the send ignores the strip fader, for
+     example a separate mix for a call); a pre-fader send shows "P".
+5. **Voice pad** opens the strip's XY pad in a popup (double-click or Home resets the puck):
    - *Voice*: X = tone tilt (dark to bright), Y = presence and echo.
    - *Pan*: X = constant-power pan, Y = stereo width (100-200%).
    - *Color*: corners Warm, Bright, Radio and Close; the puck blends them.
    - *Space*: X = pan, Y = distance (quieter, darker, with early reflections).
-6. **Sends**: one key per active bus, in a row above the fader.
-   - Click a send key to switch it. Right-click (or M) for its level and **pre-fader**
-     (the send ignores the strip fader, for example a separate mix for a call). A level
-     other than 0 dB and "P" for pre-fader are printed on the key. Send keys show the bus's
-     own name, so a renamed bus reads correctly here.
-7. **Fader bay:** fader and meter, **Mute** and **Solo**, and a solid-colour **name bar**
-   along the bottom of the strip. There is no per-strip latency readout on the desk.
-   - **Solo** plays the strip alone on the **monitor bus** (A1 unless you choose another in a
-     bus menu). **SAFE** (solo-safe, in the strip's three-dot menu) keeps the strip playing
-     on the monitor bus while another strip is soloed. Stream and call buses are not affected.
-   - Latency is compensated, not displayed per strip: each strip is delayed to match the
-     slowest one (noise removal + plugins), so sends stay aligned. The overall device
-     latency is shown in the header readout.
+6. **Fader bay:** fader and meter, then **M** (mute, red), **S** (solo, yellow) and **SAFE**
+   (solo-safe), the strip's **LATENCY**, and the **name plate** (double-click, Enter or F2
+   to rename).
+   - **Solo** plays the strip alone on the **monitor bus** (the bus with **MON** lit).
+     **SAFE** keeps the strip playing on the monitor bus while another strip is soloed.
+     Stream and call buses are not affected.
+   - **LATENCY** is this strip's own delay (noise removal plus plugins). Every strip is
+     delayed to match the slowest one, so sends stay aligned.
+
+A **strip preset** (three-dot menu) saves the strip's sound under a name and recalls it on
+this strip or any other. It carries gain, fader, filters, processing, inserts, sends and the
+voice pad, and never the name, source, mute or solo state. If a preset's plugins are missing
+on recall (or are on the crash skip list), those slots are skipped and you are told how
+many. Open plugin windows on the strip close first. A preset does not store plugin state,
+and a preset never makes a strip duck under itself.
 
 Signal path: gain, polarity/mono, DC blocker, noise removal, gate, HPF/LPF, EQ, compressor,
 de-esser, inserts, voice pad, ducking, latency alignment, mute, fader, sends.
@@ -215,19 +221,20 @@ empty on a default (VST2-off) build.
   as a microphone to other apps needs a virtual endpoint (a virtual cable today, or one
   multi-endpoint OpenMix driver in Phase 7; see `docs/VIRTUAL_DRIVER.md`).
 - **Custom names:** rename a bus from its three-dot menu (empty = the default A1..A3 /
-  B1..B3). The name is shown on the bus strip, on the strips' send keys, in the soundboard
+  B1..B3). The name is shown on the bus's name plate, on the strips' send keys, in the soundboard
   and in recording. A bus never changes group when renamed: slots A1-A3 are always
   **Hardware**, B1-B3 always **Virtual**.
-- **LIMITER:** the lamp lights while the safety limiter (-0.3 dBFS ceiling) is reducing gain,
-  and the gain-reduction meter next to it shows how much (in dB). The **monitor bus** is
-  shown only by a thin amber outline around the strip and its name bar lit in amber; there is
-  no "monitor" text on the strip. **Loudness** is the short-term LUFS (the number streaming
+- **LIMITER:** the gain reduction of the safety limiter (-0.3 dBFS ceiling), as a number and
+  a bar; it reads "LIMITING" in red while the limiter works hard. **MON** is lit on the
+  **monitor bus**, where soloed strips are heard; click MON on another bus to move it there.
+  **Loudness** is the short-term LUFS (the number streaming
   platforms normalise to), with the normalisation target and gain when normalisation is on. The bus strip shows the live spectrum only; the full analyser
   (see below) has the momentary and integrated numbers.
 - **Meters** show peak (the LED ladder) and RMS (the solid bar inside it): peak catches
   transients, RMS shows how loud the bus actually sounds. The same RMS bar is on every
   strip and on the soundboard.
-- **Loudness normalisation** (a bus's three-dot menu): a slow gain that pulls the bus towards
+- **Loudness normalisation** (the box under the LUFS readout, or the bus's three-dot menu): a
+  slow gain that pulls the bus towards
   -14 LUFS (streaming), -16 or -23 (broadcast), clamped to +/-12 dB and smoothed so it never
   pumps on a drum hit. It measures the bus the way the LUFS readout does (K-weighted, about a
   3 s window), so the target and the readout agree. It sits before the bus fader, so the
@@ -237,7 +244,7 @@ empty on a default (VST2-off) build.
 - **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip (EQ and Comp fade
   in and out instead of clicking). Bus path: sum, EQ, compressor, inserts, loudness
   normalisation, fader, safety limiter.
-- **Analyser:** a live spectrum on the bus strip. Click it for the full **analyser**: spectrum plus
+- **Analyser:** a live spectrum on the bus column. Click it for the full **analyser**: spectrum plus
   momentary, short-term and integrated loudness.
 - The three-dot menu: rename the bus, analyser, loudness normalisation, monitor bus (where
   solo plays), remove the bus.
@@ -271,15 +278,15 @@ the soundboard's level and buses. Sources, devices and the plugins themselves ar
 of a scene, so switching is instant, and every level glides to its new value without a
 click.
 
-The **Scene** picker in the header lists your scenes; click one to switch. The same menu
-saves the current mix as a new scene, updates the current scene, renames or deletes it, and
-opens Hotkeys. Deleting a scene moves the hotkeys and MIDI buttons of later scenes up with
+The scene stepper in the header switches scenes: **<** and **>** step through them, the
+picker lists them, **Store** saves the current mix into the selected scene and **New** saves
+it as a new one. The picker's menu also renames or deletes scenes and opens Hotkeys. Deleting a scene moves the hotkeys and MIDI buttons of later scenes up with
 them. Scenes are saved with the session. Over OSC, `/openmix/scene/<n>` switches to
 scene n (counting from 1).
 
 ## Global hotkeys
 
-**Settings > Hotkeys** (or **Hotkeys...** in the Scene menu). These work in any app, also
+**Setup > Hotkeys** (also in the Mixer menu, the scene menu and Settings). These work in any app, also
 while a game is in front, and the keys still reach that app, so pick combinations it doesn't
 use (for example with Ctrl+Alt).
 
@@ -292,7 +299,7 @@ use (for example with Ctrl+Alt).
 
 ## Settings
 
-Light or dark theme, compact mode, hotkeys, start with Windows, start minimized, keep running in the tray when the
+**Setup > Settings**: light or dark theme, compact mode, hotkeys, start with Windows, start minimized, keep running in the tray when the
 window closes, plugin scanning and crash-safe loading, presets and VST3 folders, the update check, OSC,
 phone / WebSocket and MIDI remote control, and the log folder. In the tray, double-click opens the mixer; right-click to quit.
 
@@ -429,7 +436,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 | Folder | What's in it |
 |---|---|
 | `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `RemoteCommands` (one remote language for OSC, WebSocket and MIDI), `RemoteServer` (phone page, HTTP and WebSocket API), `MidiControl` (learnable MIDI mappings), `UpdateChecker` |
-| `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `TapTempo`, `CpuMeter` |
+| `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `CpuMeter` |
 | `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
 | `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, K-weighted loudness normaliser); plus `Denoiser` (RNNoise at any sample rate) |
 | `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send, wet/dry and global FX pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |

@@ -7,6 +7,19 @@
 #include "ui/TrayIcon.h"
 #include "ui/HotkeysPanel.h"
 
+// Windows 11 window corners (DWM): rounded normally, square while maximised.
+#pragma comment (lib, "dwmapi.lib")
+extern "C" __declspec (dllimport) long __stdcall DwmSetWindowAttribute (void* hwnd, unsigned long attribute, const void* value, unsigned long size);
+
+static void setRoundCorners (juce::Component& window, bool round)
+{
+    if (auto* peer = window.getPeer())
+    {
+        const int preference = round ? 2 : 1;   // DWMWCP_ROUND : DWMWCP_DONOTROUND
+        DwmSetWindowAttribute (peer->getNativeHandle(), 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &preference, sizeof (preference));
+    }
+}
+
 // Console gaps; compact mode tightens them (Theme::isCompact()).
 static int stripGap()   { return Theme::isCompact() ? 5 : 6; }
 static int sectionGap() { return Theme::isCompact() ? 12 : 16; }   // space between inputs and the master section
@@ -169,8 +182,8 @@ void ConsoleContent::resized()
     const int nb = juce::jmax (1, engine.getNumActiveBuses());
     constexpr int soundW = 0;   // the soundboard is a bar below the desk, not a column
 
-    // Fill the window: strips and buses share the width, a bus getting about 3/4 of a strip,
-    // within each one's limits. Only past those limits is the desk centred with margins.
+    // Narrow console columns: strips and buses share the width within their (narrow) limits;
+    // past those limits the desk is centred.
     // The bus groups get a gap + divider between them when both have active buses.
     int nA = 0, nB = 0;
     for (int b = 0; b < kNumBuses; ++b)
@@ -179,7 +192,7 @@ void ConsoleContent::resized()
     const int busGroupGap = (nA > 0 && nB > 0) ? groupGap() : 0;
 
     const int avail = r.getWidth() - sectionGap() - soundW - (ns - 1) * stripGap() - (nb - 1) * stripGap() - busGroupGap;
-    const int unit = (int) (avail / (ns + nb * 0.75f));
+    const int unit = avail / (ns + nb);
     const int stripW = juce::jlimit (StripView::minWidth(), StripView::maxWidth(), unit);
     const int busW = juce::jlimit (BusView::minWidth(), BusView::maxWidth(), (avail - ns * stripW) / nb);
 
@@ -215,7 +228,7 @@ void ConsoleContent::resized()
 
     // One fader bay for every column: faders, meters and mute rows line up across the desk,
     // whatever sits above them.
-    const int bayHeight = juce::jlimit (190, 265, (int) (r.getHeight() * 0.32f));
+    const int bayHeight = juce::jlimit (250, 380, (int) (r.getHeight() * 0.44f));
     const int bayTop = r.getHeight() - bayHeight;
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -263,51 +276,40 @@ StatusDisplay::StatusDisplay() : juce::Button ({})
 void StatusDisplay::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     const auto& t = Theme::p();
-    auto r = getLocalBounds().toFloat();
 
-    // A recessed readout; hover and press lift it like any other control.
-    g.setColour (down ? t.well.darker (0.2f) : highlighted ? t.well.brighter (0.06f) : t.well);
-    g.fillRoundedRectangle (r, Theme::controlRadius);
-    g.setColour (highlighted ? t.controlEdge : t.line);
-    g.drawRoundedRectangle (r.reduced (0.5f), Theme::controlRadius, 1.0f);
-
-    auto area = getLocalBounds().reduced (Theme::s3, 0);
-
-    // Chevron: this readout opens Audio settings.
-    auto chevron = area.removeFromRight (12).toFloat().withSizeKeepingCentre (9, 5);
-    juce::Path p;
-    p.startNewSubPath (chevron.getX(), chevron.getY());
-    p.lineTo (chevron.getCentreX(), chevron.getBottom());
-    p.lineTo (chevron.getRight(), chevron.getY());
-    g.setColour (t.textDim);
-    g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    area.removeFromRight (Theme::s2);
-
-    const auto font = Theme::mono (12.0f);
-    g.setFont (font);
-    for (int i = 0; i < segments.size(); ++i)
+    // Plain text like the rest of the status bar; hover shows that it opens Audio settings.
+    if (highlighted || down)
     {
-        const auto& seg = segments[i];
-        const bool isDevice = i == 0;
-        const int natural = juce::GlyphArrangement::getStringWidthInt (font, seg);
-        const int w = isDevice ? juce::jmin (natural, area.getWidth()) : natural;
-        if (w > area.getWidth() || w <= 0)
-            break;
-
-        g.setColour (isDevice ? t.text : t.textDim);
-        g.drawText (seg, area.removeFromLeft (w), juce::Justification::centredLeft, true);
-
-        if (i < segments.size() - 1 && area.getWidth() > 30)
-        {
-            area.removeFromLeft (Theme::s3);
-            g.setColour (t.line);
-            g.fillRect (area.getX(), area.getCentreY() - 7, 1, 14);
-            area.removeFromLeft (Theme::s3);
-        }
+        g.setColour (down ? t.raised.darker (0.1f) : t.raised);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), Theme::controlRadius);
     }
-
     if (hasKeyboardFocus (false))
         Theme::drawFocusRing (g, getLocalBounds().toFloat());
+
+    auto area = getLocalBounds().reduced (Theme::s2, 0);
+    const auto nameFont = Theme::ui (11.5f, true), valueFont = Theme::mono (11.0f);
+
+    // Right-aligned, last segment first, so the device name is what gets cut on a narrow window.
+    for (int i = segments.size(); --i >= 0;)
+    {
+        const auto& seg = segments[i];
+        const auto& font = i == 0 ? nameFont : valueFont;
+        g.setFont (font);
+        const int natural = juce::GlyphArrangement::getStringWidthInt (font, seg);
+        const int w = juce::jmin (natural, area.getWidth());
+        if (w <= 0)
+            break;
+        g.setColour (i == 0 ? t.text : t.textDim);
+        g.drawText (seg, area.removeFromRight (w), juce::Justification::centredRight, true);
+
+        if (i > 0 && area.getWidth() > 30)
+        {
+            area.removeFromRight (Theme::s2);
+            g.setColour (t.line);
+            g.fillRect (area.getRight(), area.getCentreY() - 6, 1, 12);
+            area.removeFromRight (Theme::s2);
+        }
+    }
 }
 
 //==============================================================================
@@ -333,7 +335,7 @@ void StatusBar::paint (juce::Graphics& g)
     g.setColour (t.line);
     g.fillRect (getLocalBounds().withHeight (1));
 
-    auto area = getLocalBounds().reduced (consolePad(), 0);
+    auto area = getLocalBounds().reduced (consolePad(), 0).withTrimmedRight (reservedRight);
 
     // LIVE indicator: the audio device is running.
     auto liveArea = area.removeFromLeft (74);
@@ -465,13 +467,51 @@ MainComponent::MainComponent()
     statusDisplay.onClick = [this] { showAudioSettings(); };
     addAndMakeVisible (statusDisplay);
 
+    // Window buttons (the header is the window's title bar).
+    minimiseDot.onClick = [this] { if (auto* w = window()) w->setMinimised (true); };
+    maximiseDot.onClick = [this] { toggleMaximised(); };
+    closeDot.onClick = [this] { if (auto* w = window()) w->closeButtonPressed(); };
+    for (auto* d : { &minimiseDot, &maximiseDot, &closeDot })
+        addAndMakeVisible (*d);
+
+    // Menu bar: Mixer / View / Setup, flat text buttons that open menus.
+    for (auto* b : { &mixerMenuButton, &viewMenuButton, &setupMenuButton })
+    {
+        b->getProperties().set ("flat", true);
+        makeClickable (*b);
+        addAndMakeVisible (*b);
+    }
+    mixerMenuButton.setTooltip ("Add strips and buses, scenes, hotkeys.");
+    mixerMenuButton.onClick = [this] { showMixerMenu(); };
+    viewMenuButton.setTooltip ("Soundboard, compact desk, light or dark theme.");
+    viewMenuButton.onClick = [this] { showViewMenu(); };
+    setupMenuButton.setTooltip ("Audio device, settings, hotkeys, recordings folder.");
+    setupMenuButton.onClick = [this] { showSetupMenu(); };
+
+    // Scene stepper: previous / picker / next, Store (update the current scene), New.
+    scenePrevButton.setTitle ("Previous scene");
+    scenePrevButton.setTooltip ("Switch to the previous scene.");
+    scenePrevButton.onClick = [this] { stepScene (-1); };
+    sceneNextButton.setTitle ("Next scene");
+    sceneNextButton.setTooltip ("Switch to the next scene.");
+    sceneNextButton.onClick = [this] { stepScene (1); };
+    sceneStoreButton.setTooltip ("Store the current mix into the selected scene.");
+    sceneStoreButton.onClick = [this] { saveScene (engine.currentScene); };
+    sceneNewButton.setTooltip ("Save the current mix as a new scene.");
+    sceneNewButton.onClick = [this] { saveScene (-1); };
+    for (auto* b : { &scenePrevButton, &sceneNextButton, &sceneStoreButton, &sceneNewButton })
+    {
+        makeClickable (*b);
+        addAndMakeVisible (*b);
+    }
+
     // Bottom status bar: device / rate / buffer / engine CPU / LIVE.
     addAndMakeVisible (statusBar);
 
     appSettingsButton.setTooltip ("Light or dark theme, startup and tray, plugins, remote control, updates.");
     appSettingsButton.onClick = [this] { showSettings(); };
     makeClickable (appSettingsButton);
-    addAndMakeVisible (appSettingsButton);
+    addChildComponent (appSettingsButton);   // reached from the Setup menu
 
     fixButton.onClick = [this] { showAudioSettings(); };
     makeClickable (fixButton);
@@ -1149,12 +1189,13 @@ void MainComponent::showAudioSettings()
 
 void MainComponent::showSettings()
 {
-    const auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
-    const int maxH = display != nullptr ? juce::jmax (500, (int) display->userBounds.getHeight() - 60) : 700;
     auto* panel = new SettingsPanel (engine, [this] { toggleTheme(); }, [this] { applyRemote(); }, [this] { showHotkeys(); }, &midiControl,
                                      // Accent or compact changed: repaint everything and re-run the layout.
                                      [this] { applyTheme(); resized(); });
-    panel->setSize (580, juce::jmin (840, maxH));
+    // Fits inside the main window (it scrolls only when the window is smaller than the panel).
+    const auto inside = getScreenBounds().reduced (24, 40);
+    panel->setSize (juce::jmin (SettingsPanel::preferredWidth, inside.getWidth()),
+                    juce::jmin (panel->getHeight(), inside.getHeight() - 30));
 
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned (panel);
@@ -1817,6 +1858,123 @@ void MainComponent::handleHotkey (const GlobalHotkeys::Binding& b, bool down)
     engine.externalChanges.fetch_add (1);   // mute changes show on the strip
 }
 
+// The header doubles as the title bar: drag it to move the window, double-click to maximise.
+void MainComponent::mouseDown (const juce::MouseEvent& e)
+{
+    draggingWindow = headerArea.contains (e.getPosition()) && window() != nullptr && restoreBounds.isEmpty();
+    if (draggingWindow)
+        windowDragger.startDraggingComponent (window(), e.getEventRelativeTo (window()));
+}
+
+void MainComponent::mouseDrag (const juce::MouseEvent& e)
+{
+    if (draggingWindow)
+        windowDragger.dragComponent (window(), e.getEventRelativeTo (window()), nullptr);
+}
+
+void MainComponent::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (headerArea.contains (e.getPosition()))
+        toggleMaximised();
+}
+
+void MainComponent::toggleMaximised()
+{
+    if (auto* w = window())
+    {
+        // Maximise to the screen's work area, so the Windows taskbar stays visible
+        // (JUCE's full-screen would cover it, and the status bar under it).
+        if (! restoreBounds.isEmpty())
+        {
+            w->setBounds (restoreBounds);
+            restoreBounds = {};
+        }
+        else if (const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (w->getScreenBounds()))
+        {
+            restoreBounds = w->getBounds();
+            w->setBounds (display->userBounds.toNearestInt());
+        }
+        const bool maximised = ! restoreBounds.isEmpty();
+        setRoundCorners (*w, ! maximised);
+        maximiseDot.setMaximised (maximised);
+        maximiseDot.setTooltip (maximised ? "Restore" : "Maximise");
+    }
+}
+
+//==============================================================================
+// WindowDot
+
+WindowDot::WindowDot (Kind k) : juce::Button ({}), kind (k)
+{
+    setTitle (k == close ? "Close" : k == minimise ? "Minimise" : "Maximise");
+    setTooltip (k == close ? "Close (OpenMix keeps running in the tray if that's switched on in Settings)"
+                           : k == minimise ? "Minimise" : "Maximise or restore");
+    makeClickable (*this);
+    setWantsKeyboardFocus (true);
+}
+
+void WindowDot::paintButton (juce::Graphics& g, bool isHighlighted, bool isDown)
+{
+    OpenMixLookAndFeel::drawWindowButton (g, getLocalBounds().toFloat(), kind == close ? 2 : kind == minimise ? 0 : 1,
+                                          maximised, isHighlighted, isDown, hasKeyboardFocus (false));
+}
+
+void MainComponent::showMixerMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem ("Add strip", engine.getNumActiveStrips() < kNumStrips, false, [this] { console->addStrip(); });
+    menu.addItem ("Add bus...", engine.getNumActiveBuses() < kNumBuses, false, [this] { console->addBus(); });
+    menu.addSeparator();
+    menu.addItem ("Save mix as a new scene...", [this] { saveScene (-1); });
+    menu.addItem ("Scenes...", [this] { showSceneMenu(); });
+    menu.addItem ("Hotkeys...", [this] { showHotkeys(); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (mixerMenuButton));
+}
+
+void MainComponent::showViewMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem ("Soundboard", true, console->soundboard.isVisible(), [this] { setSoundboardShown (! console->soundboard.isVisible()); });
+    menu.addItem ("Compact desk", true, Theme::isCompact(), [this]
+    {
+        AppSettings::get().setCompactMode (! Theme::isCompact());
+        Theme::setCompact (! Theme::isCompact());
+        applyTheme();
+        resized();
+    });
+    menu.addItem ("Dark theme", true, Theme::isDark(), [this] { toggleTheme(); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (viewMenuButton));
+}
+
+void MainComponent::showSetupMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem ("Audio device...", [this] { showAudioSettings(); });
+    menu.addItem ("Settings...", [this] { showSettings(); });
+    menu.addItem ("Hotkeys...", [this] { showHotkeys(); });
+    menu.addSeparator();
+    menu.addItem ("Recording options...", [this] { showRecordMenu(); });
+    menu.addItem ("Open recordings folder", []
+    {
+        auto dir = Recorder::getRecordingsFolder();
+        dir.createDirectory();
+        dir.startAsProcess();
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (setupMenuButton));
+}
+
+void MainComponent::stepScene (int delta)
+{
+    const int n = (int) engine.scenes.size();
+    if (n == 0)
+    {
+        showNote ("No scenes yet. Press New to save the current mix as one.");
+        return;
+    }
+    const int from = juce::isPositiveAndBelow (engine.currentScene, n) ? engine.currentScene : (delta > 0 ? -1 : n);
+    recallScene ((from + delta + n) % n);
+}
+
 void MainComponent::showHotkeys()
 {
     juce::Array<int> active;
@@ -1840,50 +1998,59 @@ void MainComponent::resized()
 {
     auto r = getLocalBounds();
 
-    // Header, left to right: name | status readout (opens Audio settings) | scene picker |
-    // transport (record, its options, replay) | window tools (soundboard, update, settings).
-    headerArea = r.removeFromTop (48);
+    // Menu bar, left to right: name | Mixer View Setup | scene stepper (centre) |
+    // Record, its options, Replay, Soundboard, update (right).
+    headerArea = r.removeFromTop (38);
     auto header = headerArea.reduced (consolePad(), 0);
-    constexpr int h = 28;
-    header.removeFromLeft (120);
+    constexpr int h = 24;
+    header.removeFromLeft (104);
+
+    for (auto* b : { &mixerMenuButton, &viewMenuButton, &setupMenuButton })
+    {
+        const int w = juce::GlyphArrangement::getStringWidthInt (Theme::ui (13.0f, true), b->getButtonText()) + 20;
+        b->setBounds (header.removeFromLeft (w).withSizeKeepingCentre (w, h));
+    }
+    header.removeFromLeft (Theme::s3);
 
     const bool narrowHeader = getWidth() < 1140;
-    const int settingsW   = narrowHeader ? 72  : 84;
     const int updateW     = narrowHeader ? 104 : 124;
-    const int soundboardW = narrowHeader ? 92  : 108;
-    const int replayW     = narrowHeader ? 88  : 104;
-    const int recordW     = narrowHeader ? 86  : 100;
-    const int sceneW      = narrowHeader ? 136 : 170;
-    const int divGap      = narrowHeader ? Theme::s2 : Theme::s3;
-
-    appSettingsButton.setBounds (header.removeFromRight (settingsW).withSizeKeepingCentre (settingsW, h));
-    header.removeFromRight (Theme::s1);
+    const int soundboardW = narrowHeader ? 92  : 104;
+    const int replayW     = narrowHeader ? 88  : 100;
+    const int recordW     = narrowHeader ? 80  : 92;
+    for (auto* d : { &closeDot, &maximiseDot, &minimiseDot })
+    {
+        const int w = OpenMixLookAndFeel::windowButtonW + 2;
+        d->setBounds (header.removeFromRight (w).withSizeKeepingCentre (w, OpenMixLookAndFeel::windowButtonH));
+        header.removeFromRight (d == &minimiseDot ? Theme::s3 : 0);
+    }
     if (updateButton.isVisible())
     {
         updateButton.setBounds (header.removeFromRight (updateW).withSizeKeepingCentre (updateW, h));
         header.removeFromRight (Theme::s1);
     }
     soundboardButton.setBounds (header.removeFromRight (soundboardW).withSizeKeepingCentre (soundboardW, h));
-
-    header.removeFromRight (divGap);
-    transportDividerX = header.getRight();
-    header.removeFromRight (divGap);
-
+    header.removeFromRight (Theme::s3);
+    transportDividerX = header.getRight() + Theme::s3 / 2;
     replayButton.setBounds (header.removeFromRight (replayW).withSizeKeepingCentre (replayW, h));
     header.removeFromRight (Theme::s1);
     recordMenuButton.setBounds (header.removeFromRight (h).withSizeKeepingCentre (h, h));
     header.removeFromRight (2);
     recordButton.setBounds (header.removeFromRight (recordW).withSizeKeepingCentre (recordW, h));
-    header.removeFromRight (narrowHeader ? Theme::s3 : Theme::s4);
+    header.removeFromRight (Theme::s3);
 
-    sceneButton.setBounds (header.removeFromRight (sceneW).withSizeKeepingCentre (sceneW, h));
-    header.removeFromRight (divGap);
-
-    // The readout takes what's left, up to a comfortable width.
-    const int statusW = juce::jmin (header.getWidth(), 640);
-    statusDisplay.setVisible (statusW > 120);
-    statusDisplay.setBounds (header.removeFromLeft (statusW).withSizeKeepingCentre (statusW, h));
-
+    // Scene stepper in the middle of what's left.
+    const int sceneW = juce::jlimit (120, 220, header.getWidth() - 2 * h - 2 * 56 - 4 * Theme::s1);
+    const int stepperW = h + Theme::s1 + sceneW + Theme::s1 + h + Theme::s2 + 56 + Theme::s1 + 56;
+    auto stepper = header.withSizeKeepingCentre (juce::jmin (stepperW, header.getWidth()), h);
+    scenePrevButton.setBounds (stepper.removeFromLeft (h));
+    stepper.removeFromLeft (Theme::s1);
+    sceneButton.setBounds (stepper.removeFromLeft (sceneW));
+    stepper.removeFromLeft (Theme::s1);
+    sceneNextButton.setBounds (stepper.removeFromLeft (h));
+    stepper.removeFromLeft (Theme::s2);
+    sceneStoreButton.setBounds (stepper.removeFromLeft (56));
+    stepper.removeFromLeft (Theme::s1);
+    sceneNewButton.setBounds (stepper.removeFromLeft (56));
     r.removeFromTop (Theme::s2);
 
     if (showBanner)
@@ -1897,8 +2064,17 @@ void MainComponent::resized()
         bannerArea = {};
     }
 
-    // Bottom status bar: LIVE, engine CPU, background work, remote services.
-    statusBar.setBounds (r.removeFromBottom (28));
+    // Bottom status bar: LIVE, engine CPU, background work and remote services on the left,
+    // the audio device readout (opens Audio settings) on the right.
+    {
+        auto bar = r.removeFromBottom (28);
+        statusBar.setBounds (bar);
+        const int statusW = juce::jmin (560, bar.getWidth() / 2);
+        statusDisplay.setVisible (statusW > 160);
+        statusDisplay.setBounds (bar.removeFromRight (statusW).reduced (consolePad() - Theme::s2, 4));
+        statusDisplay.toFront (false);
+        statusBar.setReservedRight (statusW);
+    }
     r.removeFromBottom (Theme::s2);
 
     consoleView.setBounds (r);

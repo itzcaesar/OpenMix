@@ -3,21 +3,37 @@
 #include "app/Session.h"
 #include "engine/AppCapture.h"
 
+// A small rotary knob for the narrow strip (green value ring, see OpenMixLookAndFeel).
+static void setupKnob (DbSlider& k, double lo, double hi, double mid, double home)
+{
+    k.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    k.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    k.setRange (lo, hi, 0.1);
+    k.setSkewFactorFromMidPoint (mid);
+    k.setDoubleClickReturnValue (true, home);
+    k.homeValue = home;
+    k.setMouseDragSensitivity (160);
+    k.setWantsKeyboardFocus (true);
+    makeClickable (k);
+}
+
+static juce::String dbText (double v)
+{
+    return v <= -60.0 ? juce::String ("-inf") : (v > 0.05 ? "+" : "") + juce::String (v, 1);
+}
+
+static juce::String hzText (double hz)
+{
+    return hz >= 1000.0 ? juce::String (hz / 1000.0, hz >= 10000.0 ? 0 : 1) + "k" : juce::String (juce::roundToInt (hz));
+}
+
 StripView::StripView (MixerEngine& e, int i)
     : engine (e), strip (e.getStrip (i)), index (i),
       inserts (e, strip.inserts),
-      pad (strip.pad, "Input " + juce::String (i + 1)),
       faderSection (strip.peakL, strip.peakR, strip.rmsL, strip.rmsR, "Input " + juce::String (i + 1))
 {
     // Tab moves through this strip top to bottom before moving to the next strip.
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
-
-    tape.onRename = [this] (const juce::String& text)
-    {
-        strip.name = text == "Input " + juce::String (index + 1) ? juce::String() : text;
-        refreshFromStrip();
-    };
-    addAndMakeVisible (tape);
 
     menuButton.onClick = [this] { showStripMenu(); };
     addAndMakeVisible (menuButton);
@@ -25,23 +41,44 @@ StripView::StripView (MixerEngine& e, int i)
     sourceButton.onClick = [this] { showSourceMenu(); };
     addAndMakeVisible (sourceButton);
 
-    // Input gain: a horizontal slider directly under the source name, -24..+24 dB;
-    // the value is printed above it (mockup style), double-click (or Home) resets to 0 dB.
-    gainSlider.setRange (-24.0, 24.0, 0.1);
-    gainSlider.setDoubleClickReturnValue (true, 0.0);
-    gainSlider.textFromValueFunction = [] (double v) { return (v > 0.05 ? "+" : "") + juce::String (v, 1) + " dB"; };
-    gainSlider.valueFromTextFunction = [] (const juce::String& s) { return s.getDoubleValue(); };
-    gainSlider.setTooltip ("Input gain. Drag, scroll or use the arrow keys. Double-click or Home for 0 dB.");
-    gainSlider.setWantsKeyboardFocus (true);
-    makeClickable (gainSlider);
-    gainSlider.onValueChange = [this]
+    // Input gain, -24..+24 dB. Double-click or Home resets to 0 dB.
+    setupKnob (gainKnob, -24.0, 24.0, 0.0, 0.0);
+    gainKnob.setTooltip ("Input gain. Drag, scroll or use the arrow keys. Double-click or Home for 0 dB.");
+    gainKnob.onValueChange = [this]
     {
-        strip.gainDb.store ((float) gainSlider.getValue());
-        repaint (gainHeadArea);
+        strip.gainDb.store ((float) gainKnob.getValue());
+        repaint (gainLabel);
     };
-    addAndMakeVisible (gainSlider);
+    addAndMakeVisible (gainKnob);
 
-    // Polarity invert and mono, below the gain slider (also in the strip menu).
+    // High-pass: all the way left is off. Low-pass: all the way right is off.
+    setupKnob (hpfKnob, 20.0, 1000.0, 120.0, 20.0);
+    hpfKnob.keyStep = 10.0; hpfKnob.pageStep = 100.0;
+    hpfKnob.setTooltip ("High-pass filter: cuts rumble below this frequency. All the way left is off. Double-click for off.");
+    hpfKnob.onValueChange = [this]
+    {
+        const double v = hpfKnob.getValue();
+        strip.setHpfCutoff ((float) v);
+        strip.setHpfEnabled (v > 20.5);
+        hpfKnob.getProperties().set ("off", v <= 20.5);
+        repaint (hpfLabel);
+    };
+    addAndMakeVisible (hpfKnob);
+
+    setupKnob (lpfKnob, 1000.0, 20000.0, 6000.0, 20000.0);
+    lpfKnob.keyStep = 500.0; lpfKnob.pageStep = 2000.0;
+    lpfKnob.setTooltip ("Low-pass filter: cuts hiss above this frequency. All the way right is off. Double-click for off.");
+    lpfKnob.onValueChange = [this]
+    {
+        const double v = lpfKnob.getValue();
+        strip.setLpfCutoff ((float) v);
+        strip.setLpfEnabled (v < 19990.0);
+        lpfKnob.getProperties().set ("off", v >= 19990.0);
+        repaint (lpfLabel);
+    };
+    addAndMakeVisible (lpfKnob);
+
+    // Polarity invert and mono (also in the strip menu).
     makeLamp (invertButton, "key");
     invertButton.setTitle ("Invert polarity");
     invertButton.setTooltip (juce::String::fromUTF8 ("Invert the polarity of this strip (\xc3\x98)."));
@@ -82,28 +119,57 @@ StripView::StripView (MixerEngine& e, int i)
         addAndMakeVisible (key);
     }
 
-    addAndMakeVisible (pad);
-
-    // Sends: click toggles, right-click / M / Shift+Enter opens level and pre/post.
+    // Sends: the key switches the send, the knob sets its level; right-click / M on the key
+    // opens level and pre/post.
     for (int b = 0; b < kNumBuses; ++b)
     {
         auto& btn = sendButtons[(size_t) b];
-        makeLamp (btn, "accent");
-        btn.onClick = [this, b] { strip.busOn[b].store (sendButtons[(size_t) b].getToggleState()); };
+        makeLamp (btn, "key");
+        btn.setClickingTogglesState (true);
+        btn.onClick = [this, b] { strip.busOn[b].store (sendButtons[(size_t) b].getToggleState()); updateKeys(); };
         btn.onSecondary = [this, b] { openSendPanel (b); };
         addChildComponent (btn);
+
+        auto& knob = sendKnobs[(size_t) b];
+        setupKnob (knob, -60.0, 12.0, -12.0, 0.0);
+        knob.onValueChange = [this, b]
+        {
+            strip.sendDb[b].store ((float) sendKnobs[(size_t) b].getValue());
+            sendKnobs[(size_t) b].setTooltip ("Send level " + dbText (sendKnobs[(size_t) b].getValue()) + " dB. Double-click or Home for 0 dB.");
+        };
+        addChildComponent (knob);
     }
 
-    makeLamp (muteButton, "mute");
+    padButton.setTooltip ("Voice pad: tone and echo, pan, colour and space on one XY pad.");
+    makeClickable (padButton);
+    padButton.onClick = [this] { openVoicePad(); };
+    addAndMakeVisible (padButton);
+
+    makeLamp (muteButton, "mutekey");
+    muteButton.setClickingTogglesState (true);
     muteButton.onClick = [this] { strip.mute.store (muteButton.getToggleState()); };
     addAndMakeVisible (muteButton);
 
-    makeLamp (soloButton, "accent");
+    makeLamp (soloButton, "solokey");
+    soloButton.setClickingTogglesState (true);
     soloButton.onClick = [this] { strip.solo.store (soloButton.getToggleState()); };
     addAndMakeVisible (soloButton);
 
+    makeLamp (safeButton, "key");
+    safeButton.setClickingTogglesState (true);
+    safeButton.setTooltip ("Solo-safe: while anything is soloed, this strip keeps playing on the monitor bus.");
+    safeButton.onClick = [this] { strip.setSoloSafe (safeButton.getToggleState()); };
+    addAndMakeVisible (safeButton);
+
     faderSection.fader.onValueChange = [this] { strip.faderDb.store ((float) faderSection.fader.getValue()); };
     addAndMakeVisible (faderSection);
+
+    tape.onRename = [this] (const juce::String& text)
+    {
+        strip.name = text == "Input " + juce::String (index + 1) ? juce::String() : text;
+        refreshFromStrip();
+    };
+    addAndMakeVisible (tape);
 
     refreshFromStrip();
 }
@@ -120,37 +186,37 @@ void StripView::refreshFromStrip()
     const auto name = displayName();
     tape.setText (name);
     tape.setTapeColour (strip.colour);
-    juce::StringArray badges;
-    if (strip.mono.load())           badges.add ("MONO");
-    if (strip.invertPolarity.load()) badges.add (juce::String::fromUTF8 ("\xc3\x98"));   // polarity
-    tape.setBadges (badges.joinIntoString ("  "));
     setTitle (name + " strip");
     menuButton.setTitle (name + " options");
-    menuButton.setTooltip ("Rename, tape colour, mono, polarity, remove.");
+    menuButton.setTooltip ("Rename, colour, presets, remove.");
 
-    gainSlider.setTitle (name + " gain");
-    gainSlider.setValue (strip.gainDb.load(), juce::dontSendNotification);
-    gainSlider.updateText();
+    gainKnob.setTitle (name + " gain");
+    gainKnob.setValue (strip.gainDb.load(), juce::dontSendNotification);
+    hpfKnob.setTitle (name + " high-pass filter");
+    hpfKnob.setValue (strip.fx.hpfOn.load() ? strip.fx.hpfHz.load() : 20.0, juce::dontSendNotification);
+    hpfKnob.getProperties().set ("off", ! strip.fx.hpfOn.load());
+    lpfKnob.setTitle (name + " low-pass filter");
+    lpfKnob.setValue (strip.fx.lpfOn.load() ? strip.fx.lpfHz.load() : 20000.0, juce::dontSendNotification);
+    lpfKnob.getProperties().set ("off", ! strip.fx.lpfOn.load());
 
     invertButton.setToggleState (strip.invertPolarity.load(), juce::dontSendNotification);
     monoButton.setToggleState (strip.mono.load(), juce::dontSendNotification);
 
-    repaint (gainHeadArea);
-
     faderSection.fader.setTitle (name + " fader");
     faderSection.fader.setValue (strip.faderDb.load(), juce::dontSendNotification);
     faderSection.meter.setTitle (name + " meter");
-    pad.setTitle (name + " voice pad");
+    padButton.setTitle (name + " voice pad");
 
     muteButton.setTitle ("Mute " + name);
     muteButton.setTooltip ("Mute " + name + " on every bus.");
     soloButton.setTitle ("Solo " + name);
     soloButton.setTooltip ("Listen to " + name + " alone on the monitor bus. Other buses (stream, calls) are not affected.");
+    safeButton.setTitle ("Solo-safe " + name);
 
     updateKeys();
-    pad.refreshFromParams();
     inserts.refresh();
     updateSourceButton();
+    repaint();
 }
 
 void StripView::refreshDevice()
@@ -162,6 +228,14 @@ void StripView::tick()
 {
     faderSection.tick();
     inserts.tick();
+
+    const double sr = engine.getSampleRate();
+    const auto text = "LATENCY " + juce::String (sr > 0.0 ? 1000.0 * strip.latencySamples.load() / sr : 0.0, 1) + " ms";
+    if (text != latencyText)
+    {
+        latencyText = text;
+        repaint (latencyArea);
+    }
 }
 
 //==============================================================================
@@ -172,6 +246,7 @@ void StripView::updateKeys()
     const auto name = displayName();
     muteButton.setToggleState (strip.mute.load(), juce::dontSendNotification);
     soloButton.setToggleState (strip.solo.load(), juce::dontSendNotification);
+    safeButton.setToggleState (strip.soloSafe.load(), juce::dontSendNotification);
 
     for (int k = 0; k < (int) processKeys.size(); ++k)
     {
@@ -186,24 +261,26 @@ void StripView::updateKeys()
     for (int b = 0; b < kNumBuses; ++b)
     {
         auto& btn = sendButtons[(size_t) b];
+        auto& knob = sendKnobs[(size_t) b];
         const bool busActive = engine.getBus (b).active.load();
-        const float level = strip.sendDb[b].load();
+        const bool on = strip.busOn[b].load();
         const bool pre = strip.sendPre[b].load();
 
-        // A level other than unity, and pre-fader, are printed on the key.
         // The bus's own name is shown, so a renamed bus reads correctly here.
         const auto busName = engine.getBusName (b);
-        juce::String text (busName);
-        if (std::abs (level) >= 0.05f)
-            text << " " << (level <= -60.0f ? juce::String ("-inf") : (level > 0 ? "+" : "") + juce::String (level, 0));
-        if (pre)
-            text << " P";
-        btn.setButtonText (text);
-        btn.setToggleState (strip.busOn[b].load(), juce::dontSendNotification);
+        btn.setButtonText (busName + (pre ? " P" : ""));
+        btn.setToggleState (on, juce::dontSendNotification);
         btn.setTitle ("Send " + name + " to " + busName);
         btn.setTooltip ("Send " + name + " to " + busName + ". Right-click (or M) for level and pre-fader."
                         + (pre ? " Pre-fader." : ""));
         btn.setVisible (busActive);
+
+        knob.setValue (strip.sendDb[b].load(), juce::dontSendNotification);
+        knob.setTitle ("Send level " + name + " to " + busName);
+        knob.setTooltip ("Send level " + dbText (strip.sendDb[b].load()) + " dB. Double-click or Home for 0 dB.");
+        knob.getProperties().set ("off", ! on);
+        knob.setVisible (busActive);
+        knob.repaint();
     }
 }
 
@@ -305,7 +382,7 @@ void StripView::showStripMenu()
             strip.colour = c;
             refreshFromStrip();
         });
-    menu.addSubMenu ("Tape colour", colours);
+    menu.addSubMenu ("Colour", colours);
 
     menu.addSeparator();
     menu.addItem ("Mono", true, strip.mono.load(), [this]
@@ -544,150 +621,146 @@ void StripView::showSourceMenu()
 
 void StripView::paint (juce::Graphics& g)
 {
+    const auto& t = Theme::p();
     Theme::drawFaceplate (g, getLocalBounds().toFloat());
 
-    Theme::drawLegend (g, "Input", inputLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "Input " + juce::String (index + 1), inputLegend, juce::Justification::centred);
     Theme::drawLegend (g, "Processing", processLegend, juce::Justification::centred);
-    Theme::drawLegend (g, juce::String::fromUTF8 ("Insert \xc2\xb7 VST3"), insertsLegend, juce::Justification::centred);
-    Theme::drawLegend (g, "VoicePad", padLegend, juce::Justification::centred);
+    Theme::drawLegend (g, "Insert", insertsLegend, juce::Justification::centred);
     Theme::drawLegend (g, "Sends", sendsLegend, juce::Justification::centred);
 
-    // 1 px edge-to-edge section dividers (mockup style).
-    g.setColour (Theme::p().line);
+    g.setColour (t.line);
     for (const int y : dividerYs)
         g.fillRect (0, y, getWidth(), 1);
 
-    // Gain head: "GAIN" left, the value right; scale under the slider.
-    if (! gainHeadArea.isEmpty())
+    // Knob captions above, values below.
+    auto knobText = [&] (juce::Rectangle<int> area, const char* name, const juce::String& value, bool off)
     {
-        const double v = strip.gainDb.load();
-        g.setFont (Theme::ui (8.5f, true));
-        g.setColour (Theme::p().textFaint);
-        g.drawText ("GAIN", gainHeadArea, juce::Justification::centredLeft);
-        g.setFont (Theme::mono (10.5f));
-        g.setColour (Theme::p().text);
-        g.drawText ((v > 0.05 ? "+" : "") + juce::String (v, 1) + " dB",
-                    gainHeadArea, juce::Justification::centredRight);
-    }
-    if (! gainScaleArea.isEmpty())
-    {
-        g.setFont (Theme::mono (8.0f));
-        g.setColour (Theme::p().textFaint);
-        g.drawText ("-24", gainScaleArea, juce::Justification::centredLeft);
-        g.drawText ("0", gainScaleArea, juce::Justification::centred);
-        g.drawText ("+24", gainScaleArea, juce::Justification::centredRight);
-    }
+        if (area.isEmpty())
+            return;
+        g.setFont (Theme::ui (10.0f, true));
+        g.setColour (t.textFaint);
+        g.drawText (name, area.removeFromTop (11), juce::Justification::centred);
+        area.removeFromTop (gainKnob.getHeight());
+        g.setFont (Theme::mono (10.0f));
+        g.setColour (off ? t.textFaint : t.textDim);
+        g.drawText (value, area, juce::Justification::centred);
+    };
+    knobText (gainLabel, "GAIN", dbText (strip.gainDb.load()), false);
+    knobText (hpfLabel, "HPF", strip.fx.hpfOn.load() ? hzText (strip.fx.hpfHz.load()) : juce::String ("off"), ! strip.fx.hpfOn.load());
+    knobText (lpfLabel, "LPF", strip.fx.lpfOn.load() ? hzText (strip.fx.lpfHz.load()) : juce::String ("off"), ! strip.fx.lpfOn.load());
 
     // A hairline above the fader bay, the same height on every column.
-    g.setColour (Theme::p().line);
+    g.setColour (t.line);
     g.fillRect (0, (bayTop > 0 ? bayTop : getHeight() / 2) - 4, getWidth(), 1);
+
+    g.setFont (Theme::ui (9.5f, true));
+    g.setColour (t.textFaint);
+    g.drawText (latencyText, latencyArea, juce::Justification::centred);
 }
 
 void StripView::resized()
 {
     const juce::ScopedValueSetter<bool> layoutGuard (inLayout, true);
-    // Mockup proportions: 7 px side padding, 1 px edge-to-edge dividers,
-    // 13 px centered legends, 5 px between sections.
-    constexpr int sidePad = 7;
+    constexpr int sidePad = 5, legendH = 12, gap = 4, keyH = 19;
     auto r = getLocalBounds().reduced (sidePad, sidePad);
     const int split = bayTop > 0 ? bayTop : getHeight() / 2;
     auto top = r.withBottom (split - sidePad);
     auto bay = r.withTop (split);
-    constexpr int legendH = 13, gap = 5;
     dividerYs.clear();
 
-    // Header: name, options.
-    auto titleRow = top.removeFromTop (26);
-    menuButton.setBounds (titleRow.removeFromRight (26));
-    titleRow.removeFromRight (Theme::s1);
-    tape.setBounds (titleRow);
-    top.removeFromTop (gap);
-    dividerYs.push_back (top.getY() - 2);
-
-    // INPUT: source selector, gain slider under the source name with its value
-    // above it, Ø / MONO below it (two equal toggles, mockup style).
-    inputLegend = top.removeFromTop (legendH);
-    sourceButton.setBounds (top.removeFromTop (25));
-    top.removeFromTop (gap);
-    gainHeadArea = top.removeFromTop (13);
-    gainSlider.setBounds (top.removeFromTop (22));
-    gainScaleArea = top.removeFromTop (10);
-    top.removeFromTop (4);
+    // INPUT n (legend) + options, source, knobs, polarity / mono.
     {
-        auto row = top.removeFromTop (24);
-        const int bw = (row.getWidth() - Theme::s1) / 2;
+        auto row = top.removeFromTop (16);
+        menuButton.setBounds (row.removeFromRight (18));
+        inputLegend = row.withTrimmedLeft (18);
+    }
+    top.removeFromTop (2);
+    sourceButton.setBounds (top.removeFromTop (22));
+    top.removeFromTop (gap);
+    {
+        constexpr int knobD = 28;
+        auto row = top.removeFromTop (11 + knobD + 11);
+        const int w = row.getWidth() / 3;
+        juce::Rectangle<int>* labels[] { &gainLabel, &hpfLabel, &lpfLabel };
+        DbSlider* knobs[] { &gainKnob, &hpfKnob, &lpfKnob };
+        for (int k = 0; k < 3; ++k)
+        {
+            auto cell = k == 2 ? row : row.removeFromLeft (w);
+            *labels[k] = cell;
+            knobs[k]->setBounds (cell.withTrimmedTop (11).withHeight (knobD).withSizeKeepingCentre (knobD, knobD));
+        }
+    }
+    top.removeFromTop (gap);
+    {
+        auto row = top.removeFromTop (keyH);
+        const int bw = (row.getWidth() - 3) / 2;
         invertButton.setBounds (row.removeFromLeft (bw));
-        row.removeFromLeft (Theme::s1);
+        row.removeFromLeft (3);
         monoButton.setBounds (row);
     }
     top.removeFromTop (gap);
     dividerYs.push_back (top.getY() - 2);
 
-    // PROCESSING keys in a crisp 3x2 grid (NR Gate EQ / Comp DS Duck).
+    // PROCESSING keys, 2 columns x 3 rows.
     processLegend = top.removeFromTop (legendH);
     {
-        auto grid = top.removeFromTop (24 * 2 + 3);
-        const int kw = (grid.getWidth() - 6) / 3;
+        auto grid = top.removeFromTop (3 * keyH + 2 * 3);
+        const int kw = (grid.getWidth() - 3) / 2;
         for (int k = 0; k < (int) processKeys.size(); ++k)
-        {
-            const int col = k % 3, rowIdx = k / 3;
-            processKeys[(size_t) k].setBounds (grid.getX() + col * (kw + 3),
-                                               grid.getY() + rowIdx * (24 + 3), kw, 24);
-        }
+            processKeys[(size_t) k].setBounds (grid.getX() + (k % 2) * (kw + 3), grid.getY() + (k / 2) * (keyH + 3),
+                                               k % 2 == 0 ? kw : grid.getWidth() - kw - 3, keyH);
     }
     top.removeFromTop (gap);
     dividerYs.push_back (top.getY() - 2);
 
-    // VoicePad and horizontal bus sends sit at the bottom of the top section;
-    // the inserts take whatever is left in the middle.
-    const int padH = Theme::isCompact() ? 66 : 82;
-    const int padSectionH = legendH + VoicePadComponent::headerHeight + padH;
-    const int sendsH = legendH + 24;
-
-    auto sendsBlock = top.removeFromBottom (sendsH);
+    // Bottom of the top section: SENDS (one row per active bus), then the voice pad button.
+    const int nSends = engine.getNumActiveBuses();
+    constexpr int sendH = 22;
+    padButton.setBounds (top.removeFromBottom (keyH));
     top.removeFromBottom (gap);
-    auto padBlock = top.removeFromBottom (padSectionH);
+    auto sendsBlock = top.removeFromBottom (legendH + nSends * sendH);
+    top.removeFromBottom (gap);
+    dividerYs.push_back (sendsBlock.getY() - 3);
 
+    sendsLegend = sendsBlock.removeFromTop (legendH);
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        if (! engine.getBus (b).active.load())
+            continue;
+        auto row = sendsBlock.removeFromTop (sendH);
+        sendKnobs[(size_t) b].setBounds (row.removeFromRight (sendH));
+        row.removeFromRight (3);
+        sendButtons[(size_t) b].setBounds (row.reduced (0, 1));
+    }
+
+    // INSERT: whatever is left in the middle.
     insertsLegend = top.removeFromTop (legendH);
-    const int insertsAvail = top.getHeight() - gap;
+    const int insertsAvail = top.getHeight();
     const int rackH = insertsAvail <= 0 ? 0
         : juce::jlimit (InsertRack::heightForRows (1), InsertRack::heightForRows (kNumSlots), insertsAvail);
     inserts.setBounds (rackH > 0 ? top.removeFromTop (rackH) : juce::Rectangle<int>());
-    dividerYs.push_back (padBlock.getY() - 3);
 
-    // VOICE PAD: mode buttons + pad.
-    padLegend = padBlock.removeFromTop (legendH);
-    pad.setBounds (padBlock);
-    dividerYs.push_back (sendsBlock.getY() - 3);
-
-    // SENDS: horizontal row of active bus send buttons across the strip.
-    sendsLegend = sendsBlock.removeFromTop (legendH);
+    // Fader bay: name plate, latency, M / S / SAFE along the bottom, fader + meter above.
+    tape.setBounds (bay.removeFromBottom (24));
+    latencyArea = bay.removeFromBottom (14);
+    auto keys = bay.removeFromBottom (20);
     {
-        auto row = sendsBlock;
-        const int activeBuses = engine.getNumActiveBuses();
-        const int nSends = juce::jmax (1, activeBuses);
-        const int btnGap = nSends >= 5 ? 2 : 3;
-        const int totalGap = (nSends - 1) * btnGap;
-        const int bw = juce::jmax (18, (row.getWidth() - totalGap) / nSends);
-        int placed = 0;
-        for (int b = 0; b < kNumBuses; ++b)
-        {
-            if (! engine.getBus (b).active.load())
-                continue;
-            const int w = (++placed == nSends) ? row.getWidth() : bw;
-            sendButtons[(size_t) b].setBounds (row.removeFromLeft (w));
-            row.removeFromLeft (btnGap);
-        }
+        const int w = (keys.getWidth() - 6) / 3;
+        muteButton.setBounds (keys.removeFromLeft (w));
+        keys.removeFromLeft (3);
+        soloButton.setBounds (keys.removeFromLeft (w));
+        keys.removeFromLeft (3);
+        safeButton.setBounds (keys);
     }
-
-    // Fader bay: Mute / Solo along the bottom, fader + meter above using full column width.
-    auto muteRow = bay.removeFromBottom (26);
-    {
-        const int bw = (muteRow.getWidth() - Theme::s1) / 2;
-        muteButton.setBounds (muteRow.removeFromLeft (bw));
-        muteRow.removeFromLeft (Theme::s1);
-        soloButton.setBounds (muteRow);
-    }
-    bay.removeFromBottom (gap);
+    bay.removeFromBottom (3);
     faderSection.setBounds (bay);
+}
+
+void StripView::openVoicePad()
+{
+    auto padView = std::make_unique<VoicePadComponent> (strip.pad, displayName());
+    padView->setSize (240, VoicePadComponent::headerHeight + 170);
+    auto* top = popupParent();
+    juce::CallOutBox::launchAsynchronously (std::move (padView), top->getLocalArea (&padButton, padButton.getLocalBounds()), top);
 }

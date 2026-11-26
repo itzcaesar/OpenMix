@@ -143,7 +143,7 @@ namespace
         g.setColour (active ? t.accent.withAlpha (0.18f) : t.raised.withAlpha (0.7f));
         g.fillRoundedRectangle (badgeRect, 3.0f);
         g.setColour (active ? t.accent : t.textFaint);
-        g.setFont (Theme::ui (8.5f, true).withExtraKerningFactor (0.04f));
+        g.setFont (Theme::ui (9.5f, true).withExtraKerningFactor (0.04f));
         g.drawText (active ? "ACTIVE" : "BYPASS", badgeRect, juce::Justification::centred);
 
         const int count = (int) items.size();
@@ -154,8 +154,8 @@ namespace
             {
                 auto cell = overview.removeFromLeft (cellW);
                 const int lblW = juce::jmin (cell.getWidth() / 2,
-                                             juce::GlyphArrangement::getStringWidthInt (Theme::ui (8.5f, true), item.label) + 4);
-                g.setFont (Theme::ui (8.5f, true));
+                                             juce::GlyphArrangement::getStringWidthInt (Theme::ui (9.5f, true), item.label) + 4);
+                g.setFont (Theme::ui (9.5f, true));
                 g.setColour (t.textFaint);
                 g.drawText (item.label, cell.removeFromLeft (lblW), juce::Justification::centredLeft, true);
 
@@ -204,7 +204,7 @@ namespace
 
         if (tag.isNotEmpty())
         {
-            g.setFont (Theme::ui (8.0f, true));
+            g.setFont (Theme::ui (9.5f, true));
             g.setColour (dragging ? t.onAccent : (active ? t.text : t.textDim));
             g.drawText (tag, juce::Rectangle<float> (pt.x - 10.0f, pt.y - r - 12.0f, 20.0f, 11.0f),
                         juce::Justification::centred);
@@ -239,7 +239,7 @@ namespace
                                 float reductionDb, float maxDb, bool active, const juce::Colour& barCol)
     {
         const auto& t = Theme::p();
-        g.setFont (Theme::ui (8.0f, true));
+        g.setFont (Theme::ui (9.5f, true));
         g.setColour (t.textFaint);
         g.drawText (title, area.removeFromTop (12), juce::Justification::centred);
 
@@ -258,7 +258,7 @@ namespace
             g.fillRoundedRectangle (inner.withHeight (inner.getHeight() * frac), 1.5f);
         }
 
-        g.setFont (Theme::mono (9.5f));
+        g.setFont (Theme::mono (10.0f));
         g.setColour (active && reductionDb > 0.1f ? barCol : t.textFaint);
         g.drawText (reductionDb < 0.05f ? juce::String ("0.0") : "-" + juce::String (reductionDb, 1),
                     readout, juce::Justification::centred);
@@ -330,7 +330,7 @@ namespace
                 { 50.0f, "50" }, { 100.0f, "100" }, { 500.0f, "500" },
                 { 1000.0f, "1k" }, { 5000.0f, "5k" }, { 10000.0f, "10k" }
             };
-            g.setFont (Theme::mono (8.5f));
+            g.setFont (Theme::mono (9.5f));
             g.setColour (t.textFaint);
             for (const auto& [f, lbl] : fLabels)
             {
@@ -624,7 +624,7 @@ namespace
                 const float x = linearToX (db, plot.getX(), plot.getWidth(), kInMin, kInMax);
                 g.setColour (t.line.withAlpha (db == -18.0f ? 0.5f : 0.3f));
                 g.fillRect (x, plot.getY(), 1.0f, plot.getHeight());
-                g.setFont (Theme::mono (8.0f));
+                g.setFont (Theme::mono (9.5f));
                 g.setColour (t.textFaint);
                 g.drawText (juce::String ((int) db), juce::Rectangle<float> (x - 12.0f, plot.getBottom() + 1.0f, 24.0f, 11.0f),
                             juce::Justification::centred);
@@ -636,7 +636,7 @@ namespace
                 g.fillRect (plot.getX(), y, plot.getWidth(), 1.0f);
                 if (db == -48.0f || db == -24.0f || db == 0.0f)
                 {
-                    g.setFont (Theme::mono (8.0f));
+                    g.setFont (Theme::mono (9.5f));
                     g.setColour (t.textFaint);
                     g.drawText (juce::String ((int) db), juce::Rectangle<float> (plot.getX() - 25.0f, y - 5.0f, 22.0f, 10.0f),
                                 juce::Justification::centredRight);
@@ -838,7 +838,7 @@ namespace
                 g.setColour (t.line.withAlpha (0.3f));
                 g.fillRect (x, plot.getY(), 1.0f, plot.getHeight());
                 g.fillRect (plot.getX(), y, plot.getWidth(), 1.0f);
-                g.setFont (Theme::mono (8.0f));
+                g.setFont (Theme::mono (9.5f));
                 g.setColour (t.textFaint);
                 g.drawText (juce::String ((int) db), juce::Rectangle<float> (x - 12.0f, plot.getBottom() + 1.0f, 24.0f, 11.0f),
                             juce::Justification::centred);
@@ -1008,7 +1008,7 @@ namespace
             // Left interactive Threshold column (-60..0 dB)
             threshLane = inner.removeFromLeft (38).toFloat();
             {
-                g.setFont (Theme::ui (8.0f, true));
+                g.setFont (Theme::ui (9.5f, true));
                 g.setColour (t.textFaint);
                 g.drawText ("THR", threshLane.withHeight (11.0f), juce::Justification::centred);
                 auto lane = threshLane.withTrimmedTop (13.0f).withTrimmedBottom (13.0f).reduced (11.0f, 2.0f);
@@ -1017,7 +1017,7 @@ namespace
                 const float ty = dbToY (thr, lane.getY(), lane.getHeight(), -60.0f, 0.0f);
                 g.setColour (active ? t.accent : t.textFaint);
                 g.fillRoundedRectangle (lane.getX() - 3.0f, ty - 2.0f, lane.getWidth() + 6.0f, 4.0f, 1.5f);
-                g.setFont (Theme::mono (9.0f));
+                g.setFont (Theme::mono (10.0f));
                 g.setColour (t.textDim);
                 g.drawText (juce::String (thr, 0), threshLane.withTop (threshLane.getBottom() - 12.0f), juce::Justification::centred);
             }
@@ -1033,7 +1033,7 @@ namespace
                 const float x = freqToX (f, plot.getX(), plot.getWidth(), kFMin, kFMax);
                 g.setColour (f == 6500.0f ? t.accent.withAlpha (0.28f) : t.line.withAlpha (0.3f));
                 g.fillRect (x, plot.getY(), 1.0f, plot.getHeight());
-                g.setFont (Theme::mono (8.0f));
+                g.setFont (Theme::mono (9.5f));
                 g.setColour (f == 6500.0f ? t.accent : t.textFaint);
                 g.drawText (formatHzShort (f), juce::Rectangle<float> (x - 14.0f, plot.getBottom() + 1.0f, 28.0f, 11.0f),
                             juce::Justification::centred);
@@ -1242,7 +1242,7 @@ namespace
                 const float x = linearToX (db, plot.getX(), plot.getWidth(), -80.0f, 0.0f);
                 g.setColour (t.line.withAlpha (0.3f));
                 g.fillRect (x, plot.getY(), 1.0f, plot.getHeight());
-                g.setFont (Theme::mono (8.0f));
+                g.setFont (Theme::mono (9.5f));
                 g.setColour (t.textFaint);
                 g.drawText (juce::String ((int) db), juce::Rectangle<float> (x - 12.0f, plot.getBottom() + 1.0f, 24.0f, 11.0f),
                             juce::Justification::centred);
@@ -1252,7 +1252,7 @@ namespace
                 const float y = dbToY (db, plot.getY(), plot.getHeight(), -40.0f, 0.0f);
                 g.setColour (t.line.withAlpha (0.3f));
                 g.fillRect (plot.getX(), y, plot.getWidth(), 1.0f);
-                g.setFont (Theme::mono (8.0f));
+                g.setFont (Theme::mono (9.5f));
                 g.setColour (t.textFaint);
                 g.drawText (juce::String ((int) db), juce::Rectangle<float> (plot.getX() - 25.0f, y - 5.0f, 22.0f, 10.0f),
                             juce::Justification::centredRight);
@@ -1394,7 +1394,7 @@ namespace
             // Right interactive Amount column
             amountLane = inner.removeFromRight (46).toFloat();
             {
-                g.setFont (Theme::ui (8.0f, true));
+                g.setFont (Theme::ui (9.5f, true));
                 g.setColour (t.textFaint);
                 g.drawText ("AMT", amountLane.withHeight (11.0f), juce::Justification::centred);
                 auto track = amountLane.withTrimmedTop (13.0f).withTrimmedBottom (13.0f).reduced (14.0f, 2.0f);
@@ -1410,7 +1410,7 @@ namespace
                     g.fillRoundedRectangle (track.getX() + 1.0f, track.getBottom() - fillH + 1.0f,
                                             track.getWidth() - 2.0f, std::max (2.0f, fillH - 2.0f), 1.5f);
                 }
-                g.setFont (Theme::mono (9.0f));
+                g.setFont (Theme::mono (10.0f));
                 g.setColour (active ? t.text : t.textFaint);
                 g.drawText (juce::String (pct) + "%", amountLane.withTop (amountLane.getBottom() - 12.0f), juce::Justification::centred);
             }
@@ -1427,7 +1427,7 @@ namespace
                 g.setColour (t.line.withAlpha (pctMark == 0.50f ? 0.45f : 0.25f));
                 g.fillRect (plot.getX(), y, plot.getWidth(), 1.0f);
             }
-            g.setFont (Theme::ui (8.0f, true));
+            g.setFont (Theme::ui (9.5f, true));
             g.setColour (t.textFaint);
             g.drawText ("VOICE PROBABILITY HISTORY",
                         juce::Rectangle<float> (plot.getX(), plot.getBottom() + 1.0f, plot.getWidth(), 11.0f),

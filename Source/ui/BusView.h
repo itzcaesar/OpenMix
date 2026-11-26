@@ -8,10 +8,10 @@
 #include "ui/InsertRack.h"
 #include "ui/Panels.h"
 
-// One output bus in the master section: name tape, output device, processing
-// (EQ, compressor), inserts, analyser, limiter with gain-reduction meter, loudness
-// (short-term LUFS + normalisation), fader bay (fader + meter, mute). The monitor
-// bus is shown by a thin accent outline around the strip -- no "monitor" text.
+// One output bus, a narrow console column like the strips: output device, processing
+// (EQ, compressor), inserts, analyser, limiter gain reduction, loudness (short-term LUFS +
+// normalisation), then the shared fader bay: fader + meter, M / MON, latency and the
+// coloured name plate. MON is lit on the monitor bus (where soloed strips are heard).
 class BusView : public juce::Component
 {
 public:
@@ -31,8 +31,8 @@ public:
 
     // Column width limits; compact mode narrows them (Theme::isCompact()).
     // A bus gets about 3/4 of a strip's width (see ConsoleContent::resized).
-    static int minWidth() { return Theme::isCompact() ? 136 : 156; }
-    static int maxWidth() { return Theme::isCompact() ? 230 : 280; }
+    static int minWidth() { return Theme::isCompact() ? 100 : 110; }
+    static int maxWidth() { return Theme::isCompact() ? 122 : 136; }
 
 private:
     void showTargetMenu();
@@ -55,7 +55,7 @@ private:
     TapeLabel tape { false };
     MenuDotsButton menuButton;
     ChipButton targetButton;
-    juce::TextButton muteButton { "Mute" };
+    StripKey muteButton { "M" }, monButton { "MON" };
     StripKey eqKey { "EQ" }, compKey { "Comp" };
     InsertRack inserts;
     bool inLayout = false;
@@ -65,9 +65,10 @@ private:
     juce::ComboBox normCombo;   // loudness normalisation: Off / -23 / -16 / -14 LUFS
     juce::Label normGainLabel;  // gain the normaliser is currently applying
 
-    juce::Rectangle<int> outputLegend, limiterLegend, limiterArea, grHeadArea, grTrackArea, grScaleArea,
+    juce::Rectangle<int> outputLegend, limiterLegend, grHeadArea, grTrackArea,
                          limiterSectionArea, loudnessLegend, loudnessValueArea,
-                         processLegend, insertsLegend;
+                         processLegend, insertsLegend, latencyArea;
+    juce::String latencyText;
     std::vector<int> dividerYs;   // y of each 1 px section divider, in strip coords
     std::shared_ptr<BusAnalysis> analysis = std::make_shared<BusAnalysis>();
     MiniSpectrum spectrum { analysis };

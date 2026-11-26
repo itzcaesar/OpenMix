@@ -30,18 +30,18 @@ adds about 10–25 ms on those devices only.
 ## Custom names
 
 Rename a bus from its three-dot menu (empty = the default A1..A3 /
-B1..B3). The name is shown on the bus strip, on the strips' send keys, in
+B1..B3). The name is shown on the bus's name plate, on the strips' send keys, in
 the soundboard and in recording. A bus never changes group when renamed:
 slots A1–A3 are always **Hardware**, B1–B3 always **Virtual**.
 
 ## Limiter, loudness and meters
 
-- **LIMITER:** the lamp lights while the safety limiter (-0.3 dBFS
-  ceiling) is reducing gain, and the gain-reduction meter next to it
-  shows how much (in dB).
-- The **monitor bus** is shown only by a thin amber outline around the
-  strip and its name bar lit in amber; there is no "monitor" text on the
-  strip.
+- **LIMITER:** the gain reduction of the safety limiter (-0.3 dBFS
+  ceiling), as a number and a bar. It reads "LIMITING" in red while the
+  limiter is working hard.
+- **MON** is lit on the **monitor bus**, the bus where soloed strips are
+  heard. Click MON on another bus to move it there, or on the lit one to
+  have no monitor bus.
 - **Loudness** is the short-term LUFS (the number streaming platforms
   normalise to), with the normalisation target and gain when normalisation
   is on. The bus strip shows the live spectrum only; the full analyser
@@ -49,7 +49,8 @@ slots A1–A3 are always **Hardware**, B1–B3 always **Virtual**.
 - **Meters** show peak (the LED ladder) and RMS (the solid bar inside
   it): peak catches transients, RMS shows how loud the bus actually
   sounds. The same RMS bar is on every strip and on the soundboard.
-- **Loudness normalisation** (a bus's three-dot menu): a slow gain that
+- **Loudness normalisation** (the box under the LUFS readout, or the
+  bus's three-dot menu): a slow gain that
   pulls the bus towards -14 LUFS (streaming), -16 or -23 (broadcast),
   clamped to +/-12 dB and smoothed so it never pumps on a drum hit. It
   measures the bus the way the LUFS readout does (K-weighted, about a 3 s
@@ -68,7 +69,7 @@ fader, safety limiter.
 
 ## Analyser
 
-A live spectrum on the bus strip. Click it for the full **analyser**:
+A live spectrum on the bus column. Click it for the full **analyser**:
 spectrum plus momentary, short-term and integrated loudness.
 
 ## Bus menu

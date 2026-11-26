@@ -255,7 +255,7 @@ void FaderSection::paint (juce::Graphics& g)
     const int zeroY = fader.getY() + (int) fader.getPositionOfValue (0.0);
     int lastLabelY = -100;
 
-    g.setFont (Theme::mono (9.0f));
+    g.setFont (Theme::mono (10.0f));
     for (double db : { 0.0, 6.0, -6.0, -15.0, -30.0, -60.0 })
     {
         const int y = fader.getY() + (int) fader.getPositionOfValue (db);
@@ -277,8 +277,8 @@ void FaderSection::paint (juce::Graphics& g)
 
 TapeLabel::TapeLabel (bool canEdit) : editable (canEdit)
 {
-    label.setFont (Theme::ui (14.5f, true));
-    label.setJustificationType (juce::Justification::centredLeft);
+    label.setFont (Theme::ui (12.5f, true));
+    label.setJustificationType (juce::Justification::centred);
     label.setInterceptsMouseClicks (false, false);
     label.onTextChange = [this] { if (onRename) onRename (label.getText().trim()); };
     addAndMakeVisible (label);
@@ -293,10 +293,15 @@ TapeLabel::TapeLabel (bool canEdit) : editable (canEdit)
     applyColours();
 }
 
+juce::Colour TapeLabel::barColour() const
+{
+    return barOverride.isTransparent() ? Theme::nameBarColour (colourIndex_) : barOverride;
+}
+
 void TapeLabel::applyColours()
 {
     const auto& t = Theme::p();
-    label.setColour (juce::Label::textColourId, t.text);
+    label.setColour (juce::Label::textColourId, Theme::textOn (barColour()));
     label.setColour (juce::Label::textWhenEditingColourId, t.text);
     label.setColour (juce::Label::backgroundWhenEditingColourId, t.well);
     label.setColour (juce::Label::outlineWhenEditingColourId, t.focus);
@@ -314,31 +319,25 @@ void TapeLabel::setText (const juce::String& text)
 void TapeLabel::resized()
 {
     const int badgeW = badges_.isEmpty() ? 0 : juce::GlyphArrangement::getStringWidthInt (Theme::ui (11.0f, true), badges_) + 10;
-    label.setBounds (getLocalBounds().withTrimmedTop (3).reduced (6, 1).withTrimmedRight (badgeW));
+    label.setBounds (getLocalBounds().reduced (4, 1).withTrimmedRight (badgeW));
 }
 
-// Name plate: a recessed field with the channel's colour as a cap along its top edge
-// (the colour is for finding a channel at a glance on a full desk).
+// Name plate: a solid bar in the channel's colour at the bottom of the column (the colour
+// is for finding a channel at a glance on a full desk; text picks black or white for contrast).
 void TapeLabel::paint (juce::Graphics& g)
 {
-    const auto& t = Theme::p();
     const auto r = getLocalBounds().toFloat();
+    const auto bar = barColour();
 
-    g.setColour (t.well);
+    g.setColour (bar);
     g.fillRoundedRectangle (r, Theme::controlRadius);
-    g.setColour (t.line);
+    g.setColour (bar.darker (0.4f));
     g.drawRoundedRectangle (r.reduced (0.5f), Theme::controlRadius, 1.0f);
-
-    juce::Path cap;
-    cap.addRoundedRectangle (r.getX(), r.getY(), r.getWidth(), 3.0f, Theme::controlRadius, Theme::controlRadius, true, true, false, false);
-    // The default cream disappears on the light theme's pale field; use the darker edge tone there.
-    g.setColour (colourIndex_ == 0 && ! t.dark ? t.controlEdge : Theme::tapeColour (colourIndex_));
-    g.fillPath (cap);
 
     // Status badges (mono, polarity): real state.
     if (badges_.isNotEmpty())
     {
-        g.setColour (t.textDim);
+        g.setColour (Theme::textOn (bar).withAlpha (0.8f));
         g.setFont (Theme::ui (11.0f, true));
         g.drawText (badges_, getLocalBounds().withTrimmedTop (3).reduced (8, 0), juce::Justification::centredRight);
     }

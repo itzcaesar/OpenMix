@@ -15,9 +15,9 @@ is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 - **Core mixer:** up to 8 strips and 6 buses at runtime; per-app routing;
   multi-device I/O with drift-correcting resampling.
 - **Voice and strips:** RNNoise noise removal, gate, 3-band EQ, compressor,
-  de-esser, ducking, VoicePad; HPF/LPF per strip (in the EQ panel);
-  per-strip presets (in the strip menu); solo-safe; latency compensation;
-  gain slider under the source name.
+  de-esser, ducking, voice pad; gain, HPF and LPF knobs on every strip;
+  per-strip presets (in the strip menu); solo-safe; latency compensation
+  with a per-strip readout.
 - **Plugins:** VST3 (6 slots per strip/bus) with crash-safe loading; VST2
   opt-in only.
 - **Meters and loudness:** RMS meters, K-weighted loudness normalisation,
@@ -25,8 +25,11 @@ is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 - **Creator tools and control:** multitrack recorder, replay buffer,
   soundboard, scenes, global hotkeys, OSC / phone / WebSocket / MIDI
   remote, Stream Deck via OSC or WebSocket.
-- **Interface:** light/dark themes, compact mode, Hardware / Virtual bus
-  groups, custom bus names, monitor bus shown by a 1 px amber outline.
+- **Interface:** a desk of narrow, identical columns with coloured name
+  plates, send knobs and one aligned fader bay; a menu bar with a scene
+  stepper that doubles as the title bar; light/dark themes, compact mode,
+  Hardware / Virtual bus groups, custom bus names, a MON key for the
+  monitor bus.
 
 ### Known limits
 

@@ -96,6 +96,12 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
         if (oscChanged) oscChanged();
     };
 
+    // Port fields read like the desk's numeric readouts.
+    for (auto* port : { &oscPort, &wsPort })
+    {
+        port->setFont (Theme::mono (12.5f));
+        port->setIndents (6, 4);
+    }
     oscPort.setText (juce::String (s.oscPort()), false);
     oscPort.setInputRestrictions (5, "0123456789");
     oscPort.setTitle ("OSC port");
@@ -260,7 +266,7 @@ SettingsPanel::SettingsPanel (MixerEngine& e, std::function<void()> themeFn, std
     engine.getScanner().addChangeListener (this);
     updateScanText();
     startTimerHz (2);   // watches MIDI learn finishing (a knob/key on another thread)
-    setSize (580, 840);
+    setSize (preferredWidth, contentHeight());
 }
 
 SettingsPanel::~SettingsPanel()
@@ -359,13 +365,15 @@ void SettingsPanel::paintContent (juce::Graphics& g)
     const auto& t = Theme::p();
     g.fillAll (t.window);
 
-    for (const auto* card : { &startupCard, &themeCard, &pluginsCard, &networkCard, &aboutCard })
+    for (const auto* card : { &startupCard, &themeCard, &pluginsCard, &networkCard, &updatesCard, &aboutCard })
         Theme::drawFaceplate (g, card->toFloat());
 
+    // Section legends and 1 px dividers, the same as the sections on a strip.
     Theme::drawLegend (g, "Startup", startupLegend);
     Theme::drawLegend (g, "Look and hotkeys", themeLegend);
     Theme::drawLegend (g, "Plugins", pluginsLegend);
-    Theme::drawLegend (g, "Network and logs", networkLegend);
+    Theme::drawLegend (g, "Remote control", networkLegend);
+    Theme::drawLegend (g, "Updates and logs", updatesLegend);
     Theme::drawLegend (g, "About", aboutLegend);
 
     g.setFont (Theme::ui (12.0f));
@@ -373,17 +381,17 @@ void SettingsPanel::paintContent (juce::Graphics& g)
     g.drawText ("Port", oscPortLabelArea, juce::Justification::centredRight);
     g.drawText ("Port", wsPortLabelArea, juce::Justification::centredRight);
 
-    g.setFont (Theme::ui (13.0f));
+    g.setFont (Theme::ui (12.5f));
     g.setColour (t.textDim);
     g.drawFittedText (scanText, scanTextArea, juce::Justification::centredLeft, 2);
 
-    g.drawFittedText ("While OSC is on, any device on your network can move faders and start recordings. "
-                      "Addresses start with /openmix (see the README).", oscNoteArea, juce::Justification::topLeft, 2);
+    g.drawFittedText ("While this is on, any device on your network can move faders and start recordings. "
+                      "Addresses start with /openmix.", oscNoteArea, juce::Justification::topLeft, 3, 1.0f);
 
-    g.drawFittedText ("Phone remote: open http://<this PC>:" + juce::String (AppSettings::get().wsPort())
-                        + "/ on your phone while the WebSocket remote is on. Stream Deck: use its OSC plugin "
-                          "with the /openmix addresses, or a WebSocket plugin against this port.",
-                      wsNoteArea, juce::Justification::topLeft, 3);
+    g.drawFittedText ("On your phone, open http://<this PC>:" + juce::String (AppSettings::get().wsPort())
+                        + "/ while this is on. Stream Deck: its OSC plugin with the /openmix addresses, "
+                          "or a WebSocket plugin on this port.",
+                      wsNoteArea, juce::Justification::topLeft, 4, 1.0f);
 
     // Recessed MIDI mappings readout box matching the desk style.
     g.setColour (t.selBg);
@@ -395,115 +403,137 @@ void SettingsPanel::paintContent (juce::Graphics& g)
     const int midiMaxLines = juce::jmax (3, juce::StringArray::fromLines (midiText).size());
     g.drawFittedText (midiText, midiTextArea.reduced (8, 6), juce::Justification::topLeft, midiMaxLines);
 
-    g.setFont (Theme::ui (13.0f));
+    g.setFont (Theme::ui (12.5f));
     g.setColour (t.textDim);
     g.drawFittedText ("OpenMix " + juce::JUCEApplication::getInstance()->getApplicationVersion()
                         + ". Licensed under the GNU AGPLv3. Built with JUCE (AGPLv3) and RNNoise (BSD).",
                       aboutArea, juce::Justification::topLeft, 3);
 }
 
+// Two columns, so everything fits without scrolling on a normal screen: setup on the left
+// (startup, look, plugins, about), remote control and logs on the right. Rows are 24 px keys
+// and toggles, the same sizes as on the desk.
+namespace
+{
+    constexpr int pad = 12, cardPad = 10, cardGap = 8, legendH = 16, rowH = 24, colGap = 12;
+}
+
+int SettingsPanel::contentHeight() const
+{
+    const int left = (cardPad * 2 + legendH + 3 * rowH)
+                   + cardGap + (cardPad * 2 + legendH + rowH + 6 + rowH)
+                   + cardGap + (cardPad * 2 + legendH + rowH + 4 + 32 + rowH + 6 + rowH)
+                   + cardGap + (cardPad * 2 + legendH + 36);
+    const int right = (cardPad * 2 + legendH + rowH + 46 + rowH + 62 + rowH + rowH + 6 + rowH + 6 + midiBoxHeight())
+                    + cardGap + (cardPad * 2 + legendH + rowH + 6 + rowH);
+    return pad * 2 + juce::jmax (left, right);
+}
+
 void SettingsPanel::resized()
 {
     viewport.setBounds (getLocalBounds());
-    const int w = juce::jmax (500, viewport.getMaximumVisibleWidth());
-    content.setSize (w, 894 + midiBoxHeight());
+    const int w = juce::jmax (620, viewport.getMaximumVisibleWidth());
+    content.setSize (w, contentHeight());
     layoutContent();
 }
 
 void SettingsPanel::layoutContent()
 {
-    auto r = content.getLocalBounds().reduced (Theme::s3);
-    constexpr int cardPad = Theme::s3;
-    constexpr int cardGap = 10;
-    const int midiH = midiBoxHeight();
+    auto r = content.getLocalBounds().reduced (pad);
+    auto left = r.removeFromLeft ((r.getWidth() - colGap) / 2);
+    r.removeFromLeft (colGap);
+    auto right = r;
 
-    startupCard = r.removeFromTop (124);
+    auto twoButtons = [] (juce::Rectangle<int> row, juce::Component& a, juce::Component& b)
+    {
+        const int bw = (row.getWidth() - Theme::s2) / 2;
+        a.setBounds (row.removeFromLeft (bw));
+        row.removeFromLeft (Theme::s2);
+        b.setBounds (row);
+    };
+
+    // Left column
+    startupCard = left.removeFromTop (cardPad * 2 + legendH + 3 * rowH);
     {
         auto c = startupCard.reduced (cardPad);
-        startupLegend = c.removeFromTop (18);
+        startupLegend = c.removeFromTop (legendH);
         for (auto* t : { &startWithWindows, &startMinimized, &closeToTray })
-            t->setBounds (c.removeFromTop (28));
+            t->setBounds (c.removeFromTop (rowH));
     }
-    r.removeFromTop (cardGap);
+    left.removeFromTop (cardGap);
 
-    themeCard = r.removeFromTop (104);
+    themeCard = left.removeFromTop (cardPad * 2 + legendH + rowH + 6 + rowH);
     {
         auto c = themeCard.reduced (cardPad);
-        themeLegend = c.removeFromTop (18);
-        {
-            auto row = c.removeFromTop (30);
-            const int bw = (row.getWidth() - Theme::s2) / 2;
-            themeButton.setBounds (row.removeFromLeft (bw));
-            row.removeFromLeft (Theme::s2);
-            hotkeysButton.setBounds (row);
-        }
+        themeLegend = c.removeFromTop (legendH);
+        twoButtons (c.removeFromTop (rowH), themeButton, hotkeysButton);
         c.removeFromTop (6);
-        compactMode.setBounds (c.removeFromTop (28));
+        compactMode.setBounds (c.removeFromTop (rowH));
     }
-    r.removeFromTop (cardGap);
+    left.removeFromTop (cardGap);
 
-    pluginsCard = r.removeFromTop (174);
+    pluginsCard = left.removeFromTop (cardPad * 2 + legendH + rowH + 4 + 32 + rowH + 6 + rowH);
     {
         auto c = pluginsCard.reduced (cardPad);
-        pluginsLegend = c.removeFromTop (18);
-        auto row = c.removeFromTop (30);
-        const int bw = (row.getWidth() - Theme::s2) / 2;
-        scanButton.setBounds (row.removeFromLeft (bw));
-        row.removeFromLeft (Theme::s2);
-        retryButton.setBounds (row);
+        pluginsLegend = c.removeFromTop (legendH);
+        twoButtons (c.removeFromTop (rowH), scanButton, retryButton);
         c.removeFromTop (4);
-        scanTextArea = c.removeFromTop (34);
-        row = c.removeFromTop (30);
-        presetsButton.setBounds (row.removeFromLeft (bw));
-        row.removeFromLeft (Theme::s2);
-        pluginsButton.setBounds (row);
+        scanTextArea = c.removeFromTop (32);
+        twoButtons (c.removeFromTop (rowH), presetsButton, pluginsButton);
         c.removeFromTop (6);
-        pluginProbe.setBounds (c.removeFromTop (28));
+        pluginProbe.setBounds (c.removeFromTop (rowH));
     }
-    r.removeFromTop (cardGap);
+    left.removeFromTop (cardGap);
 
-    networkCard = r.removeFromTop (344 + midiH);
+    aboutCard = left.removeFromTop (cardPad * 2 + legendH + 36);
+    {
+        auto c = aboutCard.reduced (cardPad);
+        aboutLegend = c.removeFromTop (legendH);
+        aboutArea = c;
+    }
+
+    // Right column
+    const int midiH = midiBoxHeight();
+    networkCard = right.removeFromTop (cardPad * 2 + legendH + rowH + 46 + rowH + 62 + rowH + rowH + 6 + rowH + 6 + midiH);
     {
         auto c = networkCard.reduced (cardPad);
-        networkLegend = c.removeFromTop (18);
-        checkUpdates.setBounds (c.removeFromTop (28));
+        networkLegend = c.removeFromTop (legendH);
 
-        auto oscRow = c.removeFromTop (28);
-        oscPort.setBounds (oscRow.removeFromRight (74).reduced (0, 2));
-        oscRow.removeFromRight (6);
-        oscPortLabelArea = oscRow.removeFromRight (32);
-        oscRow.removeFromRight (Theme::s2);
-        oscEnabled.setBounds (oscRow);
-        oscNoteArea = c.removeFromTop (34);
+        auto portRow = [&] (juce::ToggleButton& toggle, juce::TextEditor& port, juce::Rectangle<int>& labelArea)
+        {
+            auto row = c.removeFromTop (rowH);
+            port.setBounds (row.removeFromRight (64));
+            row.removeFromRight (6);
+            labelArea = row.removeFromRight (30);
+            row.removeFromRight (Theme::s2);
+            toggle.setBounds (row);
+        };
 
-        auto wsRow = c.removeFromTop (28);
-        wsPort.setBounds (wsRow.removeFromRight (74).reduced (0, 2));
-        wsRow.removeFromRight (6);
-        wsPortLabelArea = wsRow.removeFromRight (32);
-        wsRow.removeFromRight (Theme::s2);
-        wsEnabled.setBounds (wsRow);
-        wsNoteArea = c.removeFromTop (46);
+        portRow (oscEnabled, oscPort, oscPortLabelArea);
+        oscNoteArea = c.removeFromTop (46).withTrimmedLeft (28).reduced (0, 4);
+        portRow (wsEnabled, wsPort, wsPortLabelArea);
+        wsNoteArea = c.removeFromTop (62).withTrimmedLeft (28).reduced (0, 4);
 
-        midiEnabled.setBounds (c.removeFromTop (28));
-        midiDeviceBox.setBounds (c.removeFromTop (30));
+        midiEnabled.setBounds (c.removeFromTop (rowH));
+        midiDeviceBox.setBounds (c.removeFromTop (rowH));
         c.removeFromTop (6);
-        auto row = c.removeFromTop (30);
-        midiLearnTarget.setBounds (row.removeFromLeft (juce::jmin (230, row.getWidth() - 210)));
+        auto row = c.removeFromTop (rowH);
+        midiLearnTarget.setBounds (row.removeFromLeft (juce::jmax (120, row.getWidth() - 190)));
         row.removeFromLeft (Theme::s2);
-        midiLearnButton.setBounds (row.removeFromLeft (104));
+        midiLearnButton.setBounds (row.removeFromLeft (84));
         row.removeFromLeft (Theme::s2);
         midiClearButton.setBounds (row);
         c.removeFromTop (6);
         midiTextArea = c.removeFromTop (midiH);
-        c.removeFromTop (8);
-        logsButton.setBounds (c.removeFromTop (30).withWidth (190));
     }
-    r.removeFromTop (cardGap);
+    right.removeFromTop (cardGap);
 
-    aboutCard = r.removeFromTop (84);
+    updatesCard = right.removeFromTop (cardPad * 2 + legendH + rowH + 6 + rowH);
     {
-        auto c = aboutCard.reduced (cardPad);
-        aboutLegend = c.removeFromTop (18);
-        aboutArea = c;
+        auto c = updatesCard.reduced (cardPad);
+        updatesLegend = c.removeFromTop (legendH);
+        checkUpdates.setBounds (c.removeFromTop (rowH));
+        c.removeFromTop (6);
+        logsButton.setBounds (c.removeFromTop (rowH).withWidth (160));
     }
 }

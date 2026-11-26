@@ -8,6 +8,7 @@
 class SettingsPanel : public juce::Component, private juce::ChangeListener, private juce::Timer
 {
 public:
+    static constexpr int preferredWidth = 880;   // two columns
     SettingsPanel (MixerEngine&, std::function<void()> toggleTheme, std::function<void()> oscChanged = {},
                    std::function<void()> openHotkeys = {}, MidiControl* midi = nullptr,
                    std::function<void()> appearanceChanged = {});
@@ -34,6 +35,7 @@ private:
     void updateMidiText();
     void refreshMidiDevices();
     int midiBoxHeight() const;
+    int contentHeight() const;   // both columns laid out, for the dialog size
 
     MixerEngine& engine;
     MidiControl* midiControl;
@@ -69,8 +71,8 @@ private:
     juce::TextButton logsButton { "Open log folder" };
 
     juce::String scanText, midiText;
-    juce::Rectangle<int> startupCard, themeCard, pluginsCard, networkCard, aboutCard,
-                         startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend,
+    juce::Rectangle<int> startupCard, themeCard, pluginsCard, networkCard, aboutCard, updatesCard,
+                         startupLegend, themeLegend, pluginsLegend, networkLegend, aboutLegend, updatesLegend,
                          oscNoteArea, scanTextArea, aboutArea, wsNoteArea, midiTextArea,
                          oscPortLabelArea, wsPortLabelArea;
 };

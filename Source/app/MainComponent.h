@@ -26,6 +26,10 @@ public:
 
     // Shows active strips/buses only; call after adding or removing one.
     void relayout();
+
+    // The Mixer menu's "Add strip" / "Add bus" (same as the + buttons).
+    void addStrip()  { addStripButton.triggerClick(); }
+    void addBus()    { showAddBusMenu(); }
     std::function<void()> onSizeChanged;   // the minimum width changed (MainComponent resizes)
 
     int minimumWidth() const;
@@ -68,11 +72,13 @@ public:
     void setSegments (const juce::StringArray& s) { if (s != segments) { segments = s; repaint(); } }
     void setServices (std::vector<Service> s);
     void setLive (bool live) { if (live != isLive) { isLive = live; repaint(); } }
+    void setReservedRight (int w) { reservedRight = w; }   // the device readout sits there
     void paint (juce::Graphics&) override;
 
 private:
     juce::StringArray segments;
     std::vector<Service> services;
+    int reservedRight = 0;
     bool isLive = false;
 };
 
@@ -87,6 +93,21 @@ public:
 
 private:
     juce::StringArray segments;
+};
+
+// Window buttons in the header: minimise, maximise / restore, close. Drawn by
+// OpenMixLookAndFeel::drawWindowButton, the same as every dialog's title-bar buttons.
+class WindowDot : public juce::Button
+{
+public:
+    enum Kind { minimise, maximise, close };
+    explicit WindowDot (Kind k);
+    void paintButton (juce::Graphics&, bool isHighlighted, bool isDown) override;
+    void setMaximised (bool m) { if (m != maximised) { maximised = m; repaint(); } }   // restore glyph
+
+private:
+    Kind kind;
+    bool maximised = false;
 };
 
 class MainComponent : public juce::Component,
@@ -129,6 +150,15 @@ private:
     void updateSceneButton();
     void handleHotkey (const GlobalHotkeys::Binding&, bool down);
     void showHotkeys();
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    juce::DocumentWindow* window() const { return dynamic_cast<juce::DocumentWindow*> (getTopLevelComponent()); }
+    void toggleMaximised();
+    void showMixerMenu();
+    void showViewMenu();
+    void showSetupMenu();
+    void stepScene (int delta);
     juce::StringArray stripNames() const;
     juce::StringArray sceneNames() const;
 
@@ -145,7 +175,13 @@ private:
     juce::TextButton replayButton { "Save replay" };
     StripKey soundboardButton { "Soundboard" };
     ChipButton sceneButton;
+    juce::TextButton scenePrevButton { "<" }, sceneNextButton { ">" }, sceneStoreButton { "Store" }, sceneNewButton { "New" };
+    juce::TextButton mixerMenuButton { "Mixer" }, viewMenuButton { "View" }, setupMenuButton { "Setup" };
     juce::TextButton updateButton;
+    WindowDot minimiseDot { WindowDot::minimise }, maximiseDot { WindowDot::maximise }, closeDot { WindowDot::close };
+    juce::ComponentDragger windowDragger;
+    bool draggingWindow = false;
+    juce::Rectangle<int> restoreBounds;   // set while maximised: the size to go back to
     GlobalHotkeys hotkeys;
     OscControl osc { engine };
     RemoteServer remoteServer { engine };

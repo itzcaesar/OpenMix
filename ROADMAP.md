@@ -197,9 +197,9 @@ drivers per bus. Full architecture and engineering checklist:
 - [x] MIDI controller mapping (learnable CC/note to fader, mute, soundboard, record), WebSocket API + phone remote (built-in page at `http://<PC>:8080/`, `GET /api/state`, `POST /api/command`, `ws://.../ws`), Stream Deck via its OSC plugin or a WebSocket plugin against the same paths
 - [x] Dark/light themes, resizable UI (laptop to desktop), channel names and colours, settings window
 - [x] Compact mode with narrower strips and buses (one accent colour, amber)
-- [x] Desk UI: labelled sections on strips (Input / Filter / Processing / Preset / Inserts / Voice pad / Sends) and buses (Output / Limiter / Loudness / Processing / Inserts / Analyser); gain slider under the source name, Ø/MONO keys, solid-colour name bar at the bottom of each strip
+- [x] Desk UI: narrow identical columns with labelled sections on strips (Input / Processing / Insert / Sends) and buses (Output / Processing / Insert / Analyser / Limiter / Loudness); gain, HPF, LPF and send-level knobs, Ø/MONO keys, one aligned fader bay with a coloured name plate
 - [x] Bus groups: Hardware (A1-A3) and Virtual (B1-B3) with group labels and a divider; custom bus names (group stays slot-based); "+ Bus" asks for the group, then an optional name
-- [x] Limiter gain-reduction meter per bus; monitor bus shown only by a 1 px accent outline and a lit name bar
+- [x] Limiter gain-reduction meter per bus; MON key for the monitor bus
 - [x] Bottom status bar: LIVE, engine CPU%, scan/recording progress, remote-service lamps
 - [x] Crash handler + log file; "safe mode" start that skips plugins
 - [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)

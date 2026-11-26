@@ -75,6 +75,53 @@ void OpenMixLookAndFeel::applyPalette()
 //==============================================================================
 // Custom window chrome (graphite title bar + crisp vector window buttons)
 
+void OpenMixLookAndFeel::drawWindowButton (juce::Graphics& g, juce::Rectangle<float> bounds, int kind, bool maximised,
+                                           bool highlighted, bool down, bool focused)
+{
+    const auto& t = Theme::p();
+    const auto key = bounds.withSizeKeepingCentre ((float) windowButtonW, (float) windowButtonH);
+    const bool close = kind == 2;
+
+    if (highlighted || down)
+    {
+        const auto fill = close ? t.mute : t.raised;
+        g.setColour (down ? fill.darker (0.15f) : fill);
+        g.fillRoundedRectangle (key, Theme::controlRadius);
+    }
+
+    g.setColour (close && (highlighted || down) ? t.onMute : highlighted || down ? t.text : t.textDim);
+    const auto c = key.getCentre();
+    const float s = 5.0f, stroke = 1.2f;
+
+    // Glyphs snapped to the pixel grid so the strokes stay crisp.
+    const float x0 = std::round (c.x - s), x1 = std::round (c.x + s);
+    const float y0 = std::round (c.y - s), y1 = std::round (c.y + s), ym = std::round (c.y);
+    if (close)
+    {
+        g.drawLine (x0, y0, x1, y1, stroke);
+        g.drawLine (x1, y0, x0, y1, stroke);
+    }
+    else if (kind == 0)
+    {
+        g.fillRect (x0, ym, x1 - x0, 1.0f);
+    }
+    else if (maximised)
+    {
+        // Restore: a front square and the corner of the one behind it.
+        g.drawRect (juce::Rectangle<float> (x0, y0 + 2.0f, x1 - x0 - 2.0f, y1 - y0 - 2.0f), stroke);
+        g.fillRect (x0 + 2.0f, y0, x1 - x0 - 2.0f, 1.0f);
+        g.fillRect (x1 - 1.0f, y0, 1.0f, y1 - y0 - 2.0f);
+    }
+    else
+    {
+        g.drawRect (juce::Rectangle<float> (x0, y0, x1 - x0, y1 - y0), stroke);
+    }
+
+    if (focused)
+        Theme::drawFocusRing (g, key.expanded (1.0f));
+}
+
+// Dialog title-bar buttons: the same drawing as the main window's header buttons.
 class OpenMixWindowButton : public juce::Button
 {
 public:
@@ -82,46 +129,10 @@ public:
 
     void paintButton (juce::Graphics& g, bool isHighlighted, bool isDown) override
     {
-        const auto& t = Theme::p();
-        const auto r = getLocalBounds().toFloat();
-        const bool isClose = (buttonType == juce::DocumentWindow::closeButton);
-
-        if (isDown)
-            g.fillAll (isClose ? t.mute.darker (0.2f) : t.raised.darker (0.12f));
-        else if (isHighlighted)
-            g.fillAll (isClose ? t.mute : (t.dark ? t.raised : t.well));
-
-        const auto fg = (isClose && (isHighlighted || isDown)) ? t.onMute
-                      : (isHighlighted || isDown) ? t.text : t.textDim;
-        g.setColour (fg);
-
-        const float s = juce::jmin (r.getWidth(), r.getHeight()) * 0.30f;
-        const float cx = r.getCentreX(), cy = r.getCentreY();
-        const float stroke = 1.35f;
-
-        if (buttonType == juce::DocumentWindow::closeButton)
-        {
-            g.drawLine (cx - s, cy - s, cx + s, cy + s, stroke);
-            g.drawLine (cx + s, cy - s, cx - s, cy + s, stroke);
-        }
-        else if (buttonType == juce::DocumentWindow::minimiseButton)
-        {
-            g.drawLine (cx - s, cy + 1.0f, cx + s, cy + 1.0f, stroke);
-        }
-        else
-        {
-            if (getToggleState())
-            {
-                const float d = s * 0.72f;
-                g.drawRect (cx - d - 1.5f, cy - d + 1.5f, d * 2.0f, d * 2.0f, stroke);
-                g.drawLine (cx - d + 1.5f, cy - d - 1.5f, cx + d + 1.5f, cy - d - 1.5f, stroke);
-                g.drawLine (cx + d + 1.5f, cy - d - 1.5f, cx + d + 1.5f, cy + d - 1.5f, stroke);
-            }
-            else
-            {
-                g.drawRect (cx - s, cy - s, s * 2.0f, s * 2.0f, stroke);
-            }
-        }
+        const int kind = buttonType == juce::DocumentWindow::closeButton ? 2
+                       : buttonType == juce::DocumentWindow::minimiseButton ? 0 : 1;
+        OpenMixLookAndFeel::drawWindowButton (g, getLocalBounds().toFloat(), kind, getToggleState(),
+                                              isHighlighted, isDown, hasKeyboardFocus (false));
     }
 
 private:
@@ -141,8 +152,9 @@ void OpenMixLookAndFeel::positionDocumentWindowButtons (juce::DocumentWindow&,
                                                         juce::Button* minimiseButton, juce::Button* maximiseButton,
                                                         juce::Button* closeButton, bool onLeft)
 {
-    const int btnW = juce::jmax (34, (int) (titleBarH * 1.35f));
-    int x = onLeft ? titleBarX : titleBarX + titleBarW - btnW;
+    // Same key size and spacing as the main window's header buttons.
+    const int btnW = windowButtonW + 2, margin = 6;
+    int x = onLeft ? titleBarX + margin : titleBarX + titleBarW - margin - btnW;
     if (closeButton != nullptr)
     {
         closeButton->setBounds (x, titleBarY, btnW, titleBarH);
@@ -227,7 +239,7 @@ juce::Font OpenMixLookAndFeel::getTextButtonFont (juce::TextButton& button, int 
 {
     if (button.getProperties()["micro"])
         return Theme::mono (10.5f);
-    return Theme::ui (juce::jlimit (12.0f, 13.5f, (float) buttonHeight * 0.5f), true);
+    return Theme::ui (juce::jlimit (11.0f, 13.0f, (float) buttonHeight * 0.55f), true);
 }
 
 void OpenMixLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&,
@@ -238,14 +250,27 @@ void OpenMixLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& 
     const auto lamp = button.getProperties()["lamp"].toString();
     const bool on = button.getToggleState();
 
+    // Menu-bar buttons: just text until hovered or pressed.
+    if (button.getProperties()["flat"])
+    {
+        if (isDown || isHighlighted)
+        {
+            g.setColour (isDown ? t.raised.darker (0.1f) : t.raised);
+            g.fillRoundedRectangle (bounds, Theme::controlRadius);
+        }
+        if (button.hasKeyboardFocus (false))
+            Theme::drawFocusRing (g, bounds.expanded (0.5f));
+        return;
+    }
+
     juce::Colour fill = t.raised;
     juce::Colour edge = t.controlEdge;
 
-    // Mode buttons (segmented switch) light the whole key in amber when selected.
-    if (lamp == "key" && on)
+    // Lit keys: amber when on, red for mute, yellow for solo (colour = state).
+    if (on && (lamp == "key" || lamp == "mutekey" || lamp == "solokey"))
     {
-        fill = t.accent;
-        edge = t.accentEdge;
+        fill = lamp == "mutekey" ? t.mute : lamp == "solokey" ? t.meterMid : t.accent;
+        edge = fill.darker (0.35f);
     }
 
     if (isDown)               fill = fill.darker (0.12f);
@@ -279,7 +304,8 @@ void OpenMixLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& bu
         area.removeFromLeft (16);   // room for the lamp
 
     g.setFont (getTextButtonFont (button, button.getHeight()));
-    g.setColour (lamp == "key" && on ? t.onAccent
+    g.setColour (on && lamp == "mutekey" ? t.onMute
+                 : on && (lamp == "key" || lamp == "solokey") ? t.onAccent
                  : (lamp.isNotEmpty() && ! on) ? t.textDim : t.text);
     if (! button.isEnabled())
         g.setColour (t.textFaint);
@@ -383,18 +409,48 @@ void OpenMixLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& ale
     g.setColour (t.controlEdge);
     g.drawRoundedRectangle (bounds.reduced (0.5f), Theme::panelRadius, 1.0f);
 
-    if (alert.getAlertType() != juce::MessageBoxIconType::NoIcon)
-    {
-        const auto barCol = alert.getAlertType() == juce::MessageBoxIconType::WarningIcon ? t.mute : t.accent;
-        g.setColour (barCol);
-        g.fillRect (bounds.getX() + 1.0f, bounds.getY() + 8.0f, 3.0f, bounds.getHeight() - 16.0f);
-    }
-
     g.setColour (t.text);
-    textLayout.draw (g, textArea.toFloat());
+    textLayout.draw (g, textArea.toFloat().reduced (8.0f, 6.0f).withHeight (textLayout.getHeight()));
 }
 
-int OpenMixLookAndFeel::getAlertWindowButtonHeight()  { return 30; }
+int OpenMixLookAndFeel::getAlertWindowButtonHeight()  { return 28; }
+
+// JUCE leaves a large gap between the message and the buttons; size message boxes (no text
+// fields) to their text plus one button row instead.
+std::unique_ptr<juce::AlertWindow> OpenMixLookAndFeel::createAlertWindowForOptions (const juce::MessageBoxOptions& opt)
+{
+    auto aw = LookAndFeel_V4::createAlertWindowForOptions (opt);
+    if (aw == nullptr || aw->getNumCustomComponents() > 0)
+        return aw;
+
+    juce::AttributedString text;
+    text.append (opt.getTitle(), getAlertWindowTitleFont());
+    if (opt.getMessage().isNotEmpty())
+        text.append ("\n\n" + opt.getMessage(), getAlertWindowMessageFont());
+    juce::TextLayout layout;
+    layout.createLayout (text, (float) (aw->getWidth() - 36));
+
+    juce::Array<juce::Button*> buttons;
+    for (auto* c : aw->getChildren())
+        if (auto* b = dynamic_cast<juce::Button*> (c))
+            buttons.add (b);
+
+    const int buttonH = getAlertWindowButtonHeight();
+    const int h = 16 + (int) std::ceil (layout.getHeight()) + 22 + (buttons.isEmpty() ? 0 : buttonH + 16);
+    aw->setSize (aw->getWidth(), juce::jmin (aw->getHeight(), h));
+
+    // Buttons centred along the bottom.
+    int total = -12;
+    for (auto* b : buttons)
+        total += b->getWidth() + 12;
+    int x = (aw->getWidth() - total) / 2;
+    for (auto* b : buttons)
+    {
+        b->setTopLeftPosition (x, aw->getHeight() - 16 - b->getHeight());
+        x += b->getWidth() + 12;
+    }
+    return aw;
+}
 juce::Font OpenMixLookAndFeel::getAlertWindowTitleFont()   { return Theme::ui (15.0f, true); }
 juce::Font OpenMixLookAndFeel::getAlertWindowMessageFont() { return Theme::ui (13.0f); }
 juce::Font OpenMixLookAndFeel::getAlertWindowFont()        { return Theme::ui (13.0f); }
@@ -535,43 +591,46 @@ void OpenMixLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int 
                                            float pos, float startAngle, float endAngle, juce::Slider& slider)
 {
     const auto& t = Theme::p();
-    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (2.0f);
+    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (1.5f);
     const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
     const auto centre = bounds.getCentre();
+    const float ringW = radius >= 12.0f ? 3.0f : 2.5f;
+    const float ringR = radius - ringW * 0.5f;
+    const bool off = slider.getProperties()["off"];
+    const float alpha = slider.isEnabled() ? 1.0f : 0.45f;
 
-    // Printed scale: 11 ticks, the centre one longer (0 dB on a bipolar control)
-    const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0;
-    for (int i = 0; i <= 10; ++i)
+    // Ring: the full travel in the recessed colour, the value in green (grey while off).
+    // Bipolar controls (gain) light from the centre, others from the start.
+    juce::Path track;
+    track.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f, startAngle, endAngle, true);
+    g.setColour (t.meterWell.withMultipliedAlpha (alpha));
+    g.strokePath (track, juce::PathStrokeType (ringW, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+
+    const float angle = startAngle + pos * (endAngle - startAngle);
+    const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0 && slider.getMaximum() <= 24.0;
+    const float from = bipolar ? startAngle + (float) slider.valueToProportionOfLength (0.0) * (endAngle - startAngle) : startAngle;
+    if (std::abs (angle - from) > 0.01f)
     {
-        const float a = startAngle + (endAngle - startAngle) * (float) i / 10.0f;
-        const bool major = i == 0 || i == 10 || (bipolar && i == 5);
-        const auto outer = centre.getPointOnCircumference (radius, a);
-        const auto inner = centre.getPointOnCircumference (radius - (major ? 5.0f : 3.0f), a);
-        g.setColour (major ? t.textDim : t.textFaint);
-        g.drawLine ({ inner, outer }, 1.0f);
+        juce::Path value;
+        value.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f, juce::jmin (from, angle), juce::jmax (from, angle), true);
+        g.setColour ((off ? t.textFaint : t.meterLow).withMultipliedAlpha (alpha));
+        g.strokePath (value, juce::PathStrokeType (ringW, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
     }
 
-    // Cap (raised: soft shadow + top-lit body)
-    const float capR = radius - 7.0f;
+    // Cap and pointer.
+    const float capR = ringR - ringW * 0.5f - 2.0f;
     const auto cap = juce::Rectangle<float> (capR * 2.0f, capR * 2.0f).withCentre (centre);
-    g.setColour (juce::Colours::black.withAlpha (t.dark ? 0.45f : 0.18f));
-    g.fillEllipse (cap.translated (0.0f, 1.5f));
-    const auto top = t.dark ? juce::Colour (0xff4a4a4a) : juce::Colour (0xffffffff);
-    const auto bottom = t.dark ? juce::Colour (0xff2a2a2a) : juce::Colour (0xffdedbd4);
-    g.setGradientFill (juce::ColourGradient (top, cap.getCentreX(), cap.getY(), bottom, cap.getCentreX(), cap.getBottom(), false));
+    g.setColour (t.raised.withMultipliedAlpha (alpha));
     g.fillEllipse (cap);
-    g.setColour (t.controlEdge);
+    g.setColour (t.controlEdge.withMultipliedAlpha (0.6f * alpha));
     g.drawEllipse (cap.reduced (0.5f), 1.0f);
-
-    // Pointer
-    const float angle = startAngle + pos * (endAngle - startAngle);
-    g.setColour (t.text);
-    g.drawLine ({ centre.getPointOnCircumference (capR * 0.3f, angle), centre.getPointOnCircumference (capR * 0.85f, angle) }, 2.0f);
+    g.setColour (t.text.withMultipliedAlpha (alpha));
+    g.drawLine ({ centre.getPointOnCircumference (capR * 0.25f, angle), centre.getPointOnCircumference (capR * 0.95f, angle) }, 1.8f);
 
     if (slider.hasKeyboardFocus (false))
     {
         g.setColour (t.focus);
-        g.drawEllipse (cap.expanded (3.0f), 2.0f);
+        g.drawEllipse (bounds.expanded (1.0f), 1.5f);
     }
 }
 

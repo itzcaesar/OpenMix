@@ -8,10 +8,11 @@
 #include "ui/Panels.h"
 #include "ui/InsertRack.h"
 
-// One input channel strip: INPUT (source, gain slider, polarity/mono),
-// PROCESSING keys, inserts (VST3), voice pad, horizontal bus sends row, then
-// the fader bay: fader + meter above mute/solo. Presets and solo-safe live in
-// the strip menu, HPF/LPF live in the EQ panel.
+// One input channel strip, a narrow console column (top to bottom): INPUT (source, gain /
+// HPF / LPF knobs, polarity and mono), PROCESSING keys, INSERTS (VST3), SENDS (a key and
+// a level knob per bus), the voice pad button, then the fader bay shared by every column:
+// fader + meter, M / S / SAFE, latency, and the coloured name plate at the bottom.
+// Presets live in the strip menu.
 class StripView : public juce::Component
 {
 public:
@@ -32,8 +33,11 @@ public:
     void setBayTop (int y) { bayTop = y; }
 
     // Column width limits; compact mode narrows them (Theme::isCompact()).
-    static int minWidth() { return Theme::isCompact() ? 160 : 184; }
-    static int maxWidth() { return Theme::isCompact() ? 290 : 360; }
+    static int minWidth() { return Theme::isCompact() ? 96 : 106; }
+    static int maxWidth() { return Theme::isCompact() ? 118 : 132; }
+
+    // Height of the fader bay's fixed rows under the fader (keys, latency, name plate).
+    static int bayFooterHeight() { return 20 + 3 + 14 + 24; }
 
 private:
     // Source + strip menu
@@ -42,14 +46,14 @@ private:
     void showStripMenu();
     void confirmRemove();
 
-    // Processing + sends
+    // Processing + sends + voice pad
     void openProcessorPanel (int index);
     void openSendPanel (int bus);
+    void openVoicePad();
     void updateKeys();
     juce::Component* popupParent();
 
     // Strip presets (MixerEngine::stripPresets, saved in the session file).
-    // Reached from the strip menu, not from a section on the strip.
     void applyPreset (const juce::String& name);
     void deletePreset (const juce::String& name);
     void showSavePresetDialog();
@@ -63,19 +67,21 @@ private:
     TapeLabel tape { true };
     MenuDotsButton menuButton;
     ChipButton sourceButton;
-    DbSlider gainSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
+    DbSlider gainKnob, hpfKnob, lpfKnob;
     StripKey invertButton { juce::String::fromUTF8 ("\xc3\x98") }, monoButton { "MONO" };
     std::array<StripKey, 6> processKeys;
     juce::String selectedPreset;
     InsertRack inserts;
-    VoicePadComponent pad;
     std::array<StripKey, kNumBuses> sendButtons;
-    StripKey muteButton { "Mute" }, soloButton { "Solo" };
+    std::array<DbSlider, kNumBuses> sendKnobs;
+    juce::TextButton padButton { "Voice pad" };
+    StripKey muteButton { "M" }, soloButton { "S" }, safeButton { "SAFE" };
     FaderSection faderSection;
 
-    juce::Rectangle<int> inputLegend, processLegend, insertsLegend,
-                         padLegend, sendsLegend, gainHeadArea, gainScaleArea;
+    juce::Rectangle<int> inputLegend, processLegend, insertsLegend, sendsLegend,
+                         gainLabel, hpfLabel, lpfLabel, latencyArea;
     std::vector<int> dividerYs;   // y of each 1 px section divider, in strip coords
+    juce::String latencyText;
     int bayTop = 0;
     bool inLayout = false;
 

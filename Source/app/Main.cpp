@@ -6,6 +6,10 @@
 #include "app/AppSettings.h"
 #include "ui/TrayIcon.h"
 
+// Windows 11 rounded window corners (DWM). Declared here to keep <windows.h> out of this file.
+#pragma comment (lib, "dwmapi.lib")
+extern "C" __declspec (dllimport) long __stdcall DwmSetWindowAttribute (void* hwnd, unsigned long attribute, const void* value, unsigned long size);
+
 static bool isScanChild()
 {
     return juce::JUCEApplicationBase::getCommandLineParameters().contains (PluginScanner::childFlag);
@@ -93,12 +97,13 @@ public:
     {
     public:
         MainWindow (const juce::String& name, bool visible, std::function<void()> onCloseFn)
-            : DocumentWindow (name, Theme::p().window, DocumentWindow::allButtons),
+            : DocumentWindow (name, Theme::p().window, 0),
               onClose (std::move (onCloseFn))
         {
+            // No title bar row: OpenMix's own header carries the name, dragging and the
+            // window buttons (see MainComponent).
             setUsingNativeTitleBar (false);
-            setTitleBarHeight (30);
-            setTitleBarTextCentred (false);
+            setTitleBarHeight (0);
             setIcon (TrayIcon::makeIcon (32));
             setContentOwned (new MainComponent(), true);
             setResizable (true, false);
@@ -110,6 +115,17 @@ public:
             const auto area = display != nullptr ? display->userBounds.toNearestInt() : juce::Rectangle<int> (1366, 728);
             centreWithSize (juce::jmin (1480, area.getWidth() - 40), juce::jmin (940, area.getHeight() - 40));
             setVisible (visible);
+
+            if (auto* peer = getPeer())
+            {
+                // OpenMix draws its own title bar, so ask Windows 11 for its rounded corners
+                // (older Windows ignores this).
+                const int roundCorners = 2;   // DWMWCP_ROUND
+                DwmSetWindowAttribute (peer->getNativeHandle(), 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &roundCorners, sizeof (roundCorners));
+
+                const auto engines = peer->getAvailableRenderingEngines();
+                juce::Logger::writeToLog ("Renderer: " + engines[peer->getCurrentRenderingEngine()] + " (of " + engines.joinIntoString (", ") + ")");
+            }
         }
 
         void closeButtonPressed() override

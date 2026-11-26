@@ -7,10 +7,10 @@
 //
 // Contrast (WCAG, checked with the antislop contrast script):
 //   dark:  text/panel 13.9, textDim/panel 7.5, textFaint/panel 5.0, textFaint/window 5.7,
-//          onAccent/accent 8.2 (amber, the only accent), tapeText/tape 12.5,
+//          onAccent/accent 8.2 (amber, the only accent), name plates 4.5+ (textOn),
 //          white/mute 4.5, controlEdge/panel 3.8 (3:1 bar)
 //   light: text/panel 14.3, textDim/panel 8.1, textFaint/panel 5.7, textFaint/window 4.7,
-//          onAccent/accent 8.2, tapeText/tape 15.4, white/mute 4.5, controlEdge/panel 3.6 (3:1 bar)
+//          onAccent/accent 8.2, name plates 4.5+ (textOn), white/mute 4.5, controlEdge/panel 3.6 (3:1 bar)
 namespace Theme
 {
     struct Palette
@@ -96,39 +96,44 @@ namespace Theme
     inline bool isCompact()                  { return compactStorage(); }
     inline void setCompact (bool compact)    { compactStorage() = compact; }
 
-    // Scribble-strip tape colours a user can pick per channel (identification, see DESIGN.md).
-    // All are light, so the dark marker text stays above 9:1 on every one of them.
-    struct TapeColour { const char* name; juce::uint32 argb; };   // argb 0 = theme's default tape
+    // Name-plate colours a user can pick per channel (identification, see DESIGN.md). The
+    // plate is a solid bar; textOn() picks black or white text for contrast on each one.
+    struct TapeColour { const char* name; juce::uint32 argb; };
     inline const TapeColour tapeColours[] {
-        { "Masking tape", 0 },
-        { "Yellow",       0xfff3d36b },
-        { "Green",        0xffa7d7a0 },
-        { "Blue",         0xffa6c6ea },
-        { "Pink",         0xffefb3c6 },
-        { "Grey",         0xffc8c8c8 },
+        { "Grey",   0xff55555d },
+        { "Teal",   0xff13808a },
+        { "Blue",   0xff2846c8 },
+        { "Purple", 0xff6a2ab8 },
+        { "Pink",   0xffc0287f },
+        { "Olive",  0xff7a7a1a },
+        { "Orange", 0xffb0561a },
+        { "Red",    0xffc42a2a },
+        { "Green",  0xff267f3c },
     };
     constexpr int numTapeColours = (int) std::size (tapeColours);
 
     inline juce::Colour tapeColour (int index)
     {
-        if (index <= 0 || index >= numTapeColours)
-            return p().tape;
-        return juce::Colour (tapeColours[index].argb);
+        return juce::Colour (tapeColours[juce::isPositiveAndBelow (index, numTapeColours) ? index : 0].argb);
+    }
+    inline juce::Colour nameBarColour (int index) { return tapeColour (index); }
+
+    // WCAG relative luminance, for picking text colours by measured contrast.
+    inline double luminance (juce::Colour c)
+    {
+        auto lin = [] (float v) { return v <= 0.03928f ? v / 12.92 : std::pow ((v + 0.055) / 1.055, 2.4); };
+        return 0.2126 * lin (c.getFloatRed()) + 0.7152 * lin (c.getFloatGreen()) + 0.0722 * lin (c.getFloatBlue());
     }
 
-    // Bold channel-colour name bars (mockup style): the tape colour saturated and
-    // darkened, with text chosen for contrast (dark on light bars, white on dark ones).
-    inline juce::Colour nameBarColour (int index)
+    // Black or white, whichever has the higher contrast on `background` (every plate colour
+    // above gives at least 4.5:1 with one of them).
+    inline juce::Colour textOn (juce::Colour background)
     {
-        const auto c = tapeColour (index);
-        return c.withSaturation (juce::jmin (1.0f, c.getSaturation() * 1.8f))
-                .withBrightness (c.getBrightness() * 0.55f);
+        const double bg = luminance (background);
+        const double withWhite = 1.05 / (bg + 0.05), withBlack = (bg + 0.05) / (luminance (juce::Colour (0xff141414)) + 0.05);
+        return withWhite >= withBlack ? juce::Colours::white : juce::Colour (0xff141414);
     }
-    inline juce::Colour nameBarTextColour (int index)
-    {
-        return nameBarColour (index).getPerceivedBrightness() > 0.45f
-                 ? juce::Colour (0xff1a1a1a) : juce::Colours::white;
-    }
+    inline juce::Colour nameBarTextColour (int index) { return textOn (nameBarColour (index)); }
 
     // Bus name bars: fixed saturated hues per slot, echoing the mockup
     // (A1 dark gold, B1 red, B2 green). White text reads on all of them.
@@ -157,12 +162,12 @@ namespace Theme
         return juce::Font (juce::FontOptions ("Cascadia Mono", size, juce::Font::plain));
     }
 
-    // Silk-screened panel legend ("INPUTS", "INSERTS")
+    // Small-caps section legend ("INPUT", "INSERT")
     inline void drawLegend (juce::Graphics& g, const juce::String& label, juce::Rectangle<int> area,
                             juce::Justification just = juce::Justification::centredLeft)
     {
         g.setColour (p().textFaint);
-        g.setFont (ui (10.5f, true).withExtraKerningFactor (0.10f));
+        g.setFont (ui (10.0f, true).withExtraKerningFactor (0.04f));
         g.drawText (label.toUpperCase(), area, just);
     }
 
@@ -173,18 +178,13 @@ namespace Theme
         g.drawRoundedRectangle (area.reduced (1.0f), radius, 2.0f);
     }
 
-    // Module panel behind a strip, bus or the soundboard. A slight top-to-bottom shade and a
-    // one-pixel top highlight give each module depth against the window (the one gradient
-    // in the UI besides control caps; see DESIGN.md).
+    // Module panel behind a strip, bus or the soundboard: flat, with a one-pixel edge.
     inline void drawFaceplate (juce::Graphics& g, juce::Rectangle<float> area)
     {
         const auto& t = p();
-        const auto top = t.dark ? juce::Colour (0xff303035) : juce::Colour (0xffe6e6e8);
-        g.setGradientFill (juce::ColourGradient::vertical (top, area.getY(), t.panel, area.getY() + juce::jmin (area.getHeight(), 280.0f)));
-        g.fillRoundedRectangle (area, panelRadius);
+        g.setColour (t.panel);
+        g.fillRoundedRectangle (area, 3.0f);
         g.setColour (t.line);
-        g.drawRoundedRectangle (area.reduced (0.5f), panelRadius, 1.0f);
-        g.setColour (juce::Colours::white.withAlpha (t.dark ? 0.05f : 0.45f));
-        g.fillRect (area.getX() + panelRadius, area.getY() + 1.0f, area.getWidth() - 2.0f * panelRadius, 1.0f);
+        g.drawRoundedRectangle (area.reduced (0.5f), 3.0f, 1.0f);
     }
 }

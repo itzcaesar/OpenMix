@@ -9,9 +9,10 @@ Sources, devices and the plugins themselves are not part of a scene, so
 switching is instant, and every level glides to its new value without a
 click.
 
-The **Scene** picker in the header lists your scenes; click one to switch.
-The same menu saves the current mix as a new scene, updates the current
-scene, renames or deletes it, and opens Hotkeys. Deleting a scene moves the
+The scene stepper in the header switches scenes: **<** and **>** step
+through them, the picker lists them, **Store** saves the current mix into
+the selected scene and **New** saves it as a new one. The picker's menu
+also renames or deletes scenes and opens Hotkeys. Deleting a scene moves the
 hotkeys and MIDI buttons of later scenes up with them. Scenes are saved with
 the session. Over OSC, `/openmix/scene/<n>` switches to scene n (counting
 from 1).

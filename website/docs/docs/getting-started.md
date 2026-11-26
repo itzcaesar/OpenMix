@@ -39,20 +39,22 @@ ctest --test-dir build -C Release
 
 ## The window
 
-- **Header:** app name, the status readout (device, sample rate, latency,
-  CPU, dropouts; click it for Audio settings), the **Scene** picker,
+- **Header:** OpenMix, the **Mixer**, **View** and **Setup** menus, the
+  scene stepper (**<**, the scene picker, **>**, **Store**, **New**),
   **Record** and its options, **Replay**, **Soundboard** (shows or hides
-  the soundboard bar) and **Settings**.
-- **Inputs** on the left, **outputs** (buses) on the right. **+ Strip**
-  and **+ Bus** sit next to the section names. The bus row is split into
-  **Hardware** (A1–A3) and **Virtual** (B1–B3) groups with a divider
-  between them; **+ Bus** asks for the group first, then an optional
-  custom name, and takes the next free slot in that group.
-- The **status bar** along the bottom shows LIVE, the engine's own CPU%, plugin scanning and recording progress, and a lamp for each remote you switched on (OSC, phone, MIDI), lit while it is listening.
+  the soundboard bar), and the window buttons. Drag the header to move the
+  window; double-click it to maximise. **Settings** is in the Setup menu.
+- **Inputs** on the left, **buses** on the right. **+ Strip** and **+ Bus**
+  sit next to the section names. Buses are grouped **Hardware** (A1 to A3)
+  and **Virtual** (B1 to B3); **+ Bus** asks for the group first, then an
+  optional custom name, and takes the next free slot in that group.
 - Every strip and bus ends in the same **fader bay**, so faders, meters and
-  mute rows line up across the desk. The number above each meter is the held
+  keys line up across the desk. The number above each meter is the held
   peak; a red bar under it marks 0 dBFS or more.
-- The **soundboard** is a bar along the bottom of the window.
+- The **bottom bar** shows LIVE, the engine's own CPU%, plugin scanning
+  and recording progress, a lamp for each remote you switched on (OSC,
+  phone, MIDI), and on the right the audio device, sample rate, buffer,
+  latency and dropouts. Click that readout for Audio settings.
 - A warning banner appears if the main device's input and output are two
   different Windows devices, because their clocks drift and that crackles.
   The banner explains the fix.
@@ -93,11 +95,13 @@ then the buses.
 
 | Control | Keys |
 |---|---|
-| Faders, gain knob | Up/Down 1 dB (Shift: 0.1 dB), Page Up/Down 6 dB, Home 0 dB |
+| Faders, gain and send knobs | Up/Down 1 dB (Shift: 0.1 dB), Page Up/Down 6 dB, Home 0 dB |
+| HPF / LPF knobs | Up/Down 10 or 500 Hz, Page Up/Down 100 or 2000 Hz, Home off |
 | Voice pad | Arrow keys move the puck (Shift: fine), Home resets |
 | Plugin row | Enter open/add, Space bypass, Delete remove, Alt+Up/Down move, M menu |
 | Processing key | Enter opens settings, Space switches on/off |
 | Send key | Enter or Space switches, M or Shift+Enter opens level and pre-fader |
+| Window buttons | Enter or Space |
 | Name plate | Enter or F2 rename |
 | Meter | Enter resets the clip lamp |
 | Spectrum | Enter or Space opens the analyser |

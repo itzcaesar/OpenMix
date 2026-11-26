@@ -16,22 +16,24 @@ site_dir: site
 theme:
   name: material
   language: en
+  # Colours and fonts come from the app (website/docs/stylesheets/extra.css).
+  font: false
   palette:
-    # Light / dark toggle: light by default, dark on toggle.
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: amber
-      accent: amber
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
+    # Dark by default, like the app; light on toggle.
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: amber
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
   features:
     - navigation.expand
     - navigation.top
@@ -39,7 +41,11 @@ theme:
     - search.highlight
     - content.code.copy
 
+extra_css:
+  - stylesheets/extra.css
+
 markdown_extensions:
+  - attr_list
   - admonition
   - pymdownx.details
   - pymdownx.superfences
