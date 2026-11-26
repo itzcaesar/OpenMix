@@ -114,6 +114,7 @@ target_sources(OpenMix PRIVATE
     Source/engine/MixerEngine.cpp
     Source/engine/ChannelStrip.cpp
     Source/engine/PluginChain.cpp
+    Source/engine/PluginSandbox.cpp
     Source/engine/VoicePad.cpp
     Source/engine/ExternalIO.cpp
     Source/engine/AppCapture.cpp
@@ -184,6 +185,7 @@ if(OPENMIX_BUILD_TESTS)
         Source/engine/MixerEngine.cpp
         Source/engine/ChannelStrip.cpp
         Source/engine/PluginChain.cpp
+        Source/engine/PluginSandbox.cpp
         Source/engine/VoicePad.cpp
         Source/engine/ExternalIO.cpp
         Source/engine/AppCapture.cpp
@@ -199,6 +201,8 @@ if(OPENMIX_BUILD_TESTS)
     add_dependencies(OpenMixAppTests OpenMix)
     target_compile_definitions(OpenMixAppTests PRIVATE
         OPENMIX_DEEPFILTERNET_ENABLED=$<BOOL:${OPENMIX_ENABLE_DEEPFILTERNET}>
+        OPENMIX_DISABLE_PLUGINCHAIN_SANDBOX=1
+        OPENMIX_ENABLE_SANDBOX_TEST_HOOKS=1
         JUCE_MODAL_LOOPS_PERMITTED=1   # tests run the message loop to deliver async callbacks
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0

@@ -209,8 +209,17 @@ void InsertRack::slotMain (int slot)
 
 void InsertRack::toggleBypass (int slot)
 {
-    chain.slotFault[(size_t) slot].store (false);
-    chain.slotBypass[(size_t) slot].store (! chain.slotBypass[(size_t) slot].load());
+    if (chain.slotFault[(size_t) slot].exchange (false))
+    {
+        chain.slotBypass[(size_t) slot].store (false);
+        if (auto* plugin = chain.getPlugin (slot))
+            plugin->reset();
+        chain.synchronizeSandbox();
+    }
+    else
+    {
+        chain.slotBypass[(size_t) slot].store (! chain.slotBypass[(size_t) slot].load());
+    }
     updateRows();
 }
 
@@ -379,16 +388,9 @@ void InsertRack::loadPluginAsync (int slot, const juce::PluginDescription& desc,
     loadingName = desc.name;
     updateRows();
 
-    // Crash-safe loading (on by default): a plugin that crashes while starting
-    // is caught in a child process first, in a background thread so the UI
-    // stays responsive. Only if the child survived does the mixer load it
-    // in-process. A plugin that crashes in the test is skipped (blacklisted,
-    // like a plugin that crashed while scanning) until "Retry skipped plugins".
-    // A slow start is not a crash: you're asked whether to load it anyway.
-    // If the test process itself can't run, the plugin loads as normal.
-    // This protects loading, not the audio thread: a plugin that crashes
-    // while processing audio can still take the mixer down. Full
-    // out-of-process audio hosting is still open (ROADMAP Phase 5).
+    // Crash-safe loading (on by default) probes the plugin in a child process.
+    // Audio rendering is also isolated in a worker; this main-process instance
+    // remains available for the existing editor and session/preset state.
     if (AppSettings::get().pluginProbeEnabled())
     {
         using Probe = PluginScanner::ProbeResult;
@@ -486,7 +488,10 @@ void InsertRack::startAsyncLoad (const juce::PluginDescription& desc,
                 safe->updateRows();
 
                 if (then)
+                {
                     then (*raw);
+                    safe->chain.synchronizeSandbox();
+                }
                 else
                     safe->openEditor (raw);
             });
@@ -561,6 +566,7 @@ void InsertRack::loadPreset (int slot)
                 current != nullptr && current->getPluginDescription().createIdentifierString() == desc.createIdentifierString())
             {
                 applyState (*current);   // same plugin: just load the settings
+                safe->chain.synchronizeSandbox();
                 return;
             }
 
@@ -606,6 +612,7 @@ void InsertRack::abSwitch (juce::AudioPluginInstance* plugin, bool toB)
 
     const auto& next = toB ? st.b : st.a;
     plugin->setStateInformation (next.getData(), (int) next.getSize());
+    chain.synchronizeSandbox();
     st.onB = toB;
     updateRows();
 }

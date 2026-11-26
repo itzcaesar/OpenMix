@@ -1,10 +1,10 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "dsp/AudioSafety.h"
 #include "dsp/DelayLine.h"
+#include "engine/PluginSandbox.h"
 
-constexpr int kNumSlots = 6;   // insert slots per strip or bus
+constexpr int kNumSlots = kPluginSandboxSlotCount;   // insert slots per strip or bus
 
 // A chain of up to kNumSlots VST3 inserts (plus VST2 when enabled via OPENMIX_ENABLE_VST2),
 // used by strips and buses. Loaded plugins are always packed into slots 0..n-1 (no gaps),
@@ -26,6 +26,7 @@ public:
     void removePlugin (int slot);                                                 // later plugins move up
     void removeAllPlugins();
     void movePlugin (int from, int to);
+    void synchronizeSandbox(); // call after applying opaque plugin state on the message thread
     juce::AudioPluginInstance* getPlugin (int slot) const noexcept { return slots[(size_t) slot].get(); }
     int getNumPlugins() const noexcept;   // occupied insert slots, packed 0..n-1
 
@@ -41,20 +42,22 @@ public:
 
 private:
     void preparePlugin (juce::AudioPluginInstance&);
+    void cachePluginParameters (int slot);
+    void configureSandbox();
 
     std::array<std::unique_ptr<juce::AudioPluginInstance>, kNumSlots> slots;
+    std::array<std::vector<juce::AudioProcessorParameter*>, kNumSlots> parameterPointers;
+    std::array<int, kNumSlots> pluginLatencies {};
     juce::CriticalSection slotLock;
 
-    juce::AudioBuffer<float> scratch;   // wide buffer for plugins with >2 channels
-    juce::AudioBuffer<float> dryBuffer; // dry copy for bypass crossfades
+    juce::AudioBuffer<float> dryBuffer; // dry source for the latency-matched fallback
     juce::AudioBuffer<float> mixDryBuffer;
-    std::array<bool, kNumSlots> wasActive {};          // audio-thread view of each slot, for crossfades
-    std::array<DelayLine, kNumSlots> bypassDelay;      // keeps latency for plugins without a bypass parameter
-    std::array<DelayLine, kNumSlots> mixDelay;         // dry path delayed by the plugin's latency
-    juce::MidiBuffer midi;
+    juce::AudioBuffer<float> sandboxWorkerBuffer;
+    DelayLine sandboxDryDelay;          // protects chain alignment while a worker is late/offline
+    std::unique_ptr<PluginSandbox> sandbox;
+    bool sandboxWasActive = false;
 
     double sampleRate = 48000.0;
     int blockSize = 512;
 
-    static constexpr int kMaxPluginChannels = 16;
 };

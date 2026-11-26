@@ -195,8 +195,8 @@
         </div>
         <ul class="notes">
           <li><b>Any source</b><p>A channel of your audio interface (ASIO or Windows Audio), another Windows input, a single app such as Spotify or a game, or everything an output device plays. Unplug a device or close an app and the strip reconnects when it comes back.</p></li>
-          <li><b>Voice clean-up</b><p>RNNoise noise removal, a gate with hold, high- and low-pass filters, an 8-band EQ, a compressor and a de-esser. Ducking lowers music while you talk.</p></li>
-          <li><b>Your plugins</b><p>Six VST3 slots per strip. Each plugin is test-started in a separate process first, so one that crashes on start-up is skipped instead of taking the mixer down.</p></li>
+          <li><b>Voice clean-up</b><p>RNNoise or DeepFilterNet 3 noise removal, a gate with hold, high- and low-pass filters, an 8-band EQ, a compressor and a de-esser. Ducking lowers music while you talk.</p></li>
+          <li><b>Your plugins</b><p>Six VST3 slots per strip. Audio renders in a separate worker; a plugin that crashes or stalls is isolated and the rest of the mix keeps going. Editors stay available in the mixer.</p></li>
           <li><b>Sends</b><p>A key and a level knob per bus decide where the strip goes and how loud. Right-click a send for pre-fader.</p></li>
         </ul>
       </div>
@@ -246,7 +246,7 @@
       <h2 id="limits-h">Know this before you go live</h2>
       <ul class="limits">
         <li><b>No virtual driver of its own yet.</b> To feed Discord or OBS from a B bus, install a virtual cable such as VB-Audio Virtual Cable.</li>
-        <li><b>Plugins share the mixer's process.</b> The start-up test catches plugins that crash while loading, not ones that crash later while processing audio.</li>
+        <li><b>Plugin editors stay in the mixer process.</b> Audio rendering is isolated, with two device callback blocks of insert latency and some extra memory for the render copy.</li>
         <li><b>The phone remote has no password.</b> Anyone on the same network can use it while it is on, so only switch it on at home.</li>
       </ul>
     </div>

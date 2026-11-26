@@ -4,6 +4,16 @@ PluginChain::PluginChain()
 {
     for (auto& m : slotMix)
         m.store (1.0f);
+
+#if ! defined (OPENMIX_DISABLE_PLUGINCHAIN_SANDBOX)
+    sandbox = std::make_unique<PluginSandbox> ([this] (int slot)
+    {
+        if (! juce::isPositiveAndBelow (slot, kNumSlots))
+            return;
+        if (! slotFault[(size_t) slot].exchange (true, std::memory_order_acq_rel))
+            faultCount.fetch_add (1, std::memory_order_relaxed);
+    });
+#endif
 }
 
 PluginChain::~PluginChain()
@@ -16,26 +26,35 @@ PluginChain::~PluginChain()
 
 void PluginChain::prepare (double newSampleRate, int maxBlockSize)
 {
-    const juce::ScopedLock sl (slotLock);
+    {
+        const juce::ScopedLock sl (slotLock);
 
-    sampleRate = newSampleRate;
-    blockSize = maxBlockSize;
+        sampleRate = newSampleRate;
+        blockSize = maxBlockSize;
 
-    scratch.setSize (kMaxPluginChannels, maxBlockSize);
-    dryBuffer.setSize (2, maxBlockSize);
-    mixDryBuffer.setSize (2, maxBlockSize);
-    midi.ensureSize (256);
-    wasActive.fill (false);
+        dryBuffer.setSize (2, maxBlockSize);
+        mixDryBuffer.setSize (2, maxBlockSize);
+        sandboxWorkerBuffer.setSize (2, maxBlockSize);
+        sandboxWasActive = false;
+        sandboxDryDelay.prepare ((int) (sampleRate * 1.5) + 2 * blockSize);
 
-    // Up to 250 ms of latency per plugin.
-    for (auto& d : bypassDelay)
-        d.prepare ((int) (sampleRate * 0.25));
-    for (auto& d : mixDelay)
-        d.prepare ((int) (sampleRate * 0.25));
+        for (int i = 0; i < kNumSlots; ++i)
+        {
+            if (slots[(size_t) i] != nullptr)
+            {
+                preparePlugin (*slots[(size_t) i]);
+                pluginLatencies[(size_t) i] = juce::jmax (0, slots[(size_t) i]->getLatencySamples());
+                cachePluginParameters (i);
+            }
+            else
+            {
+                pluginLatencies[(size_t) i] = 0;
+                parameterPointers[(size_t) i].clear();
+            }
+        }
+    }
 
-    for (auto& p : slots)
-        if (p != nullptr)
-            preparePlugin (*p);
+    configureSandbox();
 }
 
 void PluginChain::release()
@@ -56,6 +75,63 @@ void PluginChain::preparePlugin (juce::AudioPluginInstance& plugin)
 
     plugin.setNonRealtime (false);
     plugin.prepareToPlay (sampleRate, blockSize);
+}
+
+void PluginChain::cachePluginParameters (int slot)
+{
+    auto& cached = parameterPointers[(size_t) slot];
+    cached.clear();
+    if (auto* plugin = slots[(size_t) slot].get())
+    {
+        const auto params = plugin->getParameters();
+        const int count = juce::jmin (1024, params.size());
+        cached.reserve ((size_t) count);
+        for (int i = 0; i < count; ++i)
+            cached.push_back (params.getUnchecked (i));
+    }
+}
+
+void PluginChain::configureSandbox()
+{
+    if (sandbox == nullptr)
+        return;
+
+    const juce::ScopedLock sl (slotLock);
+    juce::XmlElement root ("PluginSandbox");
+    root.setAttribute ("sampleRate", sampleRate);
+    root.setAttribute ("blockSize", blockSize);
+    int disabledMask = 0;
+    int count = 0;
+
+    for (int i = 0; i < kNumSlots; ++i)
+    {
+        auto* plugin = slots[(size_t) i].get();
+        if (plugin == nullptr)
+            continue;
+
+        ++count;
+        if (slotFault[(size_t) i].load (std::memory_order_acquire))
+            disabledMask |= 1 << i;
+
+        auto* slot = root.createNewChildElement ("Slot");
+        slot->setAttribute ("index", i);
+        slot->setAttribute ("bypass", slotBypass[(size_t) i].load());
+        slot->setAttribute ("mix", slotMix[(size_t) i].load());
+        slot->addChildElement (plugin->getPluginDescription().createXml().release());
+        juce::MemoryBlock state;
+        plugin->getStateInformation (state);
+        slot->setAttribute ("state", state.toBase64Encoding());
+    }
+
+    if (count == 0)
+        sandbox->configure ({}, 0);
+    else
+        sandbox->configure (root.toString(), disabledMask);
+}
+
+void PluginChain::synchronizeSandbox()
+{
+    configureSandbox();
 }
 
 //==============================================================================
@@ -90,15 +166,15 @@ void PluginChain::installPlugin (int slot, std::unique_ptr<juce::AudioPluginInst
 
     // Prepare before locking: a slow prepareToPlay must not make the audio thread skip the chain.
     preparePlugin (*instance);
+    const int newLatency = juce::jmax (0, instance->getLatencySamples());
 
     std::unique_ptr<juce::AudioPluginInstance> old;
     {
         const juce::ScopedLock sl (slotLock);
         old = std::move (slots[(size_t) slot]);
         slots[(size_t) slot] = std::move (instance);
-        wasActive[(size_t) slot] = false;   // fade the new plugin in
-        bypassDelay[(size_t) slot].clear();
-        mixDelay[(size_t) slot].clear();
+        pluginLatencies[(size_t) slot] = newLatency;
+        cachePluginParameters (slot);
         slotBypass[(size_t) slot].store (false);
         slotMix[(size_t) slot].store (1.0f);
         slotFault[(size_t) slot].store (false);
@@ -106,6 +182,8 @@ void PluginChain::installPlugin (int slot, std::unique_ptr<juce::AudioPluginInst
 
     if (old != nullptr)
         old->releaseResources();
+
+    configureSandbox();
 }
 
 void PluginChain::removePlugin (int slot)
@@ -122,21 +200,23 @@ void PluginChain::removePlugin (int slot)
         for (int i = slot; i < kNumSlots - 1; ++i)
         {
             std::swap (slots[(size_t) i], slots[(size_t) i + 1]);
+            std::swap (parameterPointers[(size_t) i], parameterPointers[(size_t) i + 1]);
+            std::swap (pluginLatencies[(size_t) i], pluginLatencies[(size_t) i + 1]);
             slotBypass[(size_t) i].store (slotBypass[(size_t) i + 1].load());
             slotFault[(size_t) i].store (slotFault[(size_t) i + 1].load());
             slotMix[(size_t) i].store (slotMix[(size_t) i + 1].load());
-            std::swap (wasActive[(size_t) i], wasActive[(size_t) i + 1]);
-            std::swap (bypassDelay[(size_t) i], bypassDelay[(size_t) i + 1]);
-            std::swap (mixDelay[(size_t) i], mixDelay[(size_t) i + 1]);
         }
         slotBypass[kNumSlots - 1].store (false);
         slotMix[kNumSlots - 1].store (1.0f);
         slotFault[kNumSlots - 1].store (false);
-        wasActive[kNumSlots - 1] = false;
+        parameterPointers[kNumSlots - 1].clear();
+        pluginLatencies[kNumSlots - 1] = 0;
     }
 
     if (old != nullptr)
         old->releaseResources();
+
+    configureSandbox();
 }
 
 void PluginChain::removeAllPlugins()
@@ -151,21 +231,24 @@ void PluginChain::movePlugin (int from, int to)
     if (! juce::isPositiveAndBelow (from, n) || ! juce::isPositiveAndBelow (to, n) || from == to)
         return;
 
-    const juce::ScopedLock sl (slotLock);
-    const int step = to > from ? 1 : -1;
-    for (int i = from; i != to; i += step)
     {
-        const auto a = (size_t) i, b = (size_t) (i + step);
-        std::swap (slots[a], slots[b]);
-        const bool bypassA = slotBypass[a].load(), faultA = slotFault[a].load();
-        slotBypass[a].store (slotBypass[b].load()); slotBypass[b].store (bypassA);
-        slotFault[a].store (slotFault[b].load());   slotFault[b].store (faultA);
-        const float mixA = slotMix[a].load();
-        slotMix[a].store (slotMix[b].load());       slotMix[b].store (mixA);
-        std::swap (wasActive[a], wasActive[b]);
-        std::swap (bypassDelay[a], bypassDelay[b]);
-        std::swap (mixDelay[a], mixDelay[b]);
+        const juce::ScopedLock sl (slotLock);
+        const int step = to > from ? 1 : -1;
+        for (int i = from; i != to; i += step)
+        {
+            const auto a = (size_t) i, b = (size_t) (i + step);
+            std::swap (slots[a], slots[b]);
+            std::swap (parameterPointers[a], parameterPointers[b]);
+            std::swap (pluginLatencies[a], pluginLatencies[b]);
+            const bool bypassA = slotBypass[a].load(), faultA = slotFault[a].load();
+            slotBypass[a].store (slotBypass[b].load()); slotBypass[b].store (bypassA);
+            slotFault[a].store (slotFault[b].load());   slotFault[b].store (faultA);
+            const float mixA = slotMix[a].load();
+            slotMix[a].store (slotMix[b].load());       slotMix[b].store (mixA);
+        }
     }
+
+    configureSandbox();
 }
 
 //==============================================================================
@@ -173,124 +256,99 @@ void PluginChain::movePlugin (int from, int to)
 
 void PluginChain::process (float* L, float* R, int numSamples, int& latency) noexcept
 {
-    // If the UI is swapping a plugin right now, skip the inserts for this block, but keep
-    // reporting the last latency so the other strips' alignment doesn't jump.
+    // The editor/control instances stay in this process, but no plugin processing call is
+    // made on the mixer callback. If the UI is changing slots, keep the last timing value.
     const juce::ScopedTryLock sl (slotLock);
-    if (! sl.isLocked() || numSamples > scratch.getNumSamples())
+    if (! sl.isLocked() || numSamples > dryBuffer.getNumSamples())
+    {
+        latency += latencySamples.load (std::memory_order_relaxed);
+        return;
+    }
+
+    if (sandbox == nullptr)
     {
         latency += latencySamples.load (std::memory_order_relaxed);
         return;
     }
 
     int chainLatency = 0;
-
-    for (size_t s = 0; s < slots.size(); ++s)
+    bool hasPlugins = false;
+    for (int s = 0; s < kNumSlots; ++s)
     {
-        auto* vst = slots[s].get();
-        if (vst == nullptr)
+        auto* plugin = slots[(size_t) s].get();
+        if (plugin != nullptr)
         {
-            wasActive[s] = false;
-            continue;
+            hasPlugins = true;
+            chainLatency += slotFault[(size_t) s].load (std::memory_order_acquire)
+                                ? 0 : pluginLatencies[(size_t) s];
+            auto& params = parameterPointers[(size_t) s];
+            std::array<float, 1024> values {};
+            const int count = juce::jmin ((int) params.size(), (int) values.size());
+            for (int p = 0; p < count; ++p)
+            {
+                const float value = params[(size_t) p] != nullptr ? params[(size_t) p]->getValue() : 0.0f;
+                values[(size_t) p] = std::isfinite (value) ? juce::jlimit (0.0f, 1.0f, value) : 0.0f;
+            }
+            sandbox->setSlotControls (s, slotBypass[(size_t) s].load(), slotMix[(size_t) s].load(), values.data(), count);
         }
-
-        const int numCh = juce::jmax (2, vst->getTotalNumInputChannels(), vst->getTotalNumOutputChannels());
-        if (numCh > kMaxPluginChannels || slotFault[s].load())
-        {
-            wasActive[s] = false;
-            continue;   // unusable or faulted: out of the chain (and out of the latency sum)
-        }
-
-        const int pluginLatency = juce::jmax (0, vst->getLatencySamples());
-        chainLatency += pluginLatency;
-
-        const bool slotOn = ! slotBypass[s].load() && ! vst->isSuspended();
-        const bool crossfade = slotOn != wasActive[s];
-
-        // Steady bypass: keep the plugin's latency so timing never jumps.
-        if (! slotOn && ! crossfade && vst->getBypassParameter() == nullptr)
-        {
-            bypassDelay[s].process (L, R, numSamples, pluginLatency);
-            continue;
-        }
-
-        if (crossfade)
-        {
-            dryBuffer.copyFrom (0, 0, L, numSamples);
-            dryBuffer.copyFrom (1, 0, R, numSamples);
-        }
-
-        // Wet/dry: keep the dry input, delayed by the plugin's latency so the blend lines up.
-        const float mix = slotMix[s].load();
-        const bool blendDry = mix < 0.999f;
-        if (blendDry)
-        {
-            mixDryBuffer.copyFrom (0, 0, L, numSamples);
-            mixDryBuffer.copyFrom (1, 0, R, numSamples);
-            mixDelay[s].process (mixDryBuffer.getWritePointer (0), mixDryBuffer.getWritePointer (1), numSamples, pluginLatency);
-        }
-
-        juce::AudioBuffer<float> view (scratch.getArrayOfWritePointers(), numCh, numSamples);
-        view.clear();
-        view.copyFrom (0, 0, L, numSamples);
-        view.copyFrom (1, 0, R, numSamples);
-
-        midi.clear();
-        if (slotOn || crossfade)
-            vst->processBlock (view, midi);
         else
-            vst->processBlockBypassed (view, midi);   // the plugin's own latency-correct bypass
-
-        const int outs = vst->getTotalNumOutputChannels();
-        const int rightSrc = outs == 1 ? 0 : 1;
-
-        // A plugin that outputs NaN/Inf would poison everything after it permanently.
-        // Drop its output, reset it and bypass it.
-        if (AudioSafety::containsNonFinite (view.getReadPointer (0), numSamples)
-            || AudioSafety::containsNonFinite (view.getReadPointer (rightSrc), numSamples))
         {
-            slotFault[s].store (true);
-            slotBypass[s].store (true);
-            faultCount.fetch_add (1);
-            chainLatency -= pluginLatency;
-            vst->reset();
-            bypassDelay[s].clear();
-            mixDelay[s].clear();
-            wasActive[s] = false;
-            continue;   // keep the dry signal
+            sandbox->setSlotControls (s, false, 1.0f, nullptr, 0);
         }
-
-        juce::FloatVectorOperations::copy (L, view.getReadPointer (0), numSamples);
-        juce::FloatVectorOperations::copy (R, view.getReadPointer (rightSrc), numSamples);
-
-        if (blendDry && (slotOn || crossfade))
-        {
-            juce::FloatVectorOperations::multiply (L, mix, numSamples);
-            juce::FloatVectorOperations::multiply (R, mix, numSamples);
-            juce::FloatVectorOperations::addWithMultiply (L, mixDryBuffer.getReadPointer (0), 1.0f - mix, numSamples);
-            juce::FloatVectorOperations::addWithMultiply (R, mixDryBuffer.getReadPointer (1), 1.0f - mix, numSamples);
-        }
-        else if (! blendDry)
-        {
-            mixDelay[s].clear();
-        }
-
-        // Bypass / enable / newly loaded: crossfade over this block instead of clicking.
-        if (crossfade)
-        {
-            const float wetStart = slotOn ? 0.0f : 1.0f;
-            const float wetEnd   = slotOn ? 1.0f : 0.0f;
-            float* chans[2] { L, R };
-            juce::AudioBuffer<float> out (chans, 2, numSamples);
-            out.applyGainRamp (0, numSamples, wetStart, wetEnd);
-            out.addFromWithRamp (0, 0, dryBuffer.getReadPointer (0), numSamples, 1.0f - wetStart, 1.0f - wetEnd);
-            out.addFromWithRamp (1, 0, dryBuffer.getReadPointer (1), numSamples, 1.0f - wetStart, 1.0f - wetEnd);
-            if (! slotOn)
-                bypassDelay[s].clear();
-        }
-
-        wasActive[s] = slotOn;
     }
 
-    latencySamples.store (chainLatency, std::memory_order_relaxed);
-    latency += chainLatency;
+    if (! hasPlugins)
+    {
+        sandboxWasActive = false;
+        latencySamples.store (0, std::memory_order_relaxed);
+        return;
+    }
+
+    // Keep the dry fallback warm even while the worker is healthy so changes between
+    // worker and fallback audio can be faded over one block without a click.
+    dryBuffer.copyFrom (0, 0, L, numSamples);
+    dryBuffer.copyFrom (1, 0, R, numSamples);
+    mixDryBuffer.copyFrom (0, 0, dryBuffer, 0, 0, numSamples);
+    mixDryBuffer.copyFrom (1, 0, dryBuffer, 1, 0, numSamples);
+
+    const int pipelineSamples = PluginSandbox::pipelineBlocks * numSamples;
+    const int totalLatency = pipelineSamples + chainLatency;
+    sandboxDryDelay.process (mixDryBuffer.getWritePointer (0), mixDryBuffer.getWritePointer (1), numSamples, totalLatency);
+
+    const bool workerOutput = sandbox->processBlock (L, R, numSamples);
+    if (workerOutput)
+    {
+        sandboxWorkerBuffer.copyFrom (0, 0, L, numSamples);
+        sandboxWorkerBuffer.copyFrom (1, 0, R, numSamples);
+        if (! sandboxWasActive)
+        {
+            juce::FloatVectorOperations::copy (L, mixDryBuffer.getReadPointer (0), numSamples);
+            juce::FloatVectorOperations::copy (R, mixDryBuffer.getReadPointer (1), numSamples);
+            float* chans[2] { L, R };
+            juce::AudioBuffer<float> output (chans, 2, numSamples);
+            output.applyGainRamp (0, numSamples, 1.0f, 0.0f);
+            output.applyGainRamp (1, numSamples, 1.0f, 0.0f);
+            output.addFromWithRamp (0, 0, sandboxWorkerBuffer.getReadPointer (0), numSamples, 0.0f, 1.0f);
+            output.addFromWithRamp (1, 0, sandboxWorkerBuffer.getReadPointer (1), numSamples, 0.0f, 1.0f);
+        }
+    }
+    else if (sandboxWasActive)
+    {
+        float* chans[2] { L, R };
+        juce::AudioBuffer<float> output (chans, 2, numSamples);
+        output.clear();
+        output.addFromWithRamp (0, 0, sandboxWorkerBuffer.getReadPointer (0), numSamples, 1.0f, 0.0f);
+        output.addFromWithRamp (1, 0, sandboxWorkerBuffer.getReadPointer (1), numSamples, 1.0f, 0.0f);
+        output.addFromWithRamp (0, 0, mixDryBuffer.getReadPointer (0), numSamples, 0.0f, 1.0f);
+        output.addFromWithRamp (1, 0, mixDryBuffer.getReadPointer (1), numSamples, 0.0f, 1.0f);
+    }
+    else
+    {
+        juce::FloatVectorOperations::copy (L, mixDryBuffer.getReadPointer (0), numSamples);
+        juce::FloatVectorOperations::copy (R, mixDryBuffer.getReadPointer (1), numSamples);
+    }
+
+    sandboxWasActive = workerOutput;
+    latencySamples.store (totalLatency, std::memory_order_relaxed);
+    latency += totalLatency;
 }

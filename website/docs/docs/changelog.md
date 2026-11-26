@@ -14,12 +14,13 @@ is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 
 - **Core mixer:** up to 8 strips and 6 buses at runtime; per-app routing;
   multi-device I/O with drift-correcting resampling.
-- **Voice and strips:** RNNoise noise removal, gate, 8-band EQ, compressor,
+- **Voice and strips:** RNNoise and DeepFilterNet 3 noise removal, gate, 8-band EQ, compressor,
   de-esser, ducking, voice pad; gain, HPF and LPF knobs on every strip;
   per-strip presets (in the strip menu); solo-safe; latency compensation
   with a per-strip readout.
-- **Plugins:** VST3 (6 slots per strip/bus) with crash-safe loading; VST2
-  opt-in only.
+- **Plugins:** VST3 (6 slots per strip/bus) with crash-safe loading and
+  out-of-process audio rendering; a watchdog isolates crashes and stalls,
+  with dry fallback. Editors remain in the app. VST2 opt-in only.
 - **Meters and loudness:** RMS meters, K-weighted loudness normalisation,
   spectrum and LUFS per bus; status bar with engine CPU%.
 - **Creator tools and control:** multitrack recorder, replay buffer,
@@ -33,6 +34,6 @@ is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 
 ### Known limits
 
-No virtual audio driver yet (use a virtual cable on a B bus); the plugin
-probe only catches load-time crashes; the phone remote has no password.
+No virtual audio driver yet (use a virtual cable on a B bus); plugin editors
+remain in the app process; the phone remote has no password.
 Full list: [Troubleshooting & known limits](troubleshooting.md).

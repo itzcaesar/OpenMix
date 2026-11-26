@@ -9,9 +9,12 @@ to work around silently.
   microphone input from OpenMix need a virtual cable (VB-Audio Virtual
   Cable or similar) on a B bus. A native driver is Phase 7 in the
   [roadmap](roadmap.md).
-- **A plugin that crashes while processing audio (after it loaded fine)
-  can still take OpenMix down.** The loading probe only catches crashes
-  at start-up; full out-of-process plugin hosting is not done yet.
+- Plugin audio rendering runs in a child process. A crash or stall disables
+  the active slot, restarts the chain worker without it, and switches to
+  latency-matched dry audio while it recovers. Plugin editors and state calls
+  remain in OpenMix, so faults in plugin UI code are not isolated. Chains with
+  inserts add two device callback blocks of latency and one extra plugin
+  instance of memory.
 - **The phone / WebSocket remote has no password:** anyone on the same
   network can control the mixer while it is on. Only enable it on a
   network you trust. (Browser requests from other websites are refused.)
@@ -50,8 +53,15 @@ skipped: OpenMix asks whether to load it anyway.
 ### A plugin outputs bad audio
 
 A plugin that outputs invalid audio (NaN/Inf) is stopped automatically
-and marked, instead of breaking the mix. "Try again" in its menu
-restarts it.
+and marked, instead of breaking the mix. Click **Try again** in its menu
+to restart that slot in the render worker.
+
+### A plugin crashes or stalls while processing audio
+
+OpenMix removes the active slot from the worker chain and restarts the
+remaining inserts. The chain uses latency-matched dry audio during recovery.
+If the slot remains marked after the worker recovers, click **Try again** to
+reload it; if it faults again, leave it bypassed or remove it.
 
 ### OpenMix crashed while a session was loading
 

@@ -54,9 +54,13 @@ same controls.
 Six keys in two columns, amber while on. Click a key for its settings;
 Space switches it on or off without opening the panel.
 
-- **NR** noise removal (RNNoise): fans, hum and keyboard noise. Adds
-  20 ms at 48 kHz (RNNoise's own rate); at other rates it resamples to
-  48 kHz and back, about 1 ms more. Other strips are delayed to match.
+- **NR** noise removal offers two choices. **RNNoise** is lightweight and
+  adds about 20 ms at 48 kHz; other sample rates add about 1 ms for
+  resampling. **DeepFilterNet 3** is higher quality, uses more CPU and adds
+  about 100 ms at 48 kHz. Other strips are delayed to match. Its model is
+  not bundled: use **Download** in the NR panel for the verified official
+  model, or **Install...** to import a local archive. OpenMix stores it in
+  `%APPDATA%\OpenMix\Models`.
 - **Gate** turns the strip down while it's quiet. Set Attack (0.1–100 ms),
   Hold (0–500 ms), and Release (10–1000 ms) to control how it opens and
   closes around speech. **Comp** evens out loud

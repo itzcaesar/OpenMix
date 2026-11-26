@@ -3,6 +3,7 @@
 #include "ui/Theme.h"
 #include "ui/OpenMixLookAndFeel.h"
 #include "engine/PluginScanner.h"
+#include "engine/PluginSandbox.h"
 #include "app/AppSettings.h"
 #include "ui/TrayIcon.h"
 
@@ -18,6 +19,11 @@ static bool isScanChild()
 static bool isProbeChild()
 {
     return juce::JUCEApplicationBase::getCommandLineParameters().contains (PluginScanner::probeFlag);
+}
+
+static bool isPluginAudioWorker()
+{
+    return juce::JUCEApplicationBase::getCommandLineParameters().contains (PluginSandbox::workerFlag);
 }
 
 // If OpenMix crashes, leave a stack trace next to the session so the cause can be found.
@@ -36,11 +42,30 @@ public:
     const juce::String getApplicationName() override    { return JUCE_APPLICATION_NAME_STRING; }
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
 
-    // The plugin-scan child runs next to the main app, so it must not be single-instance.
-    bool moreThanOneInstanceAllowed() override          { return isScanChild() || isProbeChild(); }
+    // Scanner, probe and audio worker children run next to the main app.
+    bool moreThanOneInstanceAllowed() override          { return isScanChild() || isProbeChild() || isPluginAudioWorker(); }
 
     void initialise (const juce::String& commandLine) override
     {
+        if (isPluginAudioWorker())
+        {
+            const auto args = juce::StringArray::fromTokens (commandLine, true);
+            const int i = args.indexOf (PluginSandbox::workerFlag);
+            if (i >= 0 && i + 4 < args.size())
+            {
+                sandboxWorker = std::make_unique<PluginSandboxWorkerThread> (
+                    args[i + 1].unquoted(), args[i + 2].unquoted(), juce::File (args[i + 3].unquoted()),
+                    args[i + 4].getIntValue());
+                sandboxWorker->startThread (juce::Thread::Priority::high);
+            }
+            else
+            {
+                setApplicationReturnValue (2);
+                quit();
+            }
+            return;
+        }
+
         if (isProbeChild())
         {
             // OpenMix.exe --probe-plugin "<plugin file>"
@@ -81,6 +106,12 @@ public:
 
     void shutdown() override
     {
+        if (sandboxWorker != nullptr)
+        {
+            sandboxWorker->signalThreadShouldExit();
+            sandboxWorker->stopThread (2000);
+            sandboxWorker.reset();
+        }
         mainWindow.reset();
         tray.reset();
         juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
@@ -169,6 +200,7 @@ private:
     std::unique_ptr<juce::FileLogger> logger;
     std::unique_ptr<TrayIcon> tray;
     std::unique_ptr<MainWindow> mainWindow;
+    std::unique_ptr<PluginSandboxWorkerThread> sandboxWorker;
 };
 
 START_JUCE_APPLICATION (OpenMixApplication)

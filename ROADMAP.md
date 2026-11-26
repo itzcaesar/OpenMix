@@ -17,7 +17,7 @@ stands:
 |---|---|---|
 | Strips and buses added and removed at runtime (up to 8 and 6) instead of fixed layouts | 3 | Done |
 | VST3 chains on every strip **and** every bus, drag to reorder, wet/dry, per-slot bypass | 1, 5 | Done |
-| Crash-safe plugin scanning: one bad plugin doesn't kill your audio | 5 | Done (loading probe done; full audio sandbox open) |
+| Crash-safe plugin scanning and processing | 5 | Done (audio render workers; editors remain in the app) |
 | Built-in neural-network denoise, no plugin needed | 4 | RNNoise and DeepFilterNet 3 done |
 | Built-in pitch correction and voice changer (formant shift, robot, radio) | 4 | Open |
 | **Per-app routing**: Spotify, a game or Discord on its own strip without changing the Windows default device | 3 | Done |
@@ -128,10 +128,13 @@ Built-in so the basics work without third-party plugins:
       block). A plugin that crashes or hangs while starting is blacklisted instead of taking
       the mixer down. On by default (Settings), and a failed probe is retried from
       "Retry skipped plugins".
-- [ ] Stretch: sandboxed plugin process so a crashing plugin can't take down the mixer
-      *while processing audio*. The probe above only catches crashes at load time; full
-      out-of-process audio hosting (shared-memory audio, parameter and GUI forwarding) is
-      still open and is the real sandbox.
+- [x] **Out-of-process audio rendering:** each insert chain renders in a child process using
+      a non-blocking shared-memory block ring. A watchdog kills a hung worker or detects a
+      crash, disables the offending slot, and restarts the remaining chain. Missing worker
+      output falls back to latency-matched dry audio. The existing in-process plugin instance
+      still owns the editor and session state; parameter values are forwarded to the render
+      copy. The two-block pipeline adds two device callback blocks of latency while inserts
+      are present.
 
 ## Phase 6 - XY pad extensions  *(~1-2 weeks)*
 

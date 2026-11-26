@@ -34,8 +34,19 @@ static void run (const char* name, const std::function<void()>& test)
     std::printf ("%s %s\n", failures == before ? "[ ok ]" : "[FAIL]", name);
 }
 
-int main()
+int main (int argc, char** argv)
 {
+    if (argc >= 6 && juce::String (argv[1]) == PluginSandbox::workerFlag)
+    {
+        juce::ScopedJuceInitialiser_GUI juceInit;
+        PluginSandboxWorkerThread worker (argv[2], argv[3], juce::File (argv[4]),
+                                          juce::String (argv[5]).getIntValue());
+        if (! worker.startThread (juce::Thread::Priority::high))
+            return 3;
+        juce::MessageManager::getInstance()->runDispatchLoop();
+        return 0;
+    }
+
     juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("OpenMix app tests\n");
 
@@ -358,6 +369,41 @@ int main()
         CHECK (chain.slotMix[0].load() == 0.25f && chain.slotBypass[1].load(), "settings move up with plugins");
         CHECK (chain.slotMix[2].load() == 1.0f && ! chain.slotBypass[2].load(), "freed slot is reset");
     });
+
+#if defined (OPENMIX_ENABLE_SANDBOX_TEST_HOOKS)
+    run ("PluginSandbox: worker crash is isolated and the chain recovers", []
+    {
+        std::atomic<int> crashedSlot { -1 };
+        PluginSandbox sandbox ([&] (int slot) { crashedSlot.store (slot, std::memory_order_release); });
+        juce::XmlElement config ("PluginSandbox");
+        config.setAttribute ("sampleRate", 48000.0);
+        config.setAttribute ("blockSize", 64);
+        config.setAttribute ("testCrashOnProcess", true);
+        sandbox.configure (config.toString(), 0);
+
+        std::vector<float> left (64, 0.125f), right (64, -0.125f);
+        bool recovered = false;
+        bool outputMatchesInput = true;
+        for (int attempt = 0; attempt < 1200 && ! recovered; ++attempt)
+        {
+            std::fill (left.begin(), left.end(), 0.125f);
+            std::fill (right.begin(), right.end(), -0.125f);
+            if (sandbox.processBlock (left.data(), right.data(), (int) left.size())
+                && crashedSlot.load (std::memory_order_acquire) == 0)
+            {
+                for (size_t i = 0; i < left.size(); ++i)
+                    outputMatchesInput = outputMatchesInput && std::abs (left[i] - 0.125f) < 1.0e-6f
+                                                         && std::abs (right[i] + 0.125f) < 1.0e-6f;
+                recovered = true;
+            }
+            juce::Thread::sleep (5);
+        }
+
+        CHECK (crashedSlot.load (std::memory_order_acquire) == 0, "worker crash was not attributed to slot 0");
+        CHECK (recovered, "worker did not restart and return a block");
+        CHECK (outputMatchesInput, "restarted worker did not preserve the dry signal");
+    });
+#endif
 
     run ("Soundboard: stopping a pad fades out instead of cutting", []
     {

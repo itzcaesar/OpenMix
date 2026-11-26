@@ -242,6 +242,8 @@ static void loadChain (const juce::XmlElement& x, PluginChain& chain, MixerEngin
         if (state.fromBase64Encoding (xp->getStringAttribute ("state")) && state.getSize() > 0)
             chain.getPlugin (installed)->setStateInformation (state.getData(), (int) state.getSize());
     }
+
+    chain.synchronizeSandbox();
 }
 
 //==============================================================================

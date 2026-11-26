@@ -12,9 +12,10 @@ them up, and send a separate mix to your headphones, the stream and the call.
 - **Voice processing built in:** RNNoise and DeepFilterNet 3 noise removal, gate, high- and low-pass filters,
   8-band EQ, compressor, de-esser and ducking on every strip, plus a voice pad (XY pad with
   voice, pan, colour and space modes).
-- **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning, bypass without
-  clicks, wet/dry, A/B compare, presets, latency compensation, and crash-safe loading (each
-  plugin is test-started in a separate process first).
+- **VST3 plugins** on every strip and bus: 6 slots each, crash-safe scanning and loading,
+  out-of-process audio rendering, bypass without clicks, wet/dry, A/B compare, presets and
+  latency compensation. Editors stay in the app; a duplicate instance renders each chain in
+  a worker with a two-callback audio pipeline.
 - **Outputs:** up to 6 buses (A1-A3 hardware, B1-B3 virtual), each to an output pair of the
   main device or to any Windows output device, with EQ, compressor, plugins and a safety
   limiter. Buses are grouped **Hardware** / **Virtual** on the desk, and each bus can have a
@@ -185,9 +186,9 @@ is still being scanned when you quit, is scanned again next time instead.
   block. A plugin that crashes there is skipped and put on the skip list instead of taking
   OpenMix down (Settings > Retry skipped plugins tries it again). A plugin that is only slow
   to start (over 30 s, for example a licence window) is not skipped: you're asked whether to
-  load it anyway. This protects *loading*; a plugin that crashes later, while processing
-  audio, can still take the mixer down. Full out-of-process audio hosting is not done yet
-  (see ROADMAP Phase 5).
+  load it anyway. Audio rendering happens in a child worker. If a plugin crashes or stalls
+  while processing, OpenMix disables that slot, restarts the worker, and uses latency-matched
+  dry audio while the worker is unavailable. The editor/control instance stays in the app.
 
 ### VST2 plugins (opt-in, local build only)
 
@@ -429,8 +430,9 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 - **Core tests** (`ctest`, no JUCE needed): clock drift and jitter, resampling pitch,
   limiter, NaN detection, DC blocker, filter stability, dynamics, denoiser latency at 44.1
   and 48 kHz, the EBU loudness reference, RMS metering and loudness normalisation. App tests
-  cover session loading (including old files), scenes, presets, plugin slot moves, the remote
-  and MIDI commands, the soundboard and the hotkey thread. Both run in CI on every push.
+  cover session loading (including old files), scenes, presets, plugin slot moves, sandbox
+  worker crash recovery, the remote and MIDI commands, the soundboard and the hotkey thread.
+  Both run in CI on every push.
 
 ## Project layout
 
@@ -440,7 +442,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 | Folder | What's in it |
 |---|---|
 | `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `RemoteCommands` (one remote language for OSC, WebSocket and MIDI), `RemoteServer` (phone page, HTTP and WebSocket API), `MidiControl` (learnable MIDI mappings), `UpdateChecker` |
-| `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` (VST3 inserts for strips and buses), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `CpuMeter` |
+| `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` and `PluginSandbox` (VST3 control instances and out-of-process audio rendering), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `CpuMeter` |
 | `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
 | `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, K-weighted loudness normaliser); plus `Denoiser` (RNNoise at any sample rate and DeepFilterNet 3 on a worker thread) |
 | `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send, wet/dry and global FX pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |
@@ -462,9 +464,10 @@ runs the tests, and attaches the zip and `OpenMix-<version>-setup.exe` to a GitH
   need a virtual cable (VB-Audio Virtual Cable or similar) on a B bus.
 - VST3 plugins have to start on the UI thread (a VST3 rule), so a slow plugin can pause the
   window briefly while it opens; its slot shows "Loading..." meanwhile.
-- A plugin that crashes while processing audio (after it loaded fine) can still take OpenMix
-  down. The loading probe only catches crashes at start-up; full out-of-process plugin
-  hosting is not done yet.
+- Plugin editors and the control/state instance remain in OpenMix to preserve the existing
+  editor workflow. A fault in editor code or another non-rendering plugin call can still
+  affect the app. The separate render instance adds memory use and two device callback blocks
+  of latency to chains with inserts.
 - The phone / WebSocket remote has no password: anyone on the same network can control the
   mixer while it is on. Only enable it on a network you trust.
 - Global hotkeys use a keyboard hook that only listens. A game with strict anti-cheat could

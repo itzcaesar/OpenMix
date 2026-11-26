@@ -32,6 +32,8 @@ This is OpenMix's first public release. There was no earlier release:
   six bells, high shelf; on buses too), compressor with adjustable knee,
   attack and release (on buses too), de-esser with adjustable detection
   frequency, and ducking (any strip as sidechain).
+- DeepFilterNet 3 as a higher-quality noise removal option, with a verified
+  in-app download for its model (weights are not bundled).
 - VoicePad XY pad with Voice, Pan, Colour and Space modes.
 - **Gain, HPF and LPF knobs on every strip** (gain -24 to +24 dB, HPF 20 Hz
   to 1 kHz, LPF 1 to 20 kHz; a filter knob at its end is off), sitting before
@@ -54,6 +56,11 @@ This is OpenMix's first public release. There was no earlier release:
   separate test process before it is loaded into the mixer. A plugin that
   crashes while starting is skipped and put on the skip list instead of
   taking OpenMix down; one that is only slow to start asks before loading.
+- Audio rendering runs in a duplicate plugin chain in a child process. A
+  watchdog disables a crashed or stalled slot, restarts the remaining chain,
+  and uses latency-matched dry audio during recovery. This adds two device
+  callback blocks of latency and a second plugin instance; editors stay in
+  OpenMix.
 - VST2 hosting, opt-in only and OFF by default. It needs a licensed VST2 SDK
   supplied separately: the SDK is not included in the repo, and Steinberg
   stopped issuing new VST2 licences in October 2018.
@@ -99,9 +106,8 @@ This is OpenMix's first public release. There was no earlier release:
 - No virtual audio driver of its own yet, so apps that need a microphone
   input from OpenMix need a virtual cable (VB-Audio Virtual Cable or similar)
   on a B bus.
-- The loading probe only catches crashes at start-up. A plugin that crashes
-  while processing audio (after it loaded fine) can still take OpenMix down;
-  full out-of-process plugin hosting is not done yet.
+- Plugin editors and state/control calls remain in OpenMix, so failures in
+  plugin UI code or another non-rendering call can still affect the app.
 - VST3 plugins have to start on the UI thread (a VST3 rule), so a slow plugin
   can pause the window briefly while it opens; its slot shows "Loading..."
   meanwhile.

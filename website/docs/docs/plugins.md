@@ -32,10 +32,23 @@ slow to start (over 30 s, for example a licence window) is not skipped:
 you're asked whether to load it anyway. If the test process itself can't
 run, the plugin loads as normal.
 
-!!! warning
-    This protects *loading*. A plugin that crashes later, while processing
-    audio, can still take the mixer down. Full out-of-process audio
-    hosting is not done yet. See [Known limits](troubleshooting.md).
+## Isolated audio rendering
+
+Each insert chain is rendered by a duplicate plugin instance in a child
+process. The existing instance stays in OpenMix for the plugin window,
+session state and presets. Parameter values are sent to the render copy.
+
+The audio callback sends blocks through shared memory without waiting for
+the child. The worker has a watchdog: if a plugin crashes or stalls, OpenMix
+marks that slot, restarts the worker without it, and uses latency-matched dry
+audio while the worker is offline. Click **Try again** from the slot menu to
+retry a faulted plugin.
+
+The worker pipeline adds two device callback blocks of latency to a chain
+that contains inserts. It also keeps a second plugin instance loaded, which
+uses additional memory. Plugin editor and state calls remain in the app, so
+the isolation covers audio rendering rather than plugin UI code. See
+[Known limits](troubleshooting.md).
 
 ## VST2 plugins (opt-in, local build only)
 

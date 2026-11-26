@@ -14,10 +14,10 @@ microphone.
 
 - Strips and buses added/removed at runtime (up to 8 and 6); per-app
   routing; loopback capture; multi-device I/O with drift correction.
-- Built-in processing: RNNoise denoise, gate, 8-band EQ, compressor,
+- Built-in processing: RNNoise and DeepFilterNet 3 denoise, gate, 8-band EQ, compressor,
   de-esser, ducking; HPF/LPF.
-- VST3 chains on strips and buses; crash-safe scanning and crash-safe
-  loading; VST2 opt-in only; latency compensation; per-strip presets.
+- VST3 chains on strips and buses; crash-safe scanning, loading and audio
+  rendering; VST2 opt-in only; latency compensation; per-strip presets.
 - RMS meters, loudness normalisation, spectrum and LUFS per bus.
 - Recorder, replay buffer, soundboard, scenes, global hotkeys.
 - OSC, phone / WebSocket, MIDI remote, Stream Deck via OSC/WebSocket.
@@ -29,11 +29,10 @@ microphone.
 ## Still open
 
 - **Built-in pitch correction and voice changer** (formant shift, robot,
-  radio): Phase 4, open. DeepFilterNet as a higher-quality denoise
-  option: also open.
-- **Full out-of-process plugin hosting**: the probe only catches
-  load-time crashes; a plugin crashing while processing audio can still
-  take OpenMix down. Phase 5 stretch goal.
+  radio): Phase 4, open.
+- Plugin editor windows and state/control calls remain in the app process;
+  render processing is isolated in a child worker. The worker adds two
+  callback blocks of latency to insert chains.
 - **Surround / binaural positioning, pad automation**: Phase 6, open.
 - **Own virtual audio driver** (Phase 7, kernel work): **one** installed
   driver exposing multiple virtual endpoints (`B1–B3` virtual mics for
