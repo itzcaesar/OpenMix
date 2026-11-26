@@ -4,7 +4,7 @@
 
 site_name: OpenMix
 site_url: https://itzcaesar.github.io/OpenMix/
-site_description: A virtual audio mixer for Windows: documentation for OpenMix 0.1.0.
+site_description: "A virtual audio mixer for Windows: documentation for OpenMix 0.1.0."
 site_author: Muhammad Caesar Rifqi
 repo_url: https://github.com/itzcaesar/OpenMix
 repo_name: itzcaesar/OpenMix
