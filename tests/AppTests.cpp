@@ -9,6 +9,7 @@
 #include "app/Session.h"
 #include "app/RemoteCommands.h"
 #include "app/MidiControl.h"
+#include "app/GlobalHotkeys.h"
 
 #include <cmath>
 #include <cstdio>
@@ -174,6 +175,154 @@ int main()
             CHECK (std::isfinite (l[i]) && std::isfinite (r[i]), "non-finite output from short pad");
             if (! std::isfinite (l[i])) break;
         }
+        tmp.deleteFile();
+    });
+
+    run ("GlobalHotkeys: the hook thread starts and stops without hanging", []
+    {
+        GlobalHotkeys hotkeys;
+        GlobalHotkeys::Binding b;
+        b.keys.vk = 0x7B;   // F12
+        for (int i = 0; i < 20; ++i)
+        {
+            hotkeys.setBindings ({ b });
+            hotkeys.setBindings ({});
+        }
+        hotkeys.captureNext ([] (GlobalHotkeys::Keys) {});
+        hotkeys.cancelCapture();
+        hotkeys.setBindings ({ b });
+        CHECK (hotkeys.getBindings().size() == 1, "binding kept");
+    });   // destructor stops the running hook thread
+
+    run ("RemoteCommands: NaN/Inf values are refused", []
+    {
+        MixerEngine engine;
+        engine.getStrip (0).faderDb.store (-6.0f);
+        CHECK (! applyRemoteCommand (engine, "/strip/1/fader", std::nanf ("")), "NaN fader accepted");
+        CHECK (! applyRemoteCommand (engine, "/strip/1/fader", INFINITY), "Inf fader accepted");
+        CHECK (engine.getStrip (0).faderDb.load() == -6.0f, "fader changed by a bad value");
+    });
+
+    run ("Session: scenes round-trip the mix, apply restores strips, buses and presets", []
+    {
+        MixerEngine engine;
+        auto& strip = engine.getStrip (1);
+        strip.faderDb.store (-7.5f);
+        strip.sendPre[3].store (true);
+        strip.sendDb[3].store (-4.0f);
+        strip.fx.compOn.store (true);
+        engine.getBus (0).normOn.store (true);
+        const auto scene = Session::captureScene (engine);
+
+        strip.faderDb.store (0.0f);
+        strip.sendPre[3].store (false);
+        strip.fx.compOn.store (false);
+        engine.getBus (0).normOn.store (false);
+        Session::applyScene (*scene, engine);
+        CHECK (strip.faderDb.load() == -7.5f, "scene fader %f", strip.faderDb.load());
+        CHECK (strip.sendPre[3].load() && strip.sendDb[3].load() == -4.0f, "scene send");
+        CHECK (strip.fx.compOn.load(), "scene processing");
+        CHECK (engine.getBus (0).normOn.load(), "scene bus normalisation");
+
+        // A version 2 file, written the way Session::save writes it.
+        const auto xml = juce::parseXML (R"(<OpenMixSession version="2">
+            <Strip index="2" active="1" name="Mic" sourceType="0" gain="3" fader="-2" mute="1" busB1="1" preB1="1" sendB1="-5">
+              <Processing gateOn="1" gateThreshold="-44"/>
+            </Strip>
+            <Bus name="B2" active="1" customName="Stream" fader="-1" target="0"/>
+            <StripPresets>
+              <Preset name="Voice" fader="-3" busA1="1"><Processing eqOn="1" eqMid="2.5"/></Preset>
+            </StripPresets>
+          </OpenMixSession>)");
+        MixerEngine fresh;
+        Session::apply (*xml, fresh, false);
+        auto& mic = fresh.getStrip (2);
+        CHECK (mic.active.load() && ! fresh.getStrip (0).active.load(), "only listed strips are active");
+        CHECK (mic.name == "Mic" && mic.gainDb.load() == 3.0f && mic.faderDb.load() == -2.0f && mic.mute.load(), "strip fields");
+        CHECK (mic.busOn[3].load() && mic.sendPre[3].load() && mic.sendDb[3].load() == -5.0f, "strip send to B1");
+        CHECK (mic.fx.gateOn.load() && mic.fx.gateThresholdDb.load() == -44.0f, "strip processing");
+        CHECK (fresh.getBus (4).active.load() && fresh.getBusName (4) == "Stream" && fresh.getBus (4).faderDb.load() == -1.0f, "bus B2");
+        CHECK (fresh.getMonitorBus() == 0, "no monitor in the file: A1 by default");
+        const auto* preset = fresh.findStripPreset ("Voice");
+        CHECK (preset != nullptr && preset->faderDb == -3.0f && preset->eqOn && preset->eqMidDb == 2.5f, "strip preset");
+
+        // Version 1 saved buses by position: 0 = A1, 1 = A2, 2 = B1.
+        const auto v1 = juce::parseXML (R"(<OpenMixSession><Bus index="2" fader="-9"/></OpenMixSession>)");
+        MixerEngine old;
+        Session::apply (*v1, old, false);
+        CHECK (old.getBus (3).faderDb.load() == -9.0f, "v1 bus 2 should map to B1");
+    });
+
+    run ("PluginChain: moving and removing keep each plugin's bypass and mix", []
+    {
+        struct Dummy : juce::AudioPluginInstance
+        {
+            explicit Dummy (juce::String n) : name (std::move (n)) {}
+            juce::String name;
+            void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = name; }
+            const juce::String getName() const override { return name; }
+            void prepareToPlay (double, int) override {}
+            void releaseResources() override {}
+            void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+            double getTailLengthSeconds() const override { return 0; }
+            bool acceptsMidi() const override { return false; }
+            bool producesMidi() const override { return false; }
+            juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+            bool hasEditor() const override { return false; }
+            int getNumPrograms() override { return 1; }
+            int getCurrentProgram() override { return 0; }
+            void setCurrentProgram (int) override {}
+            const juce::String getProgramName (int) override { return {}; }
+            void changeProgramName (int, const juce::String&) override {}
+            void getStateInformation (juce::MemoryBlock&) override {}
+            void setStateInformation (const void*, int) override {}
+        };
+
+        PluginChain chain;
+        chain.prepare (48000.0, 256);
+        for (const char* n : { "a", "b", "c" })
+            chain.installPlugin (5, std::make_unique<Dummy> (n));   // past the end: packs to the next slot
+        CHECK (chain.getNumPlugins() == 3, "packed count %d", chain.getNumPlugins());
+        chain.slotBypass[0].store (true);
+        chain.slotMix[2].store (0.25f);
+
+        chain.movePlugin (0, 2);   // a b c -> b c a
+        CHECK (chain.getPlugin (0)->getName() == "b" && chain.getPlugin (2)->getName() == "a", "move order");
+        CHECK (chain.slotBypass[2].load() && ! chain.slotBypass[0].load(), "bypass follows the plugin");
+        CHECK (chain.slotMix[1].load() == 0.25f, "mix follows the plugin");
+
+        chain.removePlugin (0);    // b c a -> c a
+        CHECK (chain.getNumPlugins() == 2 && chain.getPlugin (0)->getName() == "c", "remove packs");
+        CHECK (chain.slotMix[0].load() == 0.25f && chain.slotBypass[1].load(), "settings move up with plugins");
+        CHECK (chain.slotMix[2].load() == 1.0f && ! chain.slotBypass[2].load(), "freed slot is reset");
+    });
+
+    run ("Soundboard: stopping a pad fades out instead of cutting", []
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("openmix-fade-test.wav");
+        tmp.deleteFile();
+        {
+            std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (tmp);
+            auto writer = std::unique_ptr<juce::AudioFormatWriter> (juce::WavAudioFormat().createWriterFor (stream,
+                juce::AudioFormatWriterOptions{}.withSampleRate (48000.0).withNumChannels (1).withBitsPerSample (24)));
+            juce::AudioBuffer<float> dc (1, 48000);
+            for (int i = 0; i < dc.getNumSamples(); ++i)
+                dc.setSample (0, i, 0.5f);
+            writer->writeFromAudioSampleBuffer (dc, 0, dc.getNumSamples());
+        }
+        Soundboard board;
+        board.prepare (48000.0);
+        juce::String error;
+        CHECK (board.loadPad (0, tmp, error), "load: %s", error.toRawUTF8());
+        std::vector<float> l (128), r (128);
+        board.trigger (0);
+        board.render (l.data(), r.data(), 128);
+        board.trigger (0);   // stop
+        std::fill (l.begin(), l.end(), 0.0f); std::fill (r.begin(), r.end(), 0.0f);
+        board.render (l.data(), r.data(), 128);
+        CHECK (l[0] > 0.45f && l[127] < l[0] && l[127] > 0.0f, "fade starts loud and falls: %f -> %f", l[0], l[127]);
+        for (int b = 0; b < 4; ++b) { std::fill (l.begin(), l.end(), 0.0f); board.render (l.data(), r.data(), 128); }
+        CHECK (! board.isPlaying (0) && l[127] == 0.0f, "silent after the 5 ms fade");
         tmp.deleteFile();
     });
 

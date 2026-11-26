@@ -88,10 +88,12 @@ void PluginChain::installPlugin (int slot, std::unique_ptr<juce::AudioPluginInst
     // Keep the chain packed: a new plugin past the end goes right after the last one.
     slot = juce::jmin (slot, getNumPlugins());
 
+    // Prepare before locking: a slow prepareToPlay must not make the audio thread skip the chain.
+    preparePlugin (*instance);
+
     std::unique_ptr<juce::AudioPluginInstance> old;
     {
         const juce::ScopedLock sl (slotLock);
-        preparePlugin (*instance);
         old = std::move (slots[(size_t) slot]);
         slots[(size_t) slot] = std::move (instance);
         wasActive[(size_t) slot] = false;   // fade the new plugin in
@@ -171,10 +173,14 @@ void PluginChain::movePlugin (int from, int to)
 
 void PluginChain::process (float* L, float* R, int numSamples, int& latency) noexcept
 {
-    // If the UI is swapping a plugin right now, skip the inserts for this block.
+    // If the UI is swapping a plugin right now, skip the inserts for this block, but keep
+    // reporting the last latency so the other strips' alignment doesn't jump.
     const juce::ScopedTryLock sl (slotLock);
     if (! sl.isLocked() || numSamples > scratch.getNumSamples())
+    {
+        latency += latencySamples.load (std::memory_order_relaxed);
         return;
+    }
 
     int chainLatency = 0;
 

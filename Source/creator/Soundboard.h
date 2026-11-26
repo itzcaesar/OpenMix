@@ -53,6 +53,7 @@ private:
         std::atomic<bool> playingFlag { false };// audio -> UI
         int pos = 0;                            // audio thread
         bool playing = false;                   // audio thread
+        int fadeOut = 0;                        // audio thread: samples left of a stop fade
     };
 
     void makePlayable (Pad&, double targetRate);

@@ -1,10 +1,5 @@
 #include "engine/ChannelStrip.h"
 
-static float dbToGain (float db) noexcept
-{
-    return db <= -60.0f ? 0.0f : juce::Decibels::decibelsToGain (db);
-}
-
 ChannelStrip::ChannelStrip()
 {
     busOn[0].store (true);   // new strips go to A1
@@ -362,7 +357,6 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
         dcBlocker.reset();
         hpf.reset(); lpf.reset();
         gate.reset(); eq.reset(); comp.reset(); deesser.reset(); denoiser.reset();
-        faultCount.fetch_add (1);
     }
 
     // 5. Ducking (target set by the engine from the source strip's level)

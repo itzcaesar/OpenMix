@@ -201,7 +201,8 @@ void PluginScanner::run()
         sendChangeMessage();
 
         juce::String error;
-        if (! scanOneInChildProcess (file, error))
+        bool retryLater = false;
+        if (! scanOneInChildProcess (file, error, retryLater) && ! retryLater)
             known.addToBlacklist (file);
 
         ++numDone;
@@ -217,7 +218,7 @@ void PluginScanner::run()
     sendChangeMessage();
 }
 
-bool PluginScanner::scanOneInChildProcess (const juce::String& file, juce::String& error)
+bool PluginScanner::scanOneInChildProcess (const juce::String& file, juce::String& error, bool& retryLater)
 {
     const auto output = juce::File::createTempFile (".xml");
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
@@ -237,6 +238,7 @@ bool PluginScanner::scanOneInChildProcess (const juce::String& file, juce::Strin
             child.kill();
             output.deleteFile();
             error = "timed out";
+            retryLater = true;   // slow or stopped, not crashed: scanned again next time
             return false;
         }
         juce::Thread::sleep (100);

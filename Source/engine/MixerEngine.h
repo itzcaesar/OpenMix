@@ -42,13 +42,6 @@ struct Bus
     ProcessingParams fx;
     PluginChain inserts;
 
-    // Latency readout (any thread): the insert chain's latency from the last block.
-    int getLatencySamples() const noexcept { return inserts.latencySamples.load (std::memory_order_relaxed); }
-    double getLatencyMs (double sampleRate) const noexcept
-    {
-        return sampleRate > 0.0 ? 1000.0 * (double) getLatencySamples() / sampleRate : 0.0;
-    }
-
     // Analysis feed for the UI (loudness, spectrum): the audio thread writes, the UI reads.
     juce::AbstractFifo analysisFifo { 32768 };
     juce::AudioBuffer<float> analysisBuffer { 2, 32768 };
@@ -118,10 +111,6 @@ public:
     int getMonitorBus() const noexcept;
     bool isSoloActive() const noexcept;
     bool isStripMutedBySolo (int strip) const noexcept;
-
-    // Bus latency readout (any thread): insert-chain latency of one bus.
-    int getBusLatencySamples (int bus) const noexcept;
-    double getBusLatencyMs (int bus) const noexcept;
 
     // Bus names and groups (message thread). Buses keep the fixed 6-slot
     // capacity: slots 0-2 are the Hardware (A) group, 3-5 the Virtual (B)
@@ -229,6 +218,8 @@ private:
     std::array<omx::RmsMeter, kNumBuses> busRmsR;
     std::array<omx::Eq3, kNumBuses> busEq;
     std::array<omx::Compressor, kNumBuses> busComp;
+    std::array<juce::SmoothedValue<float>, kNumBuses> busEqMix, busCompMix;   // on/off crossfades
+    juce::AudioBuffer<float> busDry;                                           // dry copy while fading
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;
 
     // CPU meter (see the public getters above).

@@ -1171,6 +1171,14 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
     if (source == &engine.getDeviceManager())
     {
+        // The WAV headers carry the old rate: carrying on would play back at the wrong speed.
+        auto& rec = engine.getRecorder();
+        if (rec.isRecording() && std::abs (rec.getSampleRate() - engine.getSampleRate()) > 0.5)
+        {
+            toggleRecording();
+            showNote ("Recording stopped: the sample rate changed. Saved to " + rec.getLastFolder().getFullPathName());
+        }
+
         for (auto& s : console->strips) s->refreshDevice();
         for (auto& b : console->buses)  b->refreshDevice();
     }
@@ -1278,7 +1286,7 @@ void MainComponent::timerCallback()
     }
 
     if (ticks % 300 == 0)
-        Session::save (engine);
+        Session::save (engine, true);   // plugin state refreshed at most once a minute here
 }
 
 //==============================================================================
@@ -1691,7 +1699,7 @@ void MainComponent::deleteScene (int index)
     juce::Component::SafePointer<MainComponent> safe (this);
     juce::AlertWindow::showAsync (
         juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle ("Delete scene \"" + name + "\"?")
-            .withMessage ("The mix as it is now doesn't change. Hotkeys for later scenes move up with them.")
+            .withMessage ("The mix as it is now doesn't change. Hotkeys and MIDI buttons for later scenes move up with them.")
             .withButton ("Delete", 1).withButton ("Cancel", 0).withAssociatedComponent (this),
         [safe, index] (int result)
         {
@@ -1716,6 +1724,21 @@ void MainComponent::deleteScene (int index)
             }
             safe->hotkeys.setBindings (std::move (kept));
             safe->hotkeys.save();
+
+            // MIDI scene buttons too ("scene/N" is 1-based).
+            std::vector<MidiControl::Mapping> midiKept;
+            for (auto m : safe->midiControl.getMappings())
+            {
+                if (m.target.startsWith ("scene/"))
+                {
+                    const int scene = m.target.fromFirstOccurrenceOf ("/", false, false).getIntValue() - 1;
+                    if (scene == index) continue;
+                    if (scene > index)  m.target = "scene/" + juce::String (scene);
+                }
+                midiKept.push_back (m);
+            }
+            safe->midiControl.setMappings (midiKept);
+            AppSettings::get().setMidiMappings (MidiControl::mappingsToJson (midiKept));
 
             safe->updateSceneButton();
             Session::save (engine);

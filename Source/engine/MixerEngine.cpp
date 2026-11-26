@@ -3,11 +3,6 @@
 #include <cmath>
 #include <optional>
 
-static float dbToGain (float db) noexcept
-{
-    return db <= -60.0f ? 0.0f : juce::Decibels::decibelsToGain (db);
-}
-
 MixerEngine::MixerEngine()
 {
     juce::addDefaultFormatsToManager (formatManager);
@@ -342,7 +337,7 @@ int MixerEngine::getNumActiveBuses() const
 }
 
 //==============================================================================
-// Solo-safe + latency readout + named strip presets (see MixerEngine.h)
+// Solo + named strip presets (see MixerEngine.h)
 
 int MixerEngine::getMonitorBus() const noexcept
 {
@@ -376,18 +371,8 @@ bool MixerEngine::isStripMutedBySolo (int strip) const noexcept
     return ! omx::stripAudibleOnMonitorBus (false, s.soloSafe.load(), s.busOn[(size_t) monitor].load());
 }
 
-int MixerEngine::getBusLatencySamples (int bus) const noexcept
-{
-    return juce::isPositiveAndBelow (bus, kNumBuses) ? buses[(size_t) bus].getLatencySamples() : 0;
-}
-
-double MixerEngine::getBusLatencyMs (int bus) const noexcept
-{
-    return juce::isPositiveAndBelow (bus, kNumBuses) ? buses[(size_t) bus].getLatencyMs (getSampleRate()) : 0.0;
-}
-
 //==============================================================================
-// Bus names / groups, tap tempo, global FX units (see MixerEngine.h)
+// Bus names / groups (see MixerEngine.h)
 
 juce::String MixerEngine::getBusName (int bus) const
 {
@@ -692,6 +677,7 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     }
     sourceBuffer.setSize (2, maxBlock);
     busBuffer.setSize (kNumBuses * 2, maxBlock);
+    busDry.setSize (2, maxBlock);
 
     for (int b = 0; b < kNumBuses; ++b)
     {
@@ -703,6 +689,10 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         busRmsR[(size_t) b].prepare (sr);
         busEq[(size_t) b].prepare (sr);
         busComp[(size_t) b].prepare (sr);
+        for (auto* mix : { &busEqMix[(size_t) b], &busCompMix[(size_t) b] })
+            mix->reset (sr, 0.02);
+        busEqMix[(size_t) b].setCurrentAndTargetValue (buses[(size_t) b].fx.eqOn.load() ? 1.0f : 0.0f);
+        busCompMix[(size_t) b].setCurrentAndTargetValue (buses[(size_t) b].fx.compOn.load() ? 1.0f : 0.0f);
         buses[(size_t) b].inserts.prepare (sr, maxBlock);
     }
 
@@ -885,24 +875,52 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         auto* R = busBuffer.getWritePointer (b * 2 + 1);
 
         // Bus processing (before the fader, so the fader stays a plain level control).
-        if (bus.fx.eqOn.load())
+        // Switching EQ or compressor on/off crossfades with the dry signal over ~20 ms.
+        auto runFaded = [&] (juce::SmoothedValue<float>& mix, bool on, auto&& process)
         {
-            auto& eq = busEq[(size_t) b];
+            mix.setTargetValue (on ? 1.0f : 0.0f);
+            if (! mix.isSmoothing())
+            {
+                if (on)
+                    process();
+                return;
+            }
+            busDry.copyFrom (0, 0, L, n);
+            busDry.copyFrom (1, 0, R, n);
+            const float start = mix.getCurrentValue();
+            mix.skip (n);
+            const float end = mix.getCurrentValue();
+            process();
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                busBuffer.applyGainRamp (b * 2 + ch, 0, n, start, end);
+                busBuffer.addFromWithRamp (b * 2 + ch, 0, busDry.getReadPointer (ch), n, 1.0f - start, 1.0f - end);
+            }
+        };
+
+        auto& eq = busEq[(size_t) b];
+        if (bus.fx.eqOn.load() && busEqMix[(size_t) b].getCurrentValue() == 0.0f)
+            eq.reset();   // starting from off: no stale filter state
+        runFaded (busEqMix[(size_t) b], bus.fx.eqOn.load(), [&]
+        {
             eq.lowDb = bus.fx.eqLowDb.load();
             eq.midDb = bus.fx.eqMidDb.load();
             eq.midHz = bus.fx.eqMidHz.load();
             eq.highDb = bus.fx.eqHighDb.load();
             eq.process (L, R, n);
-        }
-        if (bus.fx.compOn.load())
+        });
+
+        auto& comp = busComp[(size_t) b];
+        if (bus.fx.compOn.load() && busCompMix[(size_t) b].getCurrentValue() == 0.0f)
+            comp.reset();
+        runFaded (busCompMix[(size_t) b], bus.fx.compOn.load(), [&]
         {
-            auto& comp = busComp[(size_t) b];
             comp.thresholdDb = bus.fx.compThresholdDb.load();
             comp.ratio = bus.fx.compRatio.load();
             const float gr = comp.process (L, R, n);
             if (gr < bus.fx.compGain.load (std::memory_order_relaxed))
                 bus.fx.compGain.store (gr, std::memory_order_relaxed);
-        }
+        });
         int busLatency = 0;
         bus.inserts.process (L, R, n, busLatency);
 

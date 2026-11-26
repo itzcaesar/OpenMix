@@ -1,14 +1,6 @@
 #include "app/MidiControl.h"
 #include "app/AppSettings.h"
 
-static int busIndexFromName (const juce::String& name)
-{
-    for (int b = 0; b < kNumBuses; ++b)
-        if (name.equalsIgnoreCase (kBusNames[b]))
-            return b;
-    return -1;
-}
-
 MidiControl::MidiControl (MixerEngine& e) : engine (e) {}
 MidiControl::~MidiControl()
 {

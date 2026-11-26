@@ -50,7 +50,7 @@ stands:
 - [ ] Test loading, removing and replacing plugins while audio runs. Try a denoiser
       (RNNoise-based or DeepFilterNet) and a pitch corrector (Graillon / MAutoPitch)
 - [ ] Changing sample rate or buffer size while running must not crash or glitch for long
-- [x] Autosave every 10 s (only when something changed) and on exit
+- [x] Autosave every 10 s (only when something changed; plugin state at most once a minute) and on exit
 - [x] Core unit tests (plain C++, run in CI): filters, clock bridge, limiter, delay line
 
 **Done when:** a mic runs through denoiser -> autotune -> pad -> A1 headphones for an hour

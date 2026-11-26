@@ -19,6 +19,9 @@ inline const char* const kBusNames[kNumBuses] { "A1", "A2", "A3", "B1", "B2", "B
 constexpr int kDefaultStrips = 3;
 inline bool isDefaultBus (int b) { return b == 0 || b == 1 || b == 3; }   // A1, A2, B1
 
+// Fader/gain dB to gain; -60 dB and below is silence.
+inline float dbToGain (float db) noexcept { return db <= -60.0f ? 0.0f : juce::Decibels::decibelsToGain (db); }
+
 // Where a strip's audio comes from.
 enum class SourceType : int
 {
@@ -87,38 +90,14 @@ public:
     // 1k..20k Hz (LPF). Toggling is click-free: the filters keep running and the
     // wet/dry blend is smoothed over ~20 ms (see process()).
     void setHpfEnabled (bool enabled) noexcept { fx.hpfOn.store (enabled); }
-    bool isHpfEnabled() const noexcept         { return fx.hpfOn.load(); }
     void setHpfCutoff (float hz) noexcept      { fx.hpfHz.store (juce::jlimit (20.0f, 1000.0f, hz)); }
-    float getHpfCutoff() const noexcept        { return fx.hpfHz.load(); }
     void setLpfEnabled (bool enabled) noexcept { fx.lpfOn.store (enabled); }
-    bool isLpfEnabled() const noexcept         { return fx.lpfOn.load(); }
     void setLpfCutoff (float hz) noexcept      { fx.lpfHz.store (juce::jlimit (1000.0f, 20000.0f, hz)); }
-    float getLpfCutoff() const noexcept        { return fx.lpfHz.load(); }
 
     // Solo-safe (message thread): while anything is soloed, this strip is never
     // muted by the solo action on the monitor bus (see omx::stripAudibleOnMonitorBus).
     void setSoloSafe (bool safe) noexcept { soloSafe.store (safe); }
     bool isSoloSafe() const noexcept      { return soloSafe.load(); }
-
-    // Latency readout (any thread). getLatencySamples() is the last block's total,
-    // the value latency alignment uses. getTotalLatencySamples/Ms() recompute it
-    // live from the current state: denoiser latency (only while noise removal is
-    // on) + insert-chain latency. getLatencyMs() is the same total in milliseconds.
-    int getLatencySamples() const noexcept { return latencySamples.load (std::memory_order_relaxed); }
-    int getPluginLatencySamples() const noexcept { return inserts.latencySamples.load (std::memory_order_relaxed); }
-    int getDenoiserLatencySamples() const noexcept
-    {
-        return (fx.denoiseOn.load() && denoiser.isAvailable()) ? denoiser.getLatency() : 0;
-    }
-    int getTotalLatencySamples() const noexcept
-    {
-        return omx::stripTotalLatencySamples (getDenoiserLatencySamples(), getPluginLatencySamples());
-    }
-    double getLatencyMs() const noexcept       { return getTotalLatencyMs(); }
-    double getTotalLatencyMs() const noexcept
-    {
-        return sampleRate > 0.0 ? 1000.0 * (double) getTotalLatencySamples() / sampleRate : 0.0;
-    }
 
     // Strip preset (message thread): the strip's sound, see omx::StripPreset.
     // savePreset() snapshots the current settings; loadPreset() applies a preset
@@ -151,7 +130,6 @@ public:
     std::atomic<bool> active { false };      // shown and processed
 
     PluginChain inserts;                     // VST3 inserts (slots, bypass, wet/dry)
-    std::atomic<int> faultCount { 0 };       // NaN/Inf events caught after the inserts
 
     // Message thread only
     juce::String name;                  // user-editable label

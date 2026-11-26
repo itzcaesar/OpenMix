@@ -20,7 +20,8 @@ to work around silently.
   "Loading..." meanwhile.
 - Global hotkeys use a keyboard hook that only listens. A game with
   strict anti-cheat could in principle object to any keyboard hook;
-  Discord and OBS use the same mechanism.
+  Discord and OBS use the same mechanism. The hook runs on its own
+  thread, so a busy OpenMix never slows typing in other apps.
 - "App's own output" uses the same Windows setting as Settings > Sound >
   Volume mixer. The interface behind it is undocumented, so on an
   unusual Windows build it can report that it's unavailable.
@@ -39,7 +40,9 @@ only).
 
 Plugins are scanned in the background, each in its own process, so a
 plugin that crashes while being scanned is skipped instead of taking
-OpenMix down. Try again from Settings > Retry skipped plugins. The
+OpenMix down. A plugin that only takes too long to scan, or is still
+being scanned when you quit, is not skipped: it is scanned again next
+time. Try again from Settings > Retry skipped plugins. The
 crash-safe loading probe also skips a plugin that crashes while starting;
 retry it the same way. A plugin that is only slow to start is not
 skipped: OpenMix asks whether to load it anyway.
@@ -85,5 +88,7 @@ does not come back, re-pick it in the strip or bus source/output menu.
 - **Core tests** (`ctest`, no JUCE needed): clock drift and jitter,
   resampling pitch, limiter, NaN detection, DC blocker, filter
   stability, dynamics, denoiser latency at 44.1 and 48 kHz, the EBU
-  loudness reference, RMS metering and loudness normalisation. They run
-  in CI on every push.
+  loudness reference, RMS metering and loudness normalisation. App tests
+  cover session loading (including old files), scenes, presets, plugin
+  slot moves, the remote and MIDI commands, the soundboard and the hotkey
+  thread. Both run in CI on every push.

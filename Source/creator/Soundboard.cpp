@@ -143,14 +143,16 @@ bool Soundboard::render (float* left, float* right, int numSamples) noexcept
     bool any = false;
     for (auto& pad : pads)
     {
+        const int fadeLength = juce::jmax (1, (int) (rate * 0.005));   // 5 ms: stopping mid-sound doesn't click
         if (const int cmd = pad.command.exchange (0); cmd == 1)
         {
             pad.pos = 0;
+            pad.fadeOut = 0;
             pad.playing = pad.playable.getNumSamples() > 0;
         }
-        else if (cmd == 2)
+        else if (cmd == 2 && pad.playing && pad.fadeOut == 0)
         {
-            pad.playing = false;
+            pad.fadeOut = fadeLength;
         }
 
         if (! pad.playing)
@@ -159,9 +161,27 @@ bool Soundboard::render (float* left, float* right, int numSamples) noexcept
             continue;
         }
 
-        const int n = juce::jmin (numSamples, pad.playable.getNumSamples() - pad.pos);
-        juce::FloatVectorOperations::add (left, pad.playable.getReadPointer (0, pad.pos), n);
-        juce::FloatVectorOperations::add (right, pad.playable.getReadPointer (1, pad.pos), n);
+        int n = juce::jmin (numSamples, pad.playable.getNumSamples() - pad.pos);
+        if (pad.fadeOut > 0)
+        {
+            n = juce::jmin (n, pad.fadeOut);
+            const auto* srcL = pad.playable.getReadPointer (0, pad.pos);
+            const auto* srcR = pad.playable.getReadPointer (1, pad.pos);
+            for (int i = 0; i < n; ++i)
+            {
+                const float g = (float) (pad.fadeOut - i) / (float) fadeLength;
+                left[i] += srcL[i] * g;
+                right[i] += srcR[i] * g;
+            }
+            pad.fadeOut -= n;
+            if (pad.fadeOut == 0)
+                pad.playing = false;
+        }
+        else
+        {
+            juce::FloatVectorOperations::add (left, pad.playable.getReadPointer (0, pad.pos), n);
+            juce::FloatVectorOperations::add (right, pad.playable.getReadPointer (1, pad.pos), n);
+        }
         pad.pos += n;
         if (pad.pos >= pad.playable.getNumSamples())
             pad.playing = false;

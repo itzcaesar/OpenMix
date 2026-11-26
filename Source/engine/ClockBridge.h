@@ -119,7 +119,6 @@ public:
         avgFill += 0.002 * (fill - avgFill);
         const double correction = std::clamp (1.0 + (avgFill - target) * 1.0e-5, 0.997, 1.003);
         const double s = step * correction;
-        ratioPpm.store ((float) ((correction - 1.0) * 1.0e6), std::memory_order_relaxed);
 
         for (int i = 0; i < numFrames; ++i)
         {
@@ -143,7 +142,6 @@ public:
 
     // Diagnostics
     std::atomic<int> underruns { 0 }, overruns { 0 };
-    std::atomic<float> ratioPpm { 0.0f };
 
 private:
     static void silence (float* l, float* r, int n) noexcept

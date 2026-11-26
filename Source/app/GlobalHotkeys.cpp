@@ -65,46 +65,81 @@ GlobalHotkeys::GlobalHotkeys()
 
 GlobalHotkeys::~GlobalHotkeys()
 {
-    if (hook != nullptr)
-        UnhookWindowsHookEx ((HHOOK) hook);
-    hook = nullptr;
+    stopHookThread();
     *alive = false;
     instance = nullptr;
 }
 
 void GlobalHotkeys::updateHook()
 {
-    const bool wanted = ! bindings.empty() || captureCallback != nullptr;
-    if (wanted && hook == nullptr)
-        hook = SetWindowsHookExW (WH_KEYBOARD_LL, keyboardHook, GetModuleHandleW (nullptr), 0);
-    else if (! wanted && hook != nullptr)
+    bool wanted;
     {
-        UnhookWindowsHookEx ((HHOOK) hook);
-        hook = nullptr;
+        const std::lock_guard<std::mutex> l (lock);
+        wanted = ! bindings.empty() || captureCallback != nullptr;
     }
+
+    if (wanted && ! hookThread.joinable())
+    {
+        hookThread = std::thread ([this]
+        {
+            MSG msg;
+            PeekMessageW (&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);   // creates this thread's queue
+            HHOOK hook = SetWindowsHookExW (WH_KEYBOARD_LL, keyboardHook, GetModuleHandleW (nullptr), 0);
+            hookThreadId = GetCurrentThreadId();
+            while (GetMessageW (&msg, nullptr, 0, 0) > 0) {}   // the hook is called from in here
+            if (hook != nullptr)
+                UnhookWindowsHookEx (hook);
+        });
+    }
+    else if (! wanted)
+    {
+        stopHookThread();
+    }
+}
+
+void GlobalHotkeys::stopHookThread()
+{
+    if (! hookThread.joinable())
+        return;
+    while (hookThreadId.load() == 0)   // the thread is still starting up
+        std::this_thread::yield();
+    PostThreadMessageW ((DWORD) hookThreadId.load(), WM_QUIT, 0, 0);
+    hookThread.join();
+    hookThreadId = 0;
 }
 
 void GlobalHotkeys::setBindings (std::vector<Binding> b)
 {
-    bindings = std::move (b);
-    held.clear();
+    {
+        const std::lock_guard<std::mutex> l (lock);
+        bindings = std::move (b);
+        held.clear();
+    }
     updateHook();
 }
 
 void GlobalHotkeys::captureNext (std::function<void (Keys)> callback)
 {
-    captureCallback = std::move (callback);
+    {
+        const std::lock_guard<std::mutex> l (lock);
+        captureCallback = std::move (callback);
+    }
     updateHook();
 }
 
 void GlobalHotkeys::cancelCapture()
 {
-    captureCallback = nullptr;
+    {
+        const std::lock_guard<std::mutex> l (lock);
+        captureCallback = nullptr;
+    }
     updateHook();
 }
 
 bool GlobalHotkeys::handleKey (int vk, bool down)
 {
+    const std::lock_guard<std::mutex> l (lock);
+
     // Capturing a new binding: the next non-modifier key, with the modifiers held right now.
     if (captureCallback != nullptr)
     {
@@ -124,7 +159,7 @@ bool GlobalHotkeys::handleKey (int vk, bool down)
             if (*a)
             {
                 callback (keys);
-                updateHook();
+                updateHook();   // message thread
             }
         });
         return true;
@@ -150,7 +185,7 @@ bool GlobalHotkeys::handleKey (int vk, bool down)
         if (fired)
         {
             held.push_back (vk);
-            lastFireMs = juce::Time::getMillisecondCounter();
+            lastFireMs.store (juce::Time::getMillisecondCounter());
         }
     }
     else if (auto it = std::find (held.begin(), held.end(), vk); it != held.end())
@@ -245,7 +280,7 @@ void GlobalHotkeys::load()
 void GlobalHotkeys::save() const
 {
     juce::XmlElement root ("Hotkeys");
-    for (const auto& b : bindings)
+    for (const auto& b : getBindings())
     {
         auto* e = root.createNewChildElement ("Hotkey");
         e->setAttribute ("vk", b.keys.vk);

@@ -32,8 +32,9 @@ The same port is the API:
 ## OSC
 
 Off by default (Settings). While it's on, OpenMix listens on a UDP port
-(9000 unless you change it). Values are dB unless noted; strips and pads
-count from 1.
+(9000 unless you change it). Values are dB unless noted (out-of-range
+values are clamped, NaN and infinity are ignored); strips and pads count
+from 1.
 
 | Address | Argument |
 |---|---|

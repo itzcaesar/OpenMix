@@ -61,6 +61,7 @@ slots A1–A3 are always **Hardware**, B1–B3 always **Virtual**.
 ## Processing and inserts
 
 **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip.
+Switching EQ or Comp fades over about 20 ms, so it never clicks.
 
 **Bus path:** sum, EQ, compressor, inserts, loudness normalisation,
 fader, safety limiter.

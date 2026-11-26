@@ -1,13 +1,5 @@
 #include "app/RemoteCommands.h"
 
-static int busIndexFromName (const juce::String& name)
-{
-    for (int b = 0; b < kNumBuses; ++b)
-        if (name.equalsIgnoreCase (kBusNames[b]))
-            return b;
-    return -1;
-}
-
 bool applyRemoteCommand (MixerEngine& engine, const juce::String& path, float v,
                          const RemoteCallbacks& cb)
 {
@@ -19,7 +11,7 @@ bool applyRemoteCommand (MixerEngine& engine, const juce::String& path, float v,
     if (p[0] == "openmix")
         p.remove (0);
 
-    if (p.isEmpty())
+    if (p.isEmpty() || ! std::isfinite (v))   // an OSC float can carry NaN/Inf, which jlimit lets through
         return false;
 
     bool changed = true;

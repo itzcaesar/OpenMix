@@ -46,14 +46,6 @@ namespace omx
     }
 
     //==========================================================================
-    // Latency: a strip's total is its denoiser latency (only while noise removal is
-    // on) plus its insert chain's latency. Negative inputs are treated as 0.
-    inline int stripTotalLatencySamples (int denoiseLatencySamples, int pluginLatencySamples) noexcept
-    {
-        return std::max (0, denoiseLatencySamples) + std::max (0, pluginLatencySamples);
-    }
-
-    //==========================================================================
     // One insert slot in a preset: just enough to find the plugin again.
     // No state blob: the plugin loads with its defaults, and if the plugin is not
     // installed any more the slot is skipped (counted as missing by loadPreset).

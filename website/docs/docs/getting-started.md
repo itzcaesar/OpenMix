@@ -79,7 +79,7 @@ button that opens the release page. It doesn't download or install anything.
 
 | What | Where |
 |---|---|
-| Session (devices, theme, strips, plugins and their settings, buses, soundboard) | `%APPDATA%\OpenMix\session.xml`, every 10 seconds and on exit |
+| Session (devices, theme, strips, plugins and their settings, buses, soundboard) | `%APPDATA%\OpenMix\session.xml`, every 10 seconds (plugin state at most once a minute) and on exit |
 | Scenes | inside the session |
 | App settings (startup, tray, OSC, phone/WebSocket, MIDI, hotkeys, recording options) | `%APPDATA%\OpenMix\settings.xml` |
 | Log and crash reports | `%APPDATA%\OpenMix\openmix.log`, `crash-<time>.txt` |

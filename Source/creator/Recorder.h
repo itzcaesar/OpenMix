@@ -25,6 +25,7 @@ public:
     void stop();
     bool isRecording() const noexcept { return recording.load(); }
     double getElapsedSeconds() const;
+    double getSampleRate() const noexcept { return startedAtRate; }   // the rate the files were opened at
     juce::File getLastFolder() const { return lastFolder; }
     static juce::File getRecordingsFolder();
 
@@ -47,6 +48,7 @@ private:
     std::vector<Slot> slots;
     std::atomic<bool> recording { false };
     juce::uint32 startedAtMs = 0;
+    double startedAtRate = 0.0;
     juce::File lastFolder;
 };
 

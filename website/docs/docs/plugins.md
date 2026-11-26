@@ -6,7 +6,9 @@
 `C:\Program Files\Common Files\VST3`, grouped by maker when there are
 many. They are scanned in the background, each in its own process, so a
 plugin that crashes while being scanned is skipped instead of taking
-OpenMix down (Settings > Retry skipped plugins tries them again).
+OpenMix down (Settings > Retry skipped plugins tries them again). A plugin
+that only takes too long, or is still being scanned when you quit, is
+scanned again next time instead.
 
 - Click a plugin to open its window; its lamp bypasses it (with a short
   crossfade, and its latency kept so timing doesn't jump).

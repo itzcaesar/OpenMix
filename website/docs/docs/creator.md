@@ -11,8 +11,9 @@ click.
 
 The **Scene** picker in the header lists your scenes; click one to switch.
 The same menu saves the current mix as a new scene, updates the current
-scene, renames or deletes it, and opens Hotkeys. Scenes are saved with the
-session. Over OSC, `/openmix/scene/<n>` switches to scene n (counting
+scene, renames or deletes it, and opens Hotkeys. Deleting a scene moves the
+hotkeys and MIDI buttons of later scenes up with them. Scenes are saved with
+the session. Over OSC, `/openmix/scene/<n>` switches to scene n (counting
 from 1).
 
 ## Global hotkeys
@@ -33,17 +34,22 @@ app, so pick combinations it doesn't use (for example with Ctrl+Alt).
 !!! note
     Global hotkeys use a keyboard hook that only listens. A game with
     strict anti-cheat could in principle object to any keyboard hook;
-    Discord and OBS use the same mechanism.
+    Discord and OBS use the same mechanism. The hook runs on its own
+    thread, so a busy OpenMix never slows typing in other apps.
 
 ## Recording and replay
 
 - **Record** (Ctrl+Shift+R) writes every bus, every strip, or both, to
-  one WAV file each in `Documents\OpenMix Recordings\<date and time>`.
-  While recording, the button shows the elapsed time.
+  one WAV file each in `Documents\OpenMix Recordings\<date and time>`
+  (a second take in the same second gets its own folder).
+  While recording, the button shows the elapsed time. Changing the sample
+  rate in Audio settings stops the recording, so the files never play back
+  at the wrong speed.
 - The dots next to Record choose what to record, set the **replay
   buffer** and open the recordings folder.
 - **Replay buffer:** keeps the last 30, 60 or 120 seconds of one bus in
-  memory. **Replay** (Ctrl+Shift+S) saves them as a WAV file.
+  memory. **Replay** (Ctrl+Shift+S) saves them as a WAV file; saving
+  twice never overwrites the first.
 
 ## Soundboard
 
@@ -51,7 +57,8 @@ A bar along the bottom of the window (the header's **Soundboard** button
 shows or hides it).
 
 - Eight pads for WAV, MP3, FLAC or Ogg files up to 60 seconds. Click a
-  pad, or press 1–8 anywhere in OpenMix, to play; again to stop.
+  pad, or press 1–8 anywhere in OpenMix, to play; again to stop (with a
+  short fade, so it doesn't click).
   Right-click a pad (or M) to load, rename or clear it.
 - Its own volume and meter, and **Play on** keys for the buses it plays on
   (A1 and B1 by default, so you and your stream both hear it).

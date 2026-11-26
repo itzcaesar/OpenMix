@@ -54,7 +54,9 @@ public:
 
 private:
     void run() override;
-    bool scanOneInChildProcess (const juce::String& file, juce::String& error);
+    // False when the file isn't a usable plugin. retryLater: it didn't crash, the scan was
+    // stopped or timed out, so it isn't put on the skip list.
+    bool scanOneInChildProcess (const juce::String& file, juce::String& error, bool& retryLater);
     void saveCache();
     // Formats to scan: always VST3, plus VST (VST2) when JUCE_PLUGINHOST_VST is on.
     // With the default build the VST format is not registered, so this returns VST3 only.

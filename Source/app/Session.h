@@ -11,7 +11,9 @@ namespace Session
     juce::File getFile();
 
     std::unique_ptr<juce::XmlElement> load();
-    void save (MixerEngine&);
+    // reusePluginState: take each plugin's state from a copy up to a minute old instead of
+    // asking the plugin (some take 100 ms+ and return megabytes). For the periodic autosave.
+    void save (MixerEngine&, bool reusePluginState = false);
 
     // Applies everything except the audio device (which MixerEngine::start handles).
     // loadPlugins = false skips plugin slots (safe mode after a crash while loading them).

@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
+#include <set>
 #include <vector>
 
 // Session format
@@ -114,6 +116,33 @@ static void loadProcessing (const juce::XmlElement* e, ProcessingParams& fx)
     fx.duckThresholdDb.store (f ("duckThreshold", -40.0));
 }
 
+// Plugin state copies for Session::save (message thread only).
+struct CachedPluginState
+{
+    juce::String plugin;   // which plugin it came from: a new plugin may get a freed one's address
+    juce::String base64;
+    juce::uint32 takenMs = 0;
+};
+static std::map<const juce::AudioPluginInstance*, CachedPluginState> stateCache;
+static std::set<const juce::AudioPluginInstance*> stateSeen;
+static bool reuseStateThisSave = false;
+
+static juce::String pluginState (juce::AudioPluginInstance& plugin)
+{
+    const auto id = plugin.getPluginDescription().createIdentifierString();
+    const auto now = juce::Time::getMillisecondCounter();
+    auto& cached = stateCache[&plugin];
+    stateSeen.insert (&plugin);
+
+    if (! reuseStateThisSave || cached.plugin != id || cached.takenMs == 0 || now - cached.takenMs > 60000)
+    {
+        juce::MemoryBlock state;
+        plugin.getStateInformation (state);
+        cached = { id, state.toBase64Encoding(), now };
+    }
+    return cached.base64;
+}
+
 static void saveChain (juce::XmlElement& x, PluginChain& chain)
 {
     for (int slot = 0; slot < kNumSlots; ++slot)
@@ -128,9 +157,7 @@ static void saveChain (juce::XmlElement& x, PluginChain& chain)
         xp->setAttribute ("mix", chain.slotMix[(size_t) slot].load());
         xp->addChildElement (plugin->getPluginDescription().createXml().release());
 
-        juce::MemoryBlock state;
-        plugin->getStateInformation (state);
-        xp->setAttribute ("state", state.toBase64Encoding());
+        xp->setAttribute ("state", pluginState (*plugin));
     }
 }
 
@@ -453,8 +480,11 @@ void Session::applyScene (const juce::XmlElement& root, MixerEngine& engine)
     engine.externalChanges.fetch_add (1);   // the UI refreshes what it shows
 }
 
-void Session::save (MixerEngine& engine)
+void Session::save (MixerEngine& engine, bool reusePluginState)
 {
+    reuseStateThisSave = reusePluginState;
+    stateSeen.clear();
+
     juce::XmlElement root ("OpenMixSession");
     root.setAttribute ("version", sessionVersion);
     root.setAttribute ("theme", Theme::isDark() ? "dark" : "light");
@@ -557,6 +587,10 @@ void Session::save (MixerEngine& engine)
         for (const auto& preset : engine.stripPresets)
             saveStripPresetXml (*xs, preset.name, preset.preset);
     }
+
+    // Forget copies of plugins that are gone.
+    for (auto it = stateCache.begin(); it != stateCache.end();)
+        it = stateSeen.count (it->first) != 0 ? std::next (it) : stateCache.erase (it);
 
     // Only touch the disk when something actually changed (this runs every few seconds).
     static juce::String lastWritten;

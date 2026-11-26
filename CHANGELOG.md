@@ -74,7 +74,8 @@ This is OpenMix's first public release. There was no earlier release:
   (learned, saved straight away, reconnecting when the controller is plugged
   back in), and Stream Deck via OSC / WebSocket plugins.
 - Session save / restore and autosave every 10 seconds (only when something
-  changed) and on exit.
+  changed; plugin state is refreshed at most once a minute, so heavy plugins
+  don't stutter the window) and on exit.
 
 **Interface**
 
@@ -103,7 +104,8 @@ This is OpenMix's first public release. There was no earlier release:
   (Web pages from other sites are refused.)
 - Global hotkeys use a keyboard hook that only listens. A game with strict
   anti-cheat could in principle object to any keyboard hook; Discord and OBS
-  use the same mechanism.
+  use the same mechanism. The hook runs on its own thread, so a busy OpenMix
+  never slows typing in other apps.
 - "App's own output" uses the same Windows setting as Settings > Sound >
   Volume mixer. The interface behind it is undocumented, so on an unusual
   Windows build it can report that it's working when it isn't.

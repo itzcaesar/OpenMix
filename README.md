@@ -159,7 +159,8 @@ de-esser, inserts, voice pad, ducking, latency alignment, mute, fader, sends.
 "+ Add plugin" lists the VST3 plugins in `C:\Program Files\Common Files\VST3`, grouped by
 maker when there are many. They are scanned in the background, each in its own process, so
 a plugin that crashes while being scanned is skipped instead of taking OpenMix down
-(Settings > Retry skipped plugins tries them again).
+(Settings > Retry skipped plugins tries them again). A plugin that only takes too long, or
+is still being scanned when you quit, is scanned again next time instead.
 
 - Click a plugin to open its window; its lamp bypasses it (with a short crossfade, and its
   latency kept so timing doesn't jump).
@@ -233,8 +234,9 @@ empty on a default (VST2-off) build.
   fader still turns the result up or down. It holds its gain in silence instead of turning
   the noise floor up, and glides back to unity when you switch it off. It is saved with the
   session and with scenes.
-- **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip. Bus path: sum, EQ,
-  compressor, inserts, loudness normalisation, fader, safety limiter.
+- **EQ** and **Comp** keys and up to 6 **inserts**, the same as on a strip (EQ and Comp fade
+  in and out instead of clicking). Bus path: sum, EQ, compressor, inserts, loudness
+  normalisation, fader, safety limiter.
 - **Analyser:** a live spectrum on the bus strip. Click it for the full **analyser**: spectrum plus
   momentary, short-term and integrated loudness.
 - The three-dot menu: rename the bus, analyser, loudness normalisation, monitor bus (where
@@ -243,20 +245,21 @@ empty on a default (VST2-off) build.
 ## Recording and replay
 
 - **Record** (Ctrl+Shift+R) writes every bus, every strip, or both, to one WAV file each in
-  `Documents\OpenMix Recordings\<date and time>`. While recording, the button shows the
-  elapsed time.
+  `Documents\OpenMix Recordings\<date and time>` (a second take in the same second gets its
+  own folder). While recording, the button shows the elapsed time. Changing the sample rate
+  in Audio settings stops the recording, so the files never play back at the wrong speed.
 - The dots next to Record choose what to record, set the **replay buffer** and open the
   recordings folder.
 - **Replay buffer:** keeps the last 30, 60 or 120 seconds of one bus in memory. **Replay**
-  (Ctrl+Shift+S) saves them as a WAV file.
+  (Ctrl+Shift+S) saves them as a WAV file; saving twice never overwrites the first.
 
 ## Soundboard
 
 A bar along the bottom of the window (the header's **Soundboard** button shows or hides it).
 
 - Eight pads for WAV, MP3, FLAC or Ogg files up to 60 seconds. Click a pad, or press 1-8
-  anywhere in OpenMix, to play; again to stop. Right-click a pad (or M) to load, rename or
-  clear it.
+  anywhere in OpenMix, to play; again to stop (with a short fade, so it doesn't click).
+  Right-click a pad (or M) to load, rename or clear it.
 - Its own volume and meter, and **Play on** keys for the buses it plays on (A1 and B1 by
   default, so you and your stream both hear it). **Stop all** stops every pad.
 
@@ -270,7 +273,8 @@ click.
 
 The **Scene** picker in the header lists your scenes; click one to switch. The same menu
 saves the current mix as a new scene, updates the current scene, renames or deletes it, and
-opens Hotkeys. Scenes are saved with the session. Over OSC, `/openmix/scene/<n>` switches to
+opens Hotkeys. Deleting a scene moves the hotkeys and MIDI buttons of later scenes up with
+them. Scenes are saved with the session. Over OSC, `/openmix/scene/<n>` switches to
 scene n (counting from 1).
 
 ## Global hotkeys
@@ -324,7 +328,8 @@ The same port is the API:
 
 Off by default (Settings). While it's on, OpenMix listens on a UDP port (9000 unless you
 change it) and anything on your network can control it, so only turn it on at home or on a
-network you trust. Values are dB unless noted; strips and pads count from 1.
+network you trust. Values are dB unless noted (out-of-range values are clamped, NaN and
+infinity are ignored); strips and pads count from 1.
 
 | Address | Argument |
 |---|---|
@@ -386,7 +391,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 
 | What | Where |
 |---|---|
-| Session (devices, theme, strips, plugins and their settings, buses, soundboard) | `%APPDATA%\OpenMix\session.xml`, every 10 seconds and on exit |
+| Session (devices, theme, strips, plugins and their settings, buses, soundboard) | `%APPDATA%\OpenMix\session.xml`, every 10 seconds (plugin state at most once a minute) and on exit |
 | Scenes | inside the session |
 | App settings (startup, tray, OSC, phone/WebSocket, MIDI, hotkeys, recording options) | `%APPDATA%\OpenMix\settings.xml` |
 | Log and crash reports | `%APPDATA%\OpenMix\openmix.log`, `crash-<time>.txt` |
@@ -412,7 +417,9 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 - **Crash report and log** in `%APPDATA%\OpenMix` (Settings > Open log folder).
 - **Core tests** (`ctest`, no JUCE needed): clock drift and jitter, resampling pitch,
   limiter, NaN detection, DC blocker, filter stability, dynamics, denoiser latency at 44.1
-  and 48 kHz, the EBU loudness reference, RMS metering and loudness normalisation. They run in CI on every push.
+  and 48 kHz, the EBU loudness reference, RMS metering and loudness normalisation. App tests
+  cover session loading (including old files), scenes, presets, plugin slot moves, the remote
+  and MIDI commands, the soundboard and the hotkey thread. Both run in CI on every push.
 
 ## Project layout
 
@@ -451,6 +458,7 @@ runs the tests, and attaches the zip and `OpenMix-<version>-setup.exe` to a GitH
   mixer while it is on. Only enable it on a network you trust.
 - Global hotkeys use a keyboard hook that only listens. A game with strict anti-cheat could
   in principle object to any keyboard hook; Discord and OBS use the same mechanism.
+  The hook runs on its own thread, so a busy OpenMix never slows typing in other apps.
 - "App's own output" uses the same Windows setting as Settings > Sound > Volume mixer. The
   interface behind it is undocumented, so on an unusual Windows build it can report that it's
   unavailable.

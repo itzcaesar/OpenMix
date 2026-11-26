@@ -36,7 +36,8 @@ bool Recorder::start (const std::vector<Target>& targets, double sampleRate, juc
 {
     stop();
 
-    const auto folder = getRecordingsFolder().getChildFile (juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S"));
+    // A new folder every time: a second start in the same second must not reuse (and wipe) the last one.
+    const auto folder = getRecordingsFolder().getNonexistentChildFile (juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S"), {}, true);
     if (! folder.createDirectory())
     {
         error = "Couldn't create " + folder.getFullPathName();
@@ -78,6 +79,7 @@ bool Recorder::start (const std::vector<Target>& targets, double sampleRate, juc
     }
     lastFolder = folder;
     startedAtMs = juce::Time::getMillisecondCounter();
+    startedAtRate = sampleRate;
     recording = true;
     return true;
 }
@@ -188,8 +190,10 @@ void ReplayBuffer::save (std::function<void (juce::File, juce::String)> onDone)
         sr = rate;
     }
 
-    const auto file = Recorder::getRecordingsFolder()
-                          .getChildFile ("Replay " + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S") + ".wav");
+    const auto folder = Recorder::getRecordingsFolder();
+    folder.createDirectory();
+    const auto file = folder.getNonexistentChildFile ("Replay " + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S"), ".wav", true);
+    file.create();   // claim the name now: a second save in the same second picks the next one
 
     juce::Thread::launch ([copy, sr, file, onDone]
     {

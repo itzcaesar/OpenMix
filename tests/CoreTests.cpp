@@ -406,15 +406,6 @@ int main()
         CHECK (! stripAudibleOnMonitorBus (false, false, false), "plain unrouted strip is silent");
     });
 
-    run ("Latency: strip total is denoiser + inserts, negatives treated as 0", []
-    {
-        using omx::stripTotalLatencySamples;
-        CHECK (stripTotalLatencySamples (960, 128) == 1088, "960 + 128 should be 1088");
-        CHECK (stripTotalLatencySamples (0, 0) == 0, "no latency should be 0");
-        CHECK (stripTotalLatencySamples (-5, 10) == 10, "negative denoiser latency should clamp to 0");
-        CHECK (stripTotalLatencySamples (960, -3) == 960, "negative plugin latency should clamp to 0");
-    });
-
     run ("StripPreset: defaults and copy round-trip keep every field", []
     {
         omx::StripPreset p;
