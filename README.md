@@ -169,6 +169,19 @@ on recall (or are on the crash skip list), those slots are skipped and you are t
 many. Open plugin windows on the strip close first. A preset does not store plugin state,
 and a preset never makes a strip duck under itself.
 
+**Icon** (three-dot menu) puts a small icon on the strip's name plate.
+
+**Copy strip** and **Paste strip** (three-dot menu) copy a whole strip onto another: the
+name, colour, levels, processing, voice pad, sends and plugins with their settings. The
+source, mute and solo stay as they are.
+
+**Working on several strips:** click a strip (its name plate or any empty part) to select
+it; Shift+click selects a range and Ctrl+click adds or removes one. Click the desk to clear
+the selection. A change on a selected strip happens on all of them: faders and gain move by
+the same amount, and keys, filters and send levels take the same setting. Paste strip
+pastes onto every selected strip. You can also drag from one strip's **M**, **S** or
+**SAFE** across the others to set them all the same way.
+
 Signal path: gain, polarity/mono, DC blocker, noise removal, gate, HPF/LPF, EQ, compressor,
 de-esser, inserts, voice pad, ducking, latency alignment, mute, fader, sends.
 

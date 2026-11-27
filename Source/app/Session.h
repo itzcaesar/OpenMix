@@ -22,4 +22,9 @@ namespace Session
     // Scenes: a snapshot of the mix only (not sources, devices or plugins), for quick recall.
     std::unique_ptr<juce::XmlElement> captureScene (MixerEngine&);
     void applyScene (const juce::XmlElement&, MixerEngine&);
+
+    // Copy / paste a strip: name, colour, levels, voice pad, sends, processing and plugins
+    // with their state. Not its source, mute or solo.
+    std::unique_ptr<juce::XmlElement> copyStrip (MixerEngine&, int strip);
+    void pasteStrip (const juce::XmlElement&, MixerEngine&, int strip);
 }

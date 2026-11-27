@@ -25,6 +25,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override { StripView::clearSelection(); }   // click the desk to deselect
 
     // Shows active strips/buses only; call after adding or removing one.
     void relayout();

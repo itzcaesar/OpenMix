@@ -311,6 +311,34 @@ int main (int argc, char** argv)
                "removing B1 left feeds to or from it");
     });
 
+    run ("Copy / paste strip: settings come along, source and mute stay, no self-ducking", []
+    {
+        MixerEngine engine;
+        auto& a = engine.getStrip (0);
+        auto& b = engine.getStrip (1);
+        a.name = "Mic"; a.colour = 3; a.icon = 4;
+        a.faderDb.store (-7.0f); a.gainDb.store (4.0f); a.mono.store (true);
+        a.busOn[3].store (true); a.sendDb[3].store (-9.0f); a.sendPre[3].store (true);
+        a.fx.compOn.store (true);
+        a.fx.duckOn.store (true); a.fx.duckSource.store (1);   // ducks under the strip it's pasted onto
+        a.mute.store (true);
+        engine.setStripSourceMedia (0);
+        b.mute.store (false);
+
+        auto copied = Session::copyStrip (engine, 0);
+        CHECK (copied != nullptr, "copy");
+        Session::pasteStrip (*copied, engine, 1);
+
+        CHECK (b.name == "Mic" && b.colour == 3 && b.icon == 4, "name, colour and icon");
+        CHECK (b.faderDb.load() == -7.0f && b.gainDb.load() == 4.0f && b.mono.load(), "levels and mono");
+        CHECK (b.busOn[3].load() && b.sendDb[3].load() == -9.0f && b.sendPre[3].load(), "sends");
+        CHECK (b.fx.compOn.load(), "processing");
+        CHECK (! b.mute.load(), "mute is not pasted");
+        CHECK (b.sourceType.load() != (int) SourceType::Media, "source is not pasted");
+        CHECK (! b.fx.duckOn.load() && b.fx.duckSource.load() == -1, "a strip must not duck under itself");
+        CHECK (Session::copyStrip (engine, kNumStrips) == nullptr, "bad index");
+    });
+
     run ("MixHistory: undo, redo, a new change drops redo, settle keeps it", []
     {
         MixHistory h;

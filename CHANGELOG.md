@@ -91,6 +91,10 @@ This is OpenMix's first public release. There was no earlier release:
   AIFF plus what Windows Media Foundation decodes (M4A, AAC, WMA, MP4, MOV,
   MKV, AVI, WMV and more); shows the waveform (click to seek) and the
   picture of video files.
+- **Strips:** copy and paste a whole strip (plugins keep their settings);
+  select several strips (Shift / Ctrl+click) and change them together; drag
+  across M, S or SAFE keys to set several strips at once; pick an icon for a
+  strip's name plate.
 - **Solo before the fader (PFL)** as an option in the Mixer menu; after-fader
   listen stays the default.
 - Release builds are code-signed when the repository has a certificate

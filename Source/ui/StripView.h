@@ -20,7 +20,18 @@ public:
     ~StripView() override;
 
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
+    void visibilityChanged() override { if (! isVisible()) setSelected (false); }
+
+    // Selection (click the strip or its name plate; Shift for a range, Ctrl to add or remove).
+    // An edit on a selected strip is applied to every selected strip: faders and gain move by
+    // the same amount, keys and other knobs take the same setting.
+    static void clearSelection();
+
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
 
     void refreshDevice();
     void refreshFromStrip();
@@ -58,6 +69,13 @@ private:
 
     juce::String displayName() const;
 
+    void select (const juce::ModifierKeys&);
+    void setSelected (bool);
+    void forOtherSelected (const std::function<void (StripView&)>&);
+    void copyStrip();
+    void pasteStrip();
+    StripKey& paintKey (int kind) { return kind == 0 ? muteButton : kind == 1 ? soloButton : safeButton; }
+
     MixerEngine& engine;
     ChannelStrip& strip;
     const int index;
@@ -82,6 +100,11 @@ private:
     juce::String latencyText;
     int bayTop = 0;
     bool inLayout = false;
+    bool selected = false;
+    // Dragging from M, S or SAFE across other strips sets theirs too.
+    int paintKind = -1;   // 0 mute, 1 solo, 2 safe; -1 not dragging a key
+    bool paintValue = false, painting = false;
+    juce::Point<int> lastPaintAt;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StripView)
 };

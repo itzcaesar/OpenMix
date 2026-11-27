@@ -275,6 +275,84 @@ void FaderSection::paint (juce::Graphics& g)
 //==============================================================================
 // TapeLabel
 
+const char* StripIcons::name (int icon)
+{
+    static const char* const names[count] { "None", "Mic", "Headphones", "Music", "Game", "Chat",
+                                            "Browser", "Media", "Pads", "Guest" };
+    return juce::isPositiveAndBelow (icon, count) ? names[icon] : names[0];
+}
+
+void StripIcons::draw (juce::Graphics& g, int icon, juce::Rectangle<float> area, juce::Colour colour)
+{
+    if (icon <= 0 || icon >= count)
+        return;
+    const auto a = area.withSizeKeepingCentre (juce::jmin (area.getWidth(), area.getHeight()), juce::jmin (area.getWidth(), area.getHeight()));
+    const float s = a.getWidth(), x = a.getX(), y = a.getY(), cx = a.getCentreX();
+    const float halfPi = juce::MathConstants<float>::halfPi;
+    const juce::PathStrokeType stroke (juce::jmax (1.2f, s * 0.1f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    g.setColour (colour);
+    juce::Path p;
+
+    switch (icon)
+    {
+        case 1:   // mic
+            g.fillRoundedRectangle (x + 0.34f * s, y + 0.06f * s, 0.32f * s, 0.5f * s, 0.16f * s);
+            p.addCentredArc (cx, y + 0.42f * s, 0.27f * s, 0.27f * s, 0.0f, halfPi, halfPi * 3.0f, true);
+            p.startNewSubPath (cx, y + 0.7f * s);  p.lineTo (cx, y + 0.9f * s);
+            p.startNewSubPath (x + 0.32f * s, y + 0.92f * s);  p.lineTo (x + 0.68f * s, y + 0.92f * s);
+            g.strokePath (p, stroke);
+            break;
+        case 2:   // headphones
+            p.addCentredArc (cx, y + 0.55f * s, 0.38f * s, 0.38f * s, 0.0f, -halfPi, halfPi, true);
+            g.strokePath (p, stroke);
+            g.fillRoundedRectangle (x + 0.06f * s, y + 0.52f * s, 0.2f * s, 0.38f * s, 0.06f * s);
+            g.fillRoundedRectangle (x + 0.74f * s, y + 0.52f * s, 0.2f * s, 0.38f * s, 0.06f * s);
+            break;
+        case 3:   // music note
+            g.fillEllipse (x + 0.16f * s, y + 0.64f * s, 0.34f * s, 0.26f * s);
+            p.startNewSubPath (x + 0.47f * s, y + 0.76f * s);  p.lineTo (x + 0.47f * s, y + 0.1f * s);
+            p.lineTo (x + 0.8f * s, y + 0.3f * s);
+            g.strokePath (p, stroke);
+            break;
+        case 4:   // game controller
+            p.addRoundedRectangle (x + 0.05f * s, y + 0.28f * s, 0.9f * s, 0.48f * s, 0.22f * s);
+            p.startNewSubPath (x + 0.22f * s, y + 0.52f * s);  p.lineTo (x + 0.42f * s, y + 0.52f * s);
+            p.startNewSubPath (x + 0.32f * s, y + 0.42f * s);  p.lineTo (x + 0.32f * s, y + 0.62f * s);
+            g.strokePath (p, stroke);
+            g.fillEllipse (x + 0.6f * s, y + 0.4f * s, 0.12f * s, 0.12f * s);
+            g.fillEllipse (x + 0.72f * s, y + 0.52f * s, 0.12f * s, 0.12f * s);
+            break;
+        case 5:   // chat bubble
+            p.addRoundedRectangle (x + 0.08f * s, y + 0.12f * s, 0.84f * s, 0.56f * s, 0.16f * s);
+            p.startNewSubPath (x + 0.3f * s, y + 0.68f * s);  p.lineTo (x + 0.24f * s, y + 0.9f * s);
+            p.lineTo (x + 0.48f * s, y + 0.68f * s);
+            g.strokePath (p, stroke);
+            break;
+        case 6:   // browser (globe)
+            p.addEllipse (x + 0.08f * s, y + 0.08f * s, 0.84f * s, 0.84f * s);
+            p.addEllipse (x + 0.3f * s, y + 0.08f * s, 0.4f * s, 0.84f * s);
+            p.startNewSubPath (x + 0.08f * s, y + 0.5f * s);  p.lineTo (x + 0.92f * s, y + 0.5f * s);
+            g.strokePath (p, stroke);
+            break;
+        case 7:   // media (play)
+            p.addTriangle (x + 0.24f * s, y + 0.12f * s, x + 0.24f * s, y + 0.88f * s, x + 0.86f * s, y + 0.5f * s);
+            g.fillPath (p);
+            break;
+        case 8:   // pads
+            for (int i = 0; i < 4; ++i)
+                g.fillRoundedRectangle (x + (0.1f + 0.44f * (float) (i % 2)) * s, y + (0.1f + 0.44f * (float) (i / 2)) * s,
+                                        0.36f * s, 0.36f * s, 0.06f * s);
+            break;
+        case 9:   // guest (person)
+            g.fillEllipse (x + 0.32f * s, y + 0.06f * s, 0.36f * s, 0.36f * s);
+            p.addCentredArc (cx, y + 0.95f * s, 0.4f * s, 0.42f * s, 0.0f, -halfPi, halfPi, true);
+            g.strokePath (p, stroke);
+            break;
+        default:
+            break;
+    }
+}
+
 TapeLabel::TapeLabel (bool canEdit) : editable (canEdit)
 {
     label.setFont (Theme::ui (12.5f, true));
@@ -318,7 +396,8 @@ void TapeLabel::setText (const juce::String& text)
 
 void TapeLabel::resized()
 {
-    label.setBounds (getLocalBounds().reduced (4, 1));
+    // With an icon, the name moves right of it (and keeps the same margin on the right, so it stays centred).
+    label.setBounds (getLocalBounds().reduced (icon > 0 ? getHeight() - 2 : 4, 1));
 }
 
 // Name plate: a solid bar in the channel's colour at the bottom of the column (the colour
@@ -332,6 +411,10 @@ void TapeLabel::paint (juce::Graphics& g)
     g.fillRoundedRectangle (r, Theme::controlRadius);
     g.setColour (bar.darker (0.4f));
     g.drawRoundedRectangle (r.reduced (0.5f), Theme::controlRadius, 1.0f);
+
+    if (icon > 0)
+        StripIcons::draw (g, icon, r.withWidth (r.getHeight()).reduced (r.getHeight() * 0.22f).translated (2.0f, 0.0f),
+                          label.findColour (juce::Label::textColourId));
 
     if (hasKeyboardFocus (false))
         Theme::drawFocusRing (g, getLocalBounds().toFloat().expanded (0.0f), 3.0f);

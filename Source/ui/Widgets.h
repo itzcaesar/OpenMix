@@ -75,6 +75,14 @@ private:
 
 //==============================================================================
 // Scribble strip: the channel name on a piece of tape. Double-click, Enter or F2 to rename.
+// Small line icons for the strips' name plates, drawn in code. 0 is "none".
+namespace StripIcons
+{
+    constexpr int count = 10;
+    const char* name (int icon);
+    void draw (juce::Graphics&, int icon, juce::Rectangle<float> area, juce::Colour);
+}
+
 class TapeLabel : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -82,6 +90,7 @@ public:
     void setText (const juce::String&);
     void setTapeColour (int colourIndex)          { colourIndex_ = colourIndex; applyColours(); repaint(); }
     void setBarColour (juce::Colour c)            { barOverride = c; applyColours(); repaint(); }   // buses: fixed colour
+    void setIcon (int newIcon)                    { if (icon != newIcon) { icon = newIcon; resized(); repaint(); } }
     juce::String getText() const { return label.getText(); }
     std::function<void (const juce::String&)> onRename;
 
@@ -100,6 +109,7 @@ private:
     juce::Colour barOverride;   // transparent = use the colour index
     bool editable;
     int colourIndex_ = 0;
+    int icon = 0;
 };
 
 //==============================================================================

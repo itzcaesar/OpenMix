@@ -22,6 +22,14 @@ static juce::String dbText (double v)
     return v <= -60.0 ? juce::String ("-inf") : (v > 0.05 ? "+" : "") + juce::String (v, 1);
 }
 
+namespace
+{
+    std::array<StripView*, kNumStrips> allStrips {};   // for selection, linked edits and dragging keys
+    int selectAnchor = -1;                              // the strip a Shift-click range starts from
+    bool linking = false;                               // applying an edit to the other selected strips
+    std::unique_ptr<juce::XmlElement> stripClipboard;   // Copy strip
+}
+
 static juce::String hzText (double hz)
 {
     return hz >= 1000.0 ? juce::String (hz / 1000.0, hz >= 10000.0 ? 0 : 1) + "k" : juce::String (juce::roundToInt (hz));
@@ -32,6 +40,8 @@ StripView::StripView (MixerEngine& e, int i)
       inserts (e, strip.inserts),
       faderSection (strip.peakL, strip.peakR, strip.rmsL, strip.rmsR, "Input " + juce::String (i + 1))
 {
+    allStrips[(size_t) i] = this;
+
     // Tab moves through this strip top to bottom before moving to the next strip.
     setFocusContainerType (FocusContainerType::keyboardFocusContainer);
 
@@ -47,8 +57,13 @@ StripView::StripView (MixerEngine& e, int i)
     gainKnob.setTooltip ("Input gain. Drag, scroll or use the arrow keys. Double-click or Home for 0 dB.");
     gainKnob.onValueChange = [this]
     {
+        const float before = strip.gainDb.load();
         strip.gainDb.store ((float) gainKnob.getValue());
         repaint (gainLabel);
+        forOtherSelected ([d = strip.gainDb.load() - before] (StripView& o)
+        {
+            o.gainKnob.setValue (juce::jlimit (-24.0, 24.0, o.gainKnob.getValue() + d), juce::sendNotificationSync);
+        });
     };
     addAndMakeVisible (gainKnob);
 
@@ -63,6 +78,7 @@ StripView::StripView (MixerEngine& e, int i)
         strip.setHpfEnabled (v > 20.5);
         hpfKnob.getProperties().set ("off", v <= 20.5);
         repaint (hpfLabel);
+        forOtherSelected ([v] (StripView& o) { o.hpfKnob.setValue (v, juce::sendNotificationSync); });
     };
     addAndMakeVisible (hpfKnob);
 
@@ -76,6 +92,7 @@ StripView::StripView (MixerEngine& e, int i)
         strip.setLpfEnabled (v < 19990.0);
         lpfKnob.getProperties().set ("off", v >= 19990.0);
         repaint (lpfLabel);
+        forOtherSelected ([v] (StripView& o) { o.lpfKnob.setValue (v, juce::sendNotificationSync); });
     };
     addAndMakeVisible (lpfKnob);
 
@@ -87,6 +104,7 @@ StripView::StripView (MixerEngine& e, int i)
     {
         strip.invertPolarity.store (! strip.invertPolarity.load());
         refreshFromStrip();
+        forOtherSelected ([on = strip.invertPolarity.load()] (StripView& o) { o.strip.invertPolarity.store (on); o.refreshFromStrip(); });
     };
     addAndMakeVisible (invertButton);
 
@@ -97,6 +115,7 @@ StripView::StripView (MixerEngine& e, int i)
     {
         strip.mono.store (! strip.mono.load());
         refreshFromStrip();
+        forOtherSelected ([on = strip.mono.load()] (StripView& o) { o.strip.mono.store (on); o.refreshFromStrip(); });
     };
     addAndMakeVisible (monoButton);
 
@@ -127,7 +146,13 @@ StripView::StripView (MixerEngine& e, int i)
         auto& btn = sendButtons[(size_t) b];
         makeLamp (btn, "key");
         btn.setClickingTogglesState (true);
-        btn.onClick = [this, b] { strip.busOn[b].store (sendButtons[(size_t) b].getToggleState()); updateKeys(); };
+        btn.onClick = [this, b]
+        {
+            const bool on = sendButtons[(size_t) b].getToggleState();
+            strip.busOn[b].store (on);
+            updateKeys();
+            forOtherSelected ([b, on] (StripView& o) { o.sendButtons[(size_t) b].setToggleState (on, juce::sendNotification); });
+        };
         btn.onSecondary = [this, b] { openSendPanel (b); };
         addChildComponent (btn);
 
@@ -135,8 +160,10 @@ StripView::StripView (MixerEngine& e, int i)
         setupKnob (knob, -60.0, 12.0, -12.0, 0.0);
         knob.onValueChange = [this, b]
         {
-            strip.sendDb[b].store ((float) sendKnobs[(size_t) b].getValue());
-            sendKnobs[(size_t) b].setTooltip ("Send level " + dbText (sendKnobs[(size_t) b].getValue()) + " dB. Double-click or Home for 0 dB.");
+            const double v = sendKnobs[(size_t) b].getValue();
+            strip.sendDb[b].store ((float) v);
+            sendKnobs[(size_t) b].setTooltip ("Send level " + dbText (v) + " dB. Double-click or Home for 0 dB.");
+            forOtherSelected ([b, v] (StripView& o) { o.sendKnobs[(size_t) b].setValue (v, juce::sendNotificationSync); });
         };
         addChildComponent (knob);
     }
@@ -148,21 +175,45 @@ StripView::StripView (MixerEngine& e, int i)
 
     makeLamp (muteButton, "mutekey");
     muteButton.setClickingTogglesState (true);
-    muteButton.onClick = [this] { strip.mute.store (muteButton.getToggleState()); };
+    muteButton.onClick = [this]
+    {
+        strip.mute.store (muteButton.getToggleState());
+        forOtherSelected ([on = muteButton.getToggleState()] (StripView& o) { o.muteButton.setToggleState (on, juce::sendNotification); });
+    };
+    muteButton.addMouseListener (this, false);   // drag across strips
     addAndMakeVisible (muteButton);
 
     makeLamp (soloButton, "solokey");
     soloButton.setClickingTogglesState (true);
-    soloButton.onClick = [this] { strip.solo.store (soloButton.getToggleState()); };
+    soloButton.onClick = [this]
+    {
+        strip.solo.store (soloButton.getToggleState());
+        forOtherSelected ([on = soloButton.getToggleState()] (StripView& o) { o.soloButton.setToggleState (on, juce::sendNotification); });
+    };
+    soloButton.addMouseListener (this, false);
     addAndMakeVisible (soloButton);
 
     makeLamp (safeButton, "key");
     safeButton.setClickingTogglesState (true);
     safeButton.setTooltip ("Solo-safe: while anything is soloed, this strip keeps playing on the monitor bus.");
-    safeButton.onClick = [this] { strip.setSoloSafe (safeButton.getToggleState()); };
+    safeButton.onClick = [this]
+    {
+        strip.setSoloSafe (safeButton.getToggleState());
+        forOtherSelected ([on = safeButton.getToggleState()] (StripView& o) { o.safeButton.setToggleState (on, juce::sendNotification); });
+    };
+    safeButton.addMouseListener (this, false);
     addAndMakeVisible (safeButton);
 
-    faderSection.fader.onValueChange = [this] { strip.faderDb.store ((float) faderSection.fader.getValue()); };
+    faderSection.fader.onValueChange = [this]
+    {
+        const float before = strip.faderDb.load();
+        strip.faderDb.store ((float) faderSection.fader.getValue());
+        forOtherSelected ([d = strip.faderDb.load() - before] (StripView& o)
+        {
+            auto& f = o.faderSection.fader;
+            f.setValue (juce::jlimit (f.getMinimum(), f.getMaximum(), f.getValue() + d), juce::sendNotificationSync);
+        });
+    };
     addAndMakeVisible (faderSection);
 
     tape.onRename = [this] (const juce::String& text)
@@ -171,11 +222,150 @@ StripView::StripView (MixerEngine& e, int i)
         refreshFromStrip();
     };
     addAndMakeVisible (tape);
+    tape.addMouseListener (this, true);   // clicking the name plate selects the strip
 
     refreshFromStrip();
 }
 
-StripView::~StripView() = default;
+StripView::~StripView()
+{
+    allStrips[(size_t) index] = nullptr;
+}
+
+//==============================================================================
+// Selection and linked edits
+
+void StripView::setSelected (bool b)
+{
+    if (selected != b)
+    {
+        selected = b;
+        repaint();
+    }
+}
+
+void StripView::clearSelection()
+{
+    for (auto* v : allStrips)
+        if (v != nullptr)
+            v->setSelected (false);
+}
+
+void StripView::select (const juce::ModifierKeys& mods)
+{
+    if (mods.isShiftDown() && selectAnchor >= 0)
+    {
+        const int lo = juce::jmin (selectAnchor, index), hi = juce::jmax (selectAnchor, index);
+        for (auto* v : allStrips)
+            if (v != nullptr)
+                v->setSelected (v->isVisible() && v->index >= lo && v->index <= hi);
+        return;
+    }
+    selectAnchor = index;
+    if (mods.isCommandDown())
+    {
+        setSelected (! selected);
+        return;
+    }
+    // A plain click selects only this strip; clicking the only selected strip deselects it.
+    int count = 0;
+    for (auto* v : allStrips)
+        count += (v != nullptr && v->selected) ? 1 : 0;
+    const bool only = selected && count == 1;
+    for (auto* v : allStrips)
+        if (v != nullptr)
+            v->setSelected (v == this && ! only);
+}
+
+void StripView::forOtherSelected (const std::function<void (StripView&)>& fn)
+{
+    if (! selected || linking)
+        return;
+    const juce::ScopedValueSetter<bool> guard (linking, true);
+    for (auto* v : allStrips)
+        if (v != nullptr && v != this && v->selected && v->isVisible())
+            fn (*v);
+}
+
+void StripView::mouseDown (const juce::MouseEvent& e)
+{
+    for (int k = 0; k < 3; ++k)
+        if (e.eventComponent == &paintKey (k))
+        {
+            paintKind = k;
+            paintValue = ! paintKey (k).getToggleState();
+            painting = false;
+            lastPaintAt = e.getScreenPosition();
+            return;
+        }
+    paintKind = -1;
+    if (e.eventComponent == this || e.eventComponent == &tape || tape.isParentOf (e.eventComponent))
+        select (e.mods);
+}
+
+void StripView::mouseDrag (const juce::MouseEvent& e)
+{
+    if (paintKind < 0)
+        return;
+    const auto at = e.getScreenPosition();
+    auto& origin = paintKey (paintKind);
+    if (! painting && ! origin.getScreenBounds().contains (at))
+    {
+        painting = true;   // left the key: from now on it is a drag across strips
+        origin.setToggleState (paintValue, juce::sendNotification);
+    }
+    if (painting)
+    {
+        // Every key along the path since the last event: a fast drag skips over keys.
+        const juce::Line<int> path (lastPaintAt, at);
+        for (auto* v : allStrips)
+            if (v != nullptr && v->isVisible())
+            {
+                auto& key = v->paintKey (paintKind);
+                if (key.getToggleState() != paintValue && key.getScreenBounds().intersects (path))
+                    key.setToggleState (paintValue, juce::sendNotification);
+            }
+    }
+    lastPaintAt = at;
+}
+
+void StripView::mouseUp (const juce::MouseEvent&)
+{
+    // Released back on the first key: its own click toggled it again, so set it back.
+    if (paintKind >= 0 && painting && paintKey (paintKind).getToggleState() != paintValue)
+        paintKey (paintKind).setToggleState (paintValue, juce::sendNotification);
+    paintKind = -1;
+    painting = false;
+}
+
+void StripView::paintOverChildren (juce::Graphics& g)
+{
+    if (selected)
+    {
+        g.setColour (Theme::p().accent);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f, 2.0f);
+    }
+}
+
+void StripView::copyStrip()
+{
+    stripClipboard = Session::copyStrip (engine, index);
+}
+
+void StripView::pasteStrip()
+{
+    if (stripClipboard == nullptr)
+        return;
+    std::vector<StripView*> targets { this };
+    forOtherSelected ([&targets] (StripView& o) { targets.push_back (&o); });
+    for (auto* v : targets)
+    {
+        v->inserts.closeAllEditors();   // their plugins are about to be replaced
+        Session::pasteStrip (*stripClipboard, engine, v->index);
+        v->refreshFromStrip();
+    }
+    Session::save (engine);
+}
 
 juce::String StripView::displayName() const
 {
@@ -187,9 +377,10 @@ void StripView::refreshFromStrip()
     const auto name = displayName();
     tape.setText (name);
     tape.setTapeColour (strip.colour);
+    tape.setIcon (strip.icon);
     setTitle (name + " strip");
     menuButton.setTitle (name + " options");
-    menuButton.setTooltip ("Rename, colour, presets, remove.");
+    menuButton.setTooltip ("Rename, colour, icon, presets, copy and paste, remove.");
 
     gainKnob.setTitle (name + " gain");
     gainKnob.setValue (strip.gainDb.load(), juce::dontSendNotification);
@@ -385,6 +576,16 @@ void StripView::showStripMenu()
         });
     menu.addSubMenu ("Colour", colours);
 
+    juce::PopupMenu icons;
+    for (int i = 0; i < StripIcons::count; ++i)
+        icons.addItem (StripIcons::name (i), true, strip.icon == i, [this, i]
+        {
+            strip.icon = i;
+            refreshFromStrip();
+            Session::save (engine);
+        });
+    menu.addSubMenu ("Icon", icons);
+
     menu.addSeparator();
     menu.addItem ("Mono", true, strip.mono.load(), [this]
     {
@@ -419,6 +620,8 @@ void StripView::showStripMenu()
         presets.addSubMenu ("Delete preset", del);
     }
     menu.addSubMenu ("Strip presets", presets);
+    menu.addItem ("Copy strip", [this] { copyStrip(); });
+    menu.addItem (selected ? "Paste strip to the selected strips" : "Paste strip", stripClipboard != nullptr, false, [this] { pasteStrip(); });
 
     menu.addSeparator();
     menu.addItem ("Remove strip...", engine.getNumActiveStrips() > 1, false, [this] { confirmRemove(); });

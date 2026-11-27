@@ -156,6 +156,7 @@ public:
     // Message thread only
     juce::String name;                  // user-editable label
     int colour = 0;                     // tape colour index (Theme::tapeColours)
+    int icon = 0;                       // name plate icon (StripIcons), 0 = none
     juce::String sourceDeviceName;      // for SourceType::Device
     juce::String sourceAppExe;          // for SourceType::App, e.g. "Spotify.exe"
     juce::String loopbackId, loopbackName;   // for SourceType::Loopback (endpoint ID, friendly name)

@@ -473,6 +473,83 @@ static void readFeedsXml (const std::vector<std::pair<const juce::XmlElement*, i
             }
 }
 
+// A strip's own settings: name, colour, levels, voice pad, sends, processing and plugins with
+// their state. Not its source or mute (the session saves those itself; copy/paste leaves them).
+static void writeStripSettings (juce::XmlElement& xs, ChannelStrip& strip)
+{
+    xs.setAttribute ("name", strip.name);
+    xs.setAttribute ("colour", strip.colour);
+    xs.setAttribute ("icon", strip.icon);
+    xs.setAttribute ("gain", strip.gainDb.load());
+    xs.setAttribute ("fader", strip.faderDb.load());
+    xs.setAttribute ("soloSafe", strip.soloSafe.load());
+    xs.setAttribute ("mono", strip.mono.load());
+    xs.setAttribute ("invertPolarity", strip.invertPolarity.load());
+    writePadXml (xs, strip.pad);
+
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        const juce::String bus (kBusNames[b]);
+        xs.setAttribute ("bus" + bus, strip.busOn[b].load());
+        xs.setAttribute ("send" + bus, strip.sendDb[b].load());
+        xs.setAttribute ("pre" + bus, strip.sendPre[b].load());
+    }
+
+    saveProcessing (xs, strip.fx);
+    saveChain (xs, strip.inserts);
+}
+
+static void readStripSettings (const juce::XmlElement& xs, ChannelStrip& strip, MixerEngine& engine, bool loadPlugins)
+{
+    strip.name = xs.getStringAttribute ("name");
+    strip.colour = xs.getIntAttribute ("colour", 0);
+    strip.icon = juce::jlimit (0, 9, xs.getIntAttribute ("icon", 0));
+    strip.gainDb.store ((float) xs.getDoubleAttribute ("gain", 0.0));
+    strip.faderDb.store ((float) xs.getDoubleAttribute ("fader", 0.0));
+    strip.soloSafe.store (xs.getBoolAttribute ("soloSafe", false));
+    strip.mono.store (xs.getBoolAttribute ("mono", false));
+    strip.invertPolarity.store (xs.getBoolAttribute ("invertPolarity", false));
+    readPadXml (xs, strip.pad);
+
+    for (int b = 0; b < kNumBuses; ++b)
+    {
+        const juce::String bus (kBusNames[b]);
+        strip.busOn[b].store (xs.getBoolAttribute ("bus" + bus, b == 0));
+        strip.sendDb[b].store ((float) xs.getDoubleAttribute ("send" + bus, 0.0));
+        strip.sendPre[b].store (xs.getBoolAttribute ("pre" + bus, false));
+    }
+
+    loadProcessing (xs.getChildByName ("Processing"), strip.fx);
+    if (loadPlugins)
+        loadChain (xs, strip.inserts, engine);
+}
+
+std::unique_ptr<juce::XmlElement> Session::copyStrip (MixerEngine& engine, int s)
+{
+    if (! juce::isPositiveAndBelow (s, kNumStrips))
+        return {};
+    reuseStateThisSave = false;   // the plugins' state now, not the autosave's copy
+    auto xs = std::make_unique<juce::XmlElement> ("Strip");
+    writeStripSettings (*xs, engine.getStrip (s));
+    return xs;
+}
+
+void Session::pasteStrip (const juce::XmlElement& xs, MixerEngine& engine, int s)
+{
+    if (! juce::isPositiveAndBelow (s, kNumStrips))
+        return;
+    auto& strip = engine.getStrip (s);
+    strip.inserts.removeAllPlugins();
+    readStripSettings (xs, strip, engine, true);
+
+    // Copied from a strip that ducked under this one: a strip can't duck under itself.
+    if (strip.fx.duckSource.load() == s)
+    {
+        strip.fx.duckSource.store (-1);
+        strip.fx.duckOn.store (false);
+    }
+}
+
 std::unique_ptr<juce::XmlElement> Session::captureScene (MixerEngine& engine)
 {
     auto root = std::make_unique<juce::XmlElement> ("Mix");
@@ -601,8 +678,6 @@ void Session::save (MixerEngine& engine, bool reusePluginState)
         auto* xs = root.createNewChildElement ("Strip");
         xs->setAttribute ("index", s);
         xs->setAttribute ("active", true);
-        xs->setAttribute ("name", strip.name);
-        xs->setAttribute ("colour", strip.colour);
         xs->setAttribute ("input", strip.inputChannel.load());
         xs->setAttribute ("inputRight", strip.inputChannelRight.load());
         xs->setAttribute ("sourceType", strip.sourceType.load());
@@ -612,24 +687,8 @@ void Session::save (MixerEngine& engine, bool reusePluginState)
         xs->setAttribute ("loopbackName", strip.loopbackName);
         xs->setAttribute ("appOutputId", strip.appOutputDeviceId);
         xs->setAttribute ("appOutputName", strip.appOutputDeviceName);
-        xs->setAttribute ("gain", strip.gainDb.load());
-        xs->setAttribute ("fader", strip.faderDb.load());
         xs->setAttribute ("mute", strip.mute.load());
-        xs->setAttribute ("soloSafe", strip.soloSafe.load());
-        xs->setAttribute ("mono", strip.mono.load());
-        xs->setAttribute ("invertPolarity", strip.invertPolarity.load());
-        writePadXml (*xs, strip.pad);
-
-        for (int b = 0; b < kNumBuses; ++b)
-        {
-            const juce::String bus (kBusNames[b]);
-            xs->setAttribute ("bus" + bus, strip.busOn[b].load());
-            xs->setAttribute ("send" + bus, strip.sendDb[b].load());
-            xs->setAttribute ("pre" + bus, strip.sendPre[b].load());
-        }
-
-        saveProcessing (*xs, strip.fx);
-        saveChain (*xs, strip.inserts);
+        writeStripSettings (*xs, strip);
     }
 
     for (int b = 0; b < kNumBuses; ++b)
@@ -772,27 +831,8 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
                 break;
         }
 
-        strip.name = xs->getStringAttribute ("name");
-        strip.colour = xs->getIntAttribute ("colour", 0);
-        strip.gainDb.store ((float) xs->getDoubleAttribute ("gain", 0.0));
-        strip.faderDb.store ((float) xs->getDoubleAttribute ("fader", 0.0));
         strip.mute.store (xs->getBoolAttribute ("mute", false));
-        strip.soloSafe.store (xs->getBoolAttribute ("soloSafe", false));
-        strip.mono.store (xs->getBoolAttribute ("mono", false));
-        strip.invertPolarity.store (xs->getBoolAttribute ("invertPolarity", false));
-        readPadXml (*xs, strip.pad);
-
-        for (int b = 0; b < kNumBuses; ++b)
-        {
-            const juce::String bus (kBusNames[b]);
-            strip.busOn[b].store (xs->getBoolAttribute ("bus" + bus, b == 0));
-            strip.sendDb[b].store ((float) xs->getDoubleAttribute ("send" + bus, 0.0));
-            strip.sendPre[b].store (xs->getBoolAttribute ("pre" + bus, false));
-        }
-
-        loadProcessing (xs->getChildByName ("Processing"), strip.fx);
-        if (loadPlugins)
-            loadChain (*xs, strip.inserts, engine);
+        readStripSettings (*xs, strip, engine, loadPlugins);
     }
 
     bool anyMonitor = false;

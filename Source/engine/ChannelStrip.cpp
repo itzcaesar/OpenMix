@@ -57,6 +57,7 @@ void ChannelStrip::resetToDefaults()
 
     name.clear();
     colour = 0;
+    icon = 0;
     sourceDeviceName.clear();
     sourceAppExe.clear();
     loopbackId.clear();

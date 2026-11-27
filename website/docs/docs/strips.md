@@ -155,6 +155,29 @@ strip duck under itself.
     restores the plugin choice and the strip settings, not a plugin's
     internal saved state.
 
+## Icon
+
+**Icon** in the three-dot menu puts a small icon (mic, headphones, music,
+game, chat and more) on the strip's name plate.
+
+## Copy and paste a strip
+
+**Copy strip** and **Paste strip** in the three-dot menu copy a whole
+strip onto another: the name, colour, levels, processing, voice pad,
+sends and plugins with their settings. The source, mute and solo stay as
+they are.
+
+## Working on several strips
+
+- Click a strip (its name plate or any empty part) to select it.
+  **Shift+click** selects a range, **Ctrl+click** adds or removes one,
+  and clicking the desk clears the selection.
+- A change on a selected strip happens on all of them: faders and gain
+  move by the same amount, and keys, filters and send levels take the
+  same setting. **Paste strip** pastes onto every selected strip.
+- Drag from one strip's **M**, **S** or **SAFE** across the others to
+  set them all the same way.
+
 **Signal path:** gain, polarity/mono, DC blocker, noise removal, gate,
 HPF/LPF, EQ, compressor, de-esser, inserts, voice pad, ducking, latency
 alignment, mute, fader, sends.
