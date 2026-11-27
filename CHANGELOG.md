@@ -13,11 +13,11 @@ This is OpenMix's first public release. There was no earlier release:
 
 **Core mixer**
 
-- Up to 8 input strips and up to 6 output buses, added and removed at runtime.
+- Up to 8 input strips and up to 8 output buses, added and removed at runtime.
 - Strip sources: a channel or stereo pair of the main device (ASIO, WASAPI or
   DirectSound), any other Windows input device, one app's audio (per-app
   loopback), loopback of a Windows output device, or the media player.
-- Buses: A1–A3 hardware and B1–B3 virtual, each to an output pair of the main
+- Buses: A1–A4 hardware and B1–B4 virtual, each to an output pair of the main
   device or to any Windows output device, with EQ, compressor, plugins and a
   safety limiter. Buses are grouped **Hardware / Virtual** on the desk, and
   each bus can have a custom name (its group never changes when renamed).
