@@ -314,6 +314,47 @@ void MixerEngine::removeBus (int b)
     bus.fx.compAttackMs.store (5.0f); bus.fx.compReleaseMs.store (120.0f);
     for (auto& s : strips)
         s->busOn[b].store (false);
+    for (int o = 0; o < kNumBuses; ++o)
+    {
+        bus.feedOn[(size_t) o].store (false);
+        bus.feedDb[(size_t) o].store (0.0f);
+        buses[(size_t) o].feedOn[(size_t) b].store (false);
+    }
+}
+
+bool MixerEngine::busFeedWouldLoop (int src, int dst) const noexcept
+{
+    if (src == dst)
+        return true;
+    // Does dst already reach src through existing feeds?
+    std::array<bool, kNumBuses> seen {};
+    std::array<int, kNumBuses> stack {};
+    int top = 0;
+    stack[(size_t) top++] = dst;
+    seen[(size_t) dst] = true;
+    while (top > 0)
+    {
+        const int b = stack[(size_t) --top];
+        if (b == src)
+            return true;
+        for (int d = 0; d < kNumBuses; ++d)
+            if (buses[(size_t) b].feedOn[(size_t) d].load() && ! seen[(size_t) d])
+            {
+                seen[(size_t) d] = true;
+                stack[(size_t) top++] = d;
+            }
+    }
+    return false;
+}
+
+bool MixerEngine::setBusFeed (int src, int dst, bool on)
+{
+    if (! juce::isPositiveAndBelow (src, kNumBuses) || ! juce::isPositiveAndBelow (dst, kNumBuses))
+        return false;
+    if (on && busFeedWouldLoop (src, dst))
+        return false;
+    buses[(size_t) src].feedOn[(size_t) dst].store (on);
+    return true;
 }
 
 void MixerEngine::setMonitorBus (int b)
@@ -698,6 +739,11 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         busEqMix[(size_t) b].setCurrentAndTargetValue (buses[(size_t) b].fx.eqOn.load() ? 1.0f : 0.0f);
         busCompMix[(size_t) b].setCurrentAndTargetValue (buses[(size_t) b].fx.compOn.load() ? 1.0f : 0.0f);
         buses[(size_t) b].inserts.prepare (sr, maxBlock);
+        for (auto& g : feedGain[(size_t) b])
+        {
+            g.reset (sr, 0.02);
+            g.setCurrentAndTargetValue (0.0f);
+        }
     }
 
     for (int s = 0; s < kNumStrips; ++s)
@@ -869,9 +915,39 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         busBuffer.addFromWithRamp (b * 2 + 1, 0, soundBuffer.getReadPointer (1), n, startGain, endGain);
     }
 
-    for (int b = 0; b < kNumBuses; ++b)
+    // Bus order: a bus that feeds another runs before it. setBusFeed keeps the feeds free of
+    // loops; if one slips in while the UI changes them, the rest run in slot order and a
+    // feed into a bus that already ran is skipped.
+    std::array<int, kNumBuses> order {};
+    {
+        std::array<int, kNumBuses> pending {};
+        for (int s = 0; s < kNumBuses; ++s)
+            for (int d = 0; d < kNumBuses; ++d)
+                if (buses[(size_t) s].feedOn[(size_t) d].load(std::memory_order_relaxed))
+                    ++pending[(size_t) d];
+        std::array<bool, kNumBuses> placed {};
+        for (int k = 0; k < kNumBuses; ++k)
+        {
+            int pick = -1;
+            for (int b = 0; b < kNumBuses && pick < 0; ++b)
+                if (! placed[(size_t) b] && pending[(size_t) b] <= 0)
+                    pick = b;
+            for (int b = 0; b < kNumBuses && pick < 0; ++b)
+                if (! placed[(size_t) b])
+                    pick = b;
+            placed[(size_t) pick] = true;
+            order[(size_t) k] = pick;
+            for (int d = 0; d < kNumBuses; ++d)
+                if (buses[(size_t) pick].feedOn[(size_t) d].load(std::memory_order_relaxed))
+                    --pending[(size_t) d];
+        }
+    }
+    std::array<bool, kNumBuses> busDone {};
+
+    for (const int b : order)
     {
         auto& bus = buses[(size_t) b];
+        busDone[(size_t) b] = true;
         if (! bus.active.load())
             continue;
 
@@ -1034,6 +1110,24 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
 
             case BusTarget::Off:
                 break;
+        }
+
+        // Feeds into other buses: what this bus sounds like (after its fader and limiter).
+        // While something is soloed the monitor bus plays only soloed strips, so feeds into it pause.
+        for (int d = 0; d < kNumBuses; ++d)
+        {
+            auto& dst = buses[(size_t) d];
+            auto& fg = feedGain[(size_t) b][(size_t) d];
+            const bool on = bus.feedOn[(size_t) d].load() && dst.active.load() && ! busDone[(size_t) d]
+                         && ! (anySolo && dst.monitor.load());
+            fg.setTargetValue (on ? juce::Decibels::decibelsToGain (bus.feedDb[(size_t) d].load(), -60.0f) : 0.0f);
+            if (busDone[(size_t) d] || (! fg.isSmoothing() && fg.getTargetValue() == 0.0f))
+                continue;
+            const float startGain = fg.getCurrentValue();
+            fg.skip (n);
+            const float endGain = fg.getCurrentValue();
+            busBuffer.addFromWithRamp (d * 2,     0, busL, n, startGain, endGain);
+            busBuffer.addFromWithRamp (d * 2 + 1, 0, busR, n, startGain, endGain);
         }
     }
 }

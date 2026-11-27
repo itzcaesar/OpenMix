@@ -437,6 +437,42 @@ static void loadSlots (const juce::XmlElement& x, PluginChain& chain)
     }
 }
 
+// Bus-to-bus feeds, saved on the source bus as feed<A1..B3> and feedDb<A1..B3>.
+static void writeFeedsXml (juce::XmlElement& x, const Bus& bus)
+{
+    for (int d = 0; d < kNumBuses; ++d)
+    {
+        const juce::String name (kBusNames[d]);
+        x.setAttribute ("feed" + name, bus.feedOn[(size_t) d].load());
+        x.setAttribute ("feedDb" + name, bus.feedDb[(size_t) d].load());
+    }
+}
+
+// Runs after all buses are read: every saved feed is turned off first, then the "on" ones go
+// back in through setBusFeed, so a hand-edited file can't make a loop. Elements without feed
+// attributes (older files and scenes) leave that bus's feeds as they are.
+static void readFeedsXml (const std::vector<std::pair<const juce::XmlElement*, int>>& items, MixerEngine& engine)
+{
+    for (int pass = 0; pass < 2; ++pass)
+        for (const auto& [x, b] : items)
+            for (int d = 0; d < kNumBuses; ++d)
+            {
+                const juce::String name (kBusNames[d]);
+                if (! x->hasAttribute ("feed" + name))
+                    continue;
+                if (pass == 0)
+                {
+                    engine.setBusFeed (b, d, false);
+                    engine.getBus (b).feedDb[(size_t) d].store (
+                        juce::jlimit (-60.0f, 12.0f, (float) x->getDoubleAttribute ("feedDb" + name, 0.0)));
+                }
+                else if (x->getBoolAttribute ("feed" + name))
+                {
+                    engine.setBusFeed (b, d, true);
+                }
+            }
+}
+
 std::unique_ptr<juce::XmlElement> Session::captureScene (MixerEngine& engine)
 {
     auto root = std::make_unique<juce::XmlElement> ("Mix");
@@ -474,6 +510,7 @@ std::unique_ptr<juce::XmlElement> Session::captureScene (MixerEngine& engine)
         x->setAttribute ("mute", bus.mute.load());
         x->setAttribute ("normOn", bus.normOn.load());
         x->setAttribute ("normTarget", bus.normTargetLufs.load());
+        writeFeedsXml (*x, bus);
         saveProcessing (*x, bus.fx);
         saveSlots (*x, bus.inserts);
     }
@@ -514,11 +551,13 @@ void Session::applyScene (const juce::XmlElement& root, MixerEngine& engine)
         loadSlots (*x, strip.inserts);
     }
 
+    std::vector<std::pair<const juce::XmlElement*, int>> feeds;
     for (auto* x : root.getChildWithTagNameIterator ("Bus"))
     {
         const int b = x->getIntAttribute ("index", -1);
         if (! juce::isPositiveAndBelow (b, kNumBuses))
             continue;
+        feeds.emplace_back (x, b);
         auto& bus = engine.getBus (b);
         bus.faderDb.store ((float) x->getDoubleAttribute ("fader", bus.faderDb.load()));
         bus.mute.store (x->getBoolAttribute ("mute", bus.mute.load()));
@@ -527,6 +566,7 @@ void Session::applyScene (const juce::XmlElement& root, MixerEngine& engine)
         loadProcessing (x->getChildByName ("Processing"), bus.fx);
         loadSlots (*x, bus.inserts);
     }
+    readFeedsXml (feeds, engine);
 
     if (auto* xsb = root.getChildByName ("Soundboard"))
     {
@@ -606,6 +646,7 @@ void Session::save (MixerEngine& engine, bool reusePluginState)
         xb->setAttribute ("output", bus.outputPair.load());
         xb->setAttribute ("target", bus.target.load());
         xb->setAttribute ("device", bus.deviceName);
+        writeFeedsXml (*xb, bus);
         saveProcessing (*xb, bus.fx);
         saveChain (*xb, bus.inserts);
     }
@@ -739,11 +780,13 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
     }
 
     bool anyMonitor = false;
+    std::vector<std::pair<const juce::XmlElement*, int>> feeds;
     for (auto* xb : root.getChildWithTagNameIterator ("Bus"))
     {
         const int b = busIndexFor (*xb, version);
         if (! juce::isPositiveAndBelow (b, kNumBuses))
             continue;
+        feeds.emplace_back (xb, b);
 
         auto& bus = engine.getBus (b);
         bus.active.store (xb->getBoolAttribute ("active", true));
@@ -768,6 +811,8 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
                 break;
         }
     }
+
+    readFeedsXml (feeds, engine);
 
     if (version < 2 || ! anyMonitor)
         engine.setMonitorBus (0);   // A1 by default

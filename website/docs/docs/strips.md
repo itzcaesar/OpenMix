@@ -111,7 +111,9 @@ One row per active bus: a key with the bus's name and a level knob.
 **Voice pad** opens the strip's XY pad in a popup. Double-click or Home
 resets the puck.
 
-- *Voice*: X = tone tilt (dark to bright), Y = presence and echo.
+- *Voice*: X = tone tilt from Lo (full) to Hi (bright), about +/-9 dB.
+  Y: the lower half adds presence and air, the upper half a doubler, with
+  a little reverb near the top.
 - *Pan*: X = constant-power pan, Y = stereo width (100 to 200%).
 - *Color*: corners Warm, Bright, Radio and Close; the puck blends them.
 - *Space*: X = pan, Y = distance (quieter, darker, with early reflections).

@@ -74,6 +74,23 @@ fader, safety limiter.
 A live spectrum on the bus column. Click it for the full **analyser**:
 spectrum plus momentary, short-term and integrated loudness.
 
+## Routing matrix
+
+**Mixer > Routing matrix** shows every strip and bus down the side and
+every bus across the top. A cell's key turns the send on and its knob sets
+the level.
+
+- **Strip rows** are the strips' own sends (the same keys and knobs as on
+  the strip).
+- **Bus rows** feed one bus into another, after its fader and limiter. For
+  example, feed B1 (the stream mix) into A1 to hear what the stream hears.
+- A feed that would make a loop (B1 into A1 while A1 already feeds B1) is
+  greyed out.
+- While something is soloed, feeds into the monitor bus pause, so solo
+  still plays only the soloed strips.
+
+Feeds are saved with the session and in scenes.
+
 ## Bus menu
 
 The three-dot menu: rename the bus, analyser, loudness normalisation,

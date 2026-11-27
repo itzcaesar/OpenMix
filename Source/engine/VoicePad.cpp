@@ -25,6 +25,11 @@ void VoicePadProcessor::prepare (double sampleRate, int)
     // than the obvious slap-back echo used by a delay effect.
     delaySamplesL = (int) (sampleRate * 0.025);
     delaySamplesR = (int) (sampleRate * 0.032);
+
+    dblL.assign ((size_t) (sampleRate * 0.05), 0.0f);
+    dblR.assign ((size_t) (sampleRate * 0.05), 0.0f);
+    dblPos = 0;
+    lfoPhase = 0.0f;
 }
 
 void VoicePadProcessor::reset() noexcept
@@ -32,7 +37,9 @@ void VoicePadProcessor::reset() noexcept
     lowShelf.reset(); highShelf.reset(); presence.reset(); midPeak.reset();
     std::fill (delayL.begin(), delayL.end(), 0.0f);
     std::fill (delayR.begin(), delayR.end(), 0.0f);
-    writePos = 0;
+    std::fill (dblL.begin(), dblL.end(), 0.0f);
+    std::fill (dblR.begin(), dblR.end(), 0.0f);
+    writePos = dblPos = 0;
 }
 
 void VoicePadProcessor::updateFilters (float x, float y01) noexcept
@@ -41,13 +48,15 @@ void VoicePadProcessor::updateFilters (float x, float y01) noexcept
         return;
 
     lastX = x; lastY = y01;
-    // Deep is warm and full, with a low-mid cut to keep speech clear; centre is natural.
-    const float deep = juce::jmax (0.0f, -x);
-    const float clear = juce::jmax (0.0f, x);
-    lowShelf.setLowShelf   (fs, 120.0, 3.5f * deep - clear);
-    midPeak.setPeak        (fs, 250.0, 0.9, -2.5f * deep);
-    presence.setPeak       (fs, 2800.0, 0.9, 2.0f * deep + 2.5f * clear);
-    highShelf.setHighShelf (fs, 8000.0, -1.5f * deep + 1.5f * clear);
+    // X tilts the voice from Lo (full, dark) to Hi (thin, bright), big enough to hear at once.
+    // The lower half of Y lifts presence and air; it stays at full lift in the upper half.
+    const float lo = juce::jmax (0.0f, -x);
+    const float hi = juce::jmax (0.0f, x);
+    const float lift = juce::jlimit (0.0f, 1.0f, y01 * 2.0f);
+    lowShelf.setLowShelf   (fs, 150.0, 9.0f * lo - 6.0f * hi);
+    midPeak.setPeak        (fs, 350.0, 1.0, -3.0f * lo);   // keeps the Lo side from going muddy
+    highShelf.setHighShelf (fs, 6000.0, -6.0f * lo + 9.0f * hi + 3.0f * lift);
+    presence.setPeak       (fs, 3000.0, 0.8, 6.0f * lift);
 }
 
 // Color: bilinear blend of four voice characters (gains in dB for low shelf 200 Hz,
@@ -99,6 +108,8 @@ void VoicePadProcessor::process (juce::AudioBuffer<float>& stereo, int numSample
         lowShelf = {}; highShelf = {}; presence = {}; midPeak = {};
         std::fill (delayL.begin(), delayL.end(), 0.0f);
         std::fill (delayR.begin(), delayR.end(), 0.0f);
+        std::fill (dblL.begin(), dblL.end(), 0.0f);
+        std::fill (dblR.begin(), dblR.end(), 0.0f);
         smX.setCurrentAndTargetValue (params.x.load());
         smY.setCurrentAndTargetValue ((params.y.load() + 1.0f) * 0.5f);
         lastX = lastY = 99.0f;
@@ -158,8 +169,22 @@ void VoicePadProcessor::process (juce::AudioBuffer<float>& stereo, int numSample
     if (mode == VoicePadParams::Voice)
     {
         const auto delaySize = (int) delayL.size();
-        if (delaySize == 0)
+        const auto dblSize = (int) dblL.size();
+        if (delaySize == 0 || dblSize == 0)
             return;
+
+        // Doubler: 20 / 27 ms copies swept +/-2 ms at 0.6 Hz, so each side drifts slightly in pitch.
+        const float lfoStep = juce::MathConstants<float>::twoPi * 0.6f / (float) fs;
+        const float baseL = (float) (fs * 0.020), baseR = (float) (fs * 0.027), depth = (float) (fs * 0.002);
+        auto readDbl = [&] (const std::vector<float>& buf, float delay)
+        {
+            float pos = (float) dblPos - delay;
+            if (pos < 0.0f) pos += (float) dblSize;
+            const int i0 = (int) pos;
+            const float frac = pos - (float) i0;
+            const float a = buf[(size_t) i0], b = buf[(size_t) ((i0 + 1) % dblSize)];
+            return a + (b - a) * frac;
+        };
 
         for (int i = 0; i < numSamples; ++i)
         {
@@ -169,11 +194,23 @@ void VoicePadProcessor::process (juce::AudioBuffer<float>& stereo, int numSample
             if ((i & 31) == 0)
                 updateFilters (x, y01);
 
-            float l = presence.process (highShelf.process (midPeak.process (lowShelf.process (L[i], 0), 0), 0), 0);
-            float r = presence.process (highShelf.process (midPeak.process (lowShelf.process (R[i], 1), 1), 1), 1);
+            const float l = presence.process (highShelf.process (midPeak.process (lowShelf.process (L[i], 0), 0), 0), 0);
+            const float r = presence.process (highShelf.process (midPeak.process (lowShelf.process (R[i], 1), 1), 1), 1);
 
-            // Keep the lower half dry; the upper half adds a restrained room tail.
-            const float send = juce::jlimit (0.0f, 1.0f, (y01 - 0.5f) * 2.0f) * 0.12f;
+            // Upper half: the doubler fades in first, the reverb joins in the top quarter.
+            const float top = juce::jlimit (0.0f, 1.0f, (y01 - 0.5f) * 2.0f);
+            const float dblMix = 0.5f * top;
+            const float send = juce::jlimit (0.0f, 1.0f, (top - 0.5f) * 2.0f) * 0.15f;
+
+            dblL[(size_t) dblPos] = l;
+            dblR[(size_t) dblPos] = r;
+            const float dL = readDbl (dblL, baseL + depth * std::sin (lfoPhase));
+            const float dR = readDbl (dblR, baseR + depth * std::cos (lfoPhase));
+            dblPos = (dblPos + 1) % dblSize;
+            lfoPhase += lfoStep;
+            if (lfoPhase > juce::MathConstants<float>::twoPi)
+                lfoPhase -= juce::MathConstants<float>::twoPi;
+
             const int readL = (writePos - delaySamplesL + delaySize) % delaySize;
             const int readR = (writePos - delaySamplesR + delaySize) % delaySize;
             const float echoL = delayL[(size_t) readL];
@@ -183,8 +220,10 @@ void VoicePadProcessor::process (juce::AudioBuffer<float>& stereo, int numSample
             delayR[(size_t) writePos] = r * send + echoL * 0.16f;
             writePos = (writePos + 1) % delaySize;
 
-            L[i] = l + echoL;
-            R[i] = r + echoR;
+            // Doubled copy crosses sides for width; dry is trimmed so the doubler doesn't just add level.
+            const float dry = 1.0f - 0.25f * top;
+            L[i] = l * dry + dR * dblMix + echoL;
+            R[i] = r * dry + dL * dblMix + echoR;
         }
     }
     else
@@ -231,7 +270,7 @@ VoicePadComponent::VoicePadComponent (VoicePadParams& p, const juce::String& own
 
     voiceButton.setTitle (ownerName + " pad mode: voice");
     panButton.setTitle (ownerName + " pad mode: pan");
-    voiceButton.setTooltip ("Voice: move left for a warm, clear podcast tone, centre for natural, and right for added clarity; the upper half adds subtle room reverb.");
+    voiceButton.setTooltip ("Voice: left/right tilts the tone from Lo (full) to Hi (bright). Up adds presence, then a doubler, then a little reverb at the top.");
     panButton.setTooltip ("Pan: left/right places the sound, up makes it wider.");
     voiceButton.onClick = [this] { setMode (VoicePadParams::Voice); };
     panButton.onClick   = [this] { setMode (VoicePadParams::Pan); };
@@ -282,12 +321,12 @@ juce::String VoicePadComponent::readout() const
 
     if (params.mode.load() == VoicePadParams::Voice)
     {
-        const juce::String color = x < -0.08f ? "Deep " + juce::String (juce::roundToInt (-x * 100.0f)) + "%"
-                                 : x > 0.08f ? "Clear " + juce::String (juce::roundToInt (x * 100.0f)) + "%"
-                                             : "Natural";
-        const float reverb = juce::jlimit (0.0f, 1.0f, (y01 - 0.5f) * 2.0f);
-        return color + "  Reverb "
-             + juce::String (juce::roundToInt (reverb * 100.0f)) + "%";
+        const juce::String color = x < -0.08f ? "Lo " + juce::String (juce::roundToInt (-x * 100.0f)) + "%"
+                                 : x > 0.08f ? "Hi " + juce::String (juce::roundToInt (x * 100.0f)) + "%"
+                                             : "Flat";
+        const juce::String yText = y01 <= 0.5f ? "Presence " + juce::String (juce::roundToInt (y01 * 200.0f)) + "%"
+                                               : "Double " + juce::String (juce::roundToInt ((y01 - 0.5f) * 200.0f)) + "%";
+        return color + "  " + yText;
     }
 
     const int pan = juce::roundToInt (x * 100.0f);
@@ -355,11 +394,11 @@ void VoicePadComponent::paint (juce::Graphics& g)
     else
     {
         const bool space = padMode == VoicePadParams::Space;
-        g.drawText (padMode == VoicePadParams::Voice ? "REVERB" : space ? "FAR" : "WIDE", legends, juce::Justification::centredTop);
-        g.drawText (padMode == VoicePadParams::Voice ? "DEEP" : "L", legends.withTrimmedBottom (20), juce::Justification::bottomLeft);
-        g.drawText (padMode == VoicePadParams::Voice ? "CLEAR" : "R", legends.withTrimmedBottom (20), juce::Justification::bottomRight);
+        g.drawText (padMode == VoicePadParams::Voice ? "DOUBLE" : space ? "FAR" : "WIDE", legends, juce::Justification::centredTop);
+        g.drawText (padMode == VoicePadParams::Voice ? "LO" : "L", legends.withTrimmedBottom (20), juce::Justification::bottomLeft);
+        g.drawText (padMode == VoicePadParams::Voice ? "HI" : "R", legends.withTrimmedBottom (20), juce::Justification::bottomRight);
         if (padMode == VoicePadParams::Voice)
-            g.drawText ("NATURAL", legends.withTrimmedBottom (20), juce::Justification::centredBottom);
+            g.drawText ("FLAT", legends.withTrimmedBottom (20), juce::Justification::centredBottom);
     }
 
     // Readout: what the position does, in numbers. It is two values, drawn

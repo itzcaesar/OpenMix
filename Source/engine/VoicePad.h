@@ -65,7 +65,8 @@ struct VoicePadParams
     }
 };
 
-// Voice mode: X = tone tilt (Lo <-> Hi), Y = presence + echo.
+// Voice mode: X = tone tilt (Lo <-> Hi, about +/-9 dB). Y: the lower half adds presence
+//             and air, the upper half adds a doubler and then a small reverb.
 // Pan mode:   X = constant-power pan,     Y = stereo width (100% .. 200%).
 // Color mode: the four corners are voice characters (warm, bright, radio, close mic);
 //             the puck blends between them.
@@ -94,6 +95,11 @@ private:
 
     std::vector<float> delayL, delayR;
     int writePos = 0, delaySamplesL = 0, delaySamplesR = 0;
+
+    // Voice mode doubler: a short, slowly modulated copy per side.
+    std::vector<float> dblL, dblR;
+    int dblPos = 0;
+    float lfoPhase = 0.0f;
 };
 
 class VoicePadComponent : public juce::Component, public juce::SettableTooltipClient

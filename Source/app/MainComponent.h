@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "app/MixHistory.h"
 #include "engine/MixerEngine.h"
 #include "ui/StripView.h"
 #include "ui/BusView.h"
@@ -150,6 +151,9 @@ private:
     void updateSceneButton();
     void handleHotkey (const GlobalHotkeys::Binding&, bool down);
     void showHotkeys();
+    void showRouting();
+    void undoMix (bool redo);
+    juce::String captureMixText();
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
@@ -190,6 +194,7 @@ private:
     juce::String note;
     juce::uint32 noteUntilMs = 0;
     int lastExternalChanges = 0;
+    MixHistory history;
     juce::Viewport consoleView;
     std::unique_ptr<ConsoleContent> console;
 

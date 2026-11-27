@@ -36,6 +36,11 @@ struct Bus
     std::atomic<float> normTargetLufs { -14.0f };
     std::atomic<float> normGain { 1.0f };
 
+    // Bus-to-bus feeds: feedOn[d] sends this bus, after its fader and limiter, into bus d at
+    // feedDb[d]. Set feedOn through MixerEngine::setBusFeed, which refuses loops.
+    std::array<std::atomic<bool>, kNumBuses> feedOn {};
+    std::array<std::atomic<float>, kNumBuses> feedDb {};
+
     // Bus processing, in order: EQ -> compressor -> VST3 inserts -> loudness normalisation
     // -> fader -> safety limiter.
     // Only the EQ and compressor fields of `fx` are used on a bus.
@@ -173,6 +178,11 @@ public:
     // unplugged); maintainSources() connects it when the device appears.
     bool setBusDevice (int bus, const juce::String& deviceName, juce::String& error);
 
+    // Bus-to-bus feeds (message thread). setBusFeed returns false when src == dst or the feed
+    // would make a loop (dst already reaches src); turning a feed off always works.
+    bool busFeedWouldLoop (int src, int dst) const noexcept;
+    bool setBusFeed (int src, int dst, bool on);
+
     // Message thread, call every couple of seconds. Drops sources/outputs that died
     // (device unplugged or stalled, app closed, capture stream invalidated) and reconnects
     // them as soon as the device or app is back.
@@ -223,6 +233,7 @@ private:
     std::array<juce::SmoothedValue<float>, kNumBuses> busEqMix, busCompMix;   // on/off crossfades
     juce::AudioBuffer<float> busDry;                                           // dry copy while fading
     std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumStrips> sendGain;
+    std::array<std::array<juce::SmoothedValue<float>, kNumBuses>, kNumBuses> feedGain;   // [src][dst]
 
     // CPU meter (see the public getters above).
     omx::CpuMeter cpuMeter;

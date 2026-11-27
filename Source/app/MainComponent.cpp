@@ -1,4 +1,5 @@
 #include "app/MainComponent.h"
+#include "ui/RoutingPanel.h"
 #include "app/Session.h"
 #include "app/AppSettings.h"
 #include "ui/Theme.h"
@@ -1311,6 +1312,10 @@ void MainComponent::timerCallback()
         updateSceneButton();
     }
 
+    // Undo history: a new step whenever the mix changed, but not mid-drag.
+    if (ticks % 10 == 0 && ! juce::ModifierKeys::getCurrentModifiersRealtime().isAnyMouseButtonDown())
+        history.offer (captureMixText());
+
     // Push the new state to phone / WebSocket clients.
     remoteServer.broadcastStateIfChanged();
 
@@ -1382,6 +1387,12 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         return true;
 
     const auto mods = key.getModifiers();
+    const int code = juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) key.getKeyCode());
+    if (mods.isCtrlDown() && ! mods.isAltDown() && (code == 'Z' || code == 'Y'))
+    {
+        undoMix (code == 'Y' || mods.isShiftDown());   // Ctrl+Y or Ctrl+Shift+Z redo
+        return true;
+    }
     if (mods.isCtrlDown() && mods.isShiftDown() && (key.getKeyCode() == 'R' || key.getKeyCode() == 'r'))
     {
         toggleRecording();
@@ -1915,11 +1926,54 @@ void WindowDot::paintButton (juce::Graphics& g, bool isHighlighted, bool isDown)
                                           maximised, isHighlighted, isDown, hasKeyboardFocus (false));
 }
 
+juce::String MainComponent::captureMixText()
+{
+    return Session::captureScene (engine)->toString (juce::XmlElement::TextFormat().singleLine().withoutHeader());
+}
+
+void MainComponent::undoMix (bool redo)
+{
+    history.offer (captureMixText());   // a change from the last few hundred ms is a step too
+    const auto state = redo ? history.redo() : history.undo();
+    auto xml = juce::parseXML (state);
+    if (xml == nullptr)
+    {
+        showNote (redo ? "Nothing to redo" : "Nothing to undo");
+        return;
+    }
+    Session::applyScene (*xml, engine);
+    history.settle (captureMixText());
+    showNote (redo ? "Redo" : "Undo");
+}
+
+void MainComponent::showRouting()
+{
+    auto* panel = new RoutingPanel (engine);
+    const auto inside = getScreenBounds().reduced (24, 40);
+    panel->setSize (juce::jmin (juce::jmax (420, panel->preferredWidth()), inside.getWidth()),
+                    juce::jmin (panel->preferredHeight(), inside.getHeight() - 30));
+
+    juce::DialogWindow::LaunchOptions o;
+    o.content.setOwned (panel);
+    o.dialogTitle = "Routing matrix";
+    o.dialogBackgroundColour = Theme::p().window;
+    o.escapeKeyTriggersCloseButton = true;
+    o.useNativeTitleBar = false;
+    o.resizable = true;
+    o.componentToCentreAround = this;
+    o.launchAsync();
+}
+
 void MainComponent::showMixerMenu()
 {
     juce::PopupMenu menu;
     menu.addItem ("Add strip", engine.getNumActiveStrips() < kNumStrips, false, [this] { console->addStrip(); });
     menu.addItem ("Add bus...", engine.getNumActiveBuses() < kNumBuses, false, [this] { console->addBus(); });
+    menu.addItem ("Routing matrix...", [this] { showRouting(); });
+    menu.addSeparator();
+    history.offer (captureMixText());   // so a change made just now can be undone from the menu
+    menu.addItem ("Undo (Ctrl+Z)", history.canUndo(), false, [this] { undoMix (false); });
+    menu.addItem ("Redo (Ctrl+Y)", history.canRedo(), false, [this] { undoMix (true); });
     menu.addSeparator();
     menu.addItem ("Save mix as a new scene...", [this] { saveScene (-1); });
     menu.addItem ("Scenes...", [this] { showSceneMenu(); });

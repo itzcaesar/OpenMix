@@ -25,8 +25,14 @@ The full design direction lives in the repo at `docs/DESIGN.md`.
 
 ## Menus
 
-- **Mixer:** add a strip, add a bus, save the mix as a new scene, scenes,
-  hotkeys.
+- **Mixer:** add a strip, add a bus, the routing matrix, undo and redo,
+  save the mix as a new scene, scenes, hotkeys.
+
+**Undo** (Ctrl+Z) and **Redo** (Ctrl+Y or Ctrl+Shift+Z) step through mix
+changes: levels, mutes, sends, feeds, processing, the voice pad, plugin
+bypass and wet/dry. A whole fader drag is one step, and up to 100 steps are
+kept. Adding or removing strips, buses and plugins, and sources and devices,
+are not undone.
 - **View:** soundboard, compact desk, dark theme.
 - **Setup:** audio device, settings, hotkeys, recording options, open the
   recordings folder.

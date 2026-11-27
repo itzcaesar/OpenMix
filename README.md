@@ -142,7 +142,8 @@ PROCESSING, INSERT, SENDS, the **Voice pad** button, then the fader bay.
      Right-click the key (or M) for **pre-fader** (the send ignores the strip fader, for
      example a separate mix for a call); a pre-fader send shows "P".
 5. **Voice pad** opens the strip's XY pad in a popup (double-click or Home resets the puck):
-   - *Voice*: X = tone tilt (dark to bright), Y = presence and echo.
+   - *Voice*: X = tone tilt from Lo (full) to Hi (bright), about +/-9 dB. Y: the lower half
+     adds presence and air, the upper half a doubler, with a little reverb near the top.
    - *Pan*: X = constant-power pan, Y = stereo width (100-200%).
    - *Color*: corners Warm, Bright, Radio and Close; the puck blends them.
    - *Space*: X = pan, Y = distance (quieter, darker, with early reflections).
@@ -253,6 +254,11 @@ empty on a default (VST2-off) build.
   momentary, short-term and integrated loudness.
 - The three-dot menu: rename the bus, analyser, loudness normalisation, monitor bus (where
   solo plays), remove the bus.
+- **Routing matrix** (Mixer menu): every strip and bus down the side, every bus across the top.
+  A cell's key turns the send on and its knob sets the level. Strip rows are the strips' own
+  sends. A bus row feeds that bus, after its fader and limiter, into another bus, for example
+  B1 (the stream mix) into A1 so you hear it. A feed that would make a loop is greyed out.
+  While something is soloed, feeds into the monitor bus pause.
 
 ## Recording and replay
 
@@ -394,6 +400,7 @@ Tab and Shift+Tab move through the header, then each strip top to bottom, then t
 | Spectrum | Enter or Space opens the analyser |
 | Buttons and pickers | Enter or Space |
 | Record, save replay | Ctrl+Shift+R, Ctrl+Shift+S |
+| Undo, redo a mix change | Ctrl+Z, Ctrl+Y (or Ctrl+Shift+Z) |
 | Soundboard pads | 1-8 while the soundboard is shown; M opens a focused pad's menu |
 
 These shortcuts work while OpenMix has focus. For keys that work in any app, set up

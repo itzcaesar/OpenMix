@@ -10,6 +10,7 @@
 #include "app/RemoteCommands.h"
 #include "app/MidiControl.h"
 #include "app/GlobalHotkeys.h"
+#include "app/MixHistory.h"
 
 #include <cmath>
 #include <cstdio>
@@ -68,6 +69,34 @@ int main (int argc, char** argv)
         pad.setModeAndSync (VoicePadParams::Pan);
         CHECK (std::abs (pad.x.load() - (-0.45f)) < 1e-5f && std::abs (pad.y.load() - 0.25f) < 1e-5f,
                "Pan position was not saved");
+    });
+
+    run ("VoicePad: Voice mode tilts Lo/Hi, lifts presence, and the top doubles", []
+    {
+        // RMS of a sine after 0.5 s through the pad at (x, y).
+        auto rms = [] (float x, float y, double hz)
+        {
+            VoicePadParams params;
+            params.setPosition (x, y);
+            VoicePadProcessor pad (params);
+            const double fs = 48000.0;
+            const int n = 24000;
+            pad.prepare (fs, n);
+            juce::AudioBuffer<float> buf (2, n);
+            for (int i = 0; i < n; ++i)
+            {
+                const float s = 0.25f * (float) std::sin (juce::MathConstants<double>::twoPi * hz * i / fs);
+                buf.setSample (0, i, s);
+                buf.setSample (1, i, s);
+            }
+            pad.process (buf, n);
+            return buf.getRMSLevel (0, n / 2, n / 2);
+        };
+        const float flat100 = rms (0, -1, 100), flat8k = rms (0, -1, 8000), flat3k = rms (0, -1, 3000);
+        CHECK (rms (-1, -1, 100) > flat100 * 2.0f, "Lo should boost the lows by several dB");
+        CHECK (rms (1, -1, 8000) > flat8k * 2.0f, "Hi should boost the highs by several dB");
+        CHECK (rms (0, 0, 3000) > flat3k * 1.5f, "the middle of Y should lift presence");
+        CHECK (std::abs (rms (0, 1, 300) - rms (0, 0, 300)) > 0.005f, "the top should add the doubler");
     });
 
     run ("RemoteCommands: validation, displayName, and soundboardNames", []
@@ -254,6 +283,48 @@ int main (int argc, char** argv)
         CHECK (! applyRemoteCommand (engine, "/strip/1/fader", std::nanf ("")), "NaN fader accepted");
         CHECK (! applyRemoteCommand (engine, "/strip/1/fader", INFINITY), "Inf fader accepted");
         CHECK (engine.getStrip (0).faderDb.load() == -6.0f, "fader changed by a bad value");
+    });
+
+    run ("Bus feeds: loops are refused, scenes and removeBus handle them", []
+    {
+        MixerEngine engine;
+        for (int b : { 0, 3, 4 })
+            engine.addBus (b);
+
+        CHECK (! engine.setBusFeed (3, 3, true), "a bus fed itself");
+        CHECK (engine.setBusFeed (3, 0, true), "B1 -> A1 refused");
+        CHECK (engine.setBusFeed (4, 3, true), "B2 -> B1 refused");
+        CHECK (! engine.setBusFeed (0, 4, true), "A1 -> B2 makes a loop through B1 and was allowed");
+        CHECK (engine.busFeedWouldLoop (0, 3) && ! engine.busFeedWouldLoop (4, 0), "loop check is wrong");
+
+        engine.getBus (3).feedDb[0].store (-6.0f);
+        auto scene = Session::captureScene (engine);
+        engine.setBusFeed (3, 0, false);
+        engine.getBus (3).feedDb[0].store (0.0f);
+        Session::applyScene (*scene, engine);
+        CHECK (engine.getBus (3).feedOn[0].load() && std::abs (engine.getBus (3).feedDb[0].load() + 6.0f) < 0.01f,
+               "scene did not restore B1 -> A1 at -6 dB");
+
+        engine.removeBus (3);
+        CHECK (! engine.getBus (3).feedOn[0].load() && ! engine.getBus (4).feedOn[3].load(),
+               "removing B1 left feeds to or from it");
+    });
+
+    run ("MixHistory: undo, redo, a new change drops redo, settle keeps it", []
+    {
+        MixHistory h;
+        CHECK (h.offer ("a") && ! h.offer ("a") && h.offer ("b") && h.offer ("c"), "offer");
+        CHECK (h.undo() == "b" && h.undo() == "a" && h.undo().isEmpty(), "undo order");
+        CHECK (h.redo() == "b", "redo");
+        h.settle ("b2");                       // round trip changed the text slightly
+        CHECK (! h.offer ("b2") && h.canRedo(), "settle should not count as a new step");
+        h.offer ("x");
+        CHECK (! h.canRedo() && h.undo() == "b2", "a new change should drop redo");
+        for (int i = 0; i < 300; ++i)
+            h.offer (juce::String (i));
+        int steps = 0;
+        while (h.canUndo()) { h.undo(); ++steps; }
+        CHECK (steps == (int) MixHistory::maxSteps, "history is capped");
     });
 
     run ("Session: scenes round-trip the mix, apply restores strips, buses and presets", []

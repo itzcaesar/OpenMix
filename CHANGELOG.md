@@ -22,6 +22,11 @@ This is OpenMix's first public release. There was no earlier release:
   safety limiter. Buses are grouped **Hardware / Virtual** on the desk, and
   each bus can have a custom name (its group never changes when renamed).
   **+ Bus** asks for the group first, then an optional custom name.
+- **Routing matrix** (Mixer menu): every strip's sends and **bus-to-bus feeds**
+  (a bus after its fader into another bus, e.g. B1 into A1) in one grid; a
+  feed that would make a loop is refused. Feeds are saved in sessions and scenes.
+- **Undo / redo** of mix changes (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, also in the
+  Mixer menu), up to 100 steps; a whole fader drag is one step.
 - Per-app routing and per-app output device, multi-device I/O with
   drift-correcting resampling, and device unplug / replug while running.
 
@@ -34,7 +39,9 @@ This is OpenMix's first public release. There was no earlier release:
   frequency, and ducking (any strip as sidechain).
 - DeepFilterNet 3 as a higher-quality noise removal option, with a verified
   in-app download for its model (weights are not bundled).
-- VoicePad XY pad with Voice, Pan, Colour and Space modes.
+- VoicePad XY pad with Voice, Pan, Colour and Space modes. Voice mode tilts
+  the tone from Lo to Hi (about +/-9 dB) and adds presence, then a doubler
+  and a little reverb as the puck goes up.
 - **Gain, HPF and LPF knobs on every strip** (gain -24 to +24 dB, HPF 20 Hz
   to 1 kHz, LPF 1 to 20 kHz; a filter knob at its end is off), sitting before
   the EQ in the signal path, switchable without clicks, with Ø invert polarity

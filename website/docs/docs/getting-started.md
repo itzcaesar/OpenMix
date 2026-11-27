@@ -107,6 +107,7 @@ then the buses.
 | Spectrum | Enter or Space opens the analyser |
 | Buttons and pickers | Enter or Space |
 | Record, save replay | Ctrl+Shift+R, Ctrl+Shift+S |
+| Undo, redo a mix change | Ctrl+Z, Ctrl+Y (or Ctrl+Shift+Z) |
 | Soundboard pads | 1–8 while the soundboard is shown; M opens a focused pad's menu |
 
 These shortcuts work while OpenMix has focus. For keys that work in any

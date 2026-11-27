@@ -139,7 +139,8 @@ target_sources(OpenMix PRIVATE
     Source/ui/TrayIcon.cpp
     Source/ui/AnalyserPanel.cpp
     Source/ui/SoundboardPanel.cpp
-    Source/ui/HotkeysPanel.cpp)
+    Source/ui/HotkeysPanel.cpp
+    Source/ui/RoutingPanel.cpp)
 
 target_include_directories(OpenMix PRIVATE Source)
 if(OPENMIX_ENABLE_VST2)

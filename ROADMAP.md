@@ -26,6 +26,7 @@ stands:
 | Soundboard with hotkeys | 4 | Done (global hotkeys) |
 | Multitrack recording plus a **replay buffer** ("save the last 60 s") | 4 | Done |
 | Scenes: snapshot the whole mixer and switch with a hotkey | 6 | Done |
+| Routing matrix with bus-to-bus feeds, and undo / redo of mix changes | 6 | Done |
 | Per-send levels and pre-fader sends instead of on/off bus buttons | 4 | Done |
 | Spectrum analyser and LUFS loudness per bus | 4 | Done (RMS meters and loudness normalization done) |
 | Latency compensation for plugin chains | 5 | Done |
