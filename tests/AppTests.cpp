@@ -11,6 +11,7 @@
 #include "app/MidiControl.h"
 #include "app/GlobalHotkeys.h"
 #include "app/MixHistory.h"
+#include "creator/MediaDecode.h"
 
 #include <cmath>
 #include <cstdio>
@@ -504,6 +505,76 @@ int main (int argc, char** argv)
         CHECK (! board.isPlaying (0) && l[127] == 0.0f, "silent after the 5 ms fade");
         tmp.deleteFile();
     });
+
+    run ("Media Foundation reader: rate, length, and the right samples after seeking either way", []
+    {
+        // A ramp, so every sample says where it is: left = i / n, right = -left.
+        const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("openmix-mf-ramp.wav");
+        f.deleteFile();
+        constexpr int n = 88200;
+        {
+            std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (f);
+            auto writer = std::unique_ptr<juce::AudioFormatWriter> (juce::WavAudioFormat().createWriterFor (stream,
+                juce::AudioFormatWriterOptions{}.withSampleRate (44100.0).withNumChannels (2).withBitsPerSample (24)));
+            juce::AudioBuffer<float> ramp (2, n);
+            for (int i = 0; i < n; ++i)
+            {
+                ramp.setSample (0, i, (float) i / n);
+                ramp.setSample (1, i, -(float) i / n);
+            }
+            writer->writeFromAudioSampleBuffer (ramp, 0, n);
+        }
+
+        auto reader = createMediaFoundationReader (f);
+        CHECK (reader != nullptr, "Media Foundation opens a WAV");
+        CHECK (reader->sampleRate == 44100.0 && reader->numChannels == 2, "format %f / %u", reader->sampleRate, reader->numChannels);
+        CHECK (std::abs (reader->lengthInSamples - n) < 100, "length %lld", (long long) reader->lengthInSamples);
+
+        juce::AudioBuffer<float> out (2, 256);
+        for (const int start : { 60000, 1000, 1256, 30000 })   // ahead, back, straight on, back again
+        {
+            reader->read (&out, 0, 256, start, true, true);
+            float worst = 0.0f;
+            for (int i = 0; i < 256; ++i)
+                worst = juce::jmax (worst, std::abs (out.getSample (0, i) - (float) (start + i) / n),
+                                           std::abs (out.getSample (1, i) + (float) (start + i) / n));
+            CHECK (worst < 1.0e-4f, "samples at %d off by %f", start, worst);
+        }
+        CHECK (createMediaFoundationReader (juce::File ("C:/no/such/file.mp4")) == nullptr, "a missing file gives no reader");
+        reader.reset();
+        f.deleteFile();
+    });
+
+    // Needs a real video, so it runs only with OPENMIX_TEST_VIDEO set to an MP4 / MKV / MOV path.
+    if (const auto video = juce::SystemStats::getEnvironmentVariable ("OPENMIX_TEST_VIDEO", {}); video.isNotEmpty())
+        run ("Media Foundation: a video file's sound and pictures", [video]
+        {
+            auto reader = createMediaFoundationReader (juce::File (video));
+            CHECK (reader != nullptr && reader->lengthInSamples > 0, "the video's audio opens");
+            juce::AudioBuffer<float> out (2, 4096);
+            reader->read (&out, 0, 4096, reader->lengthInSamples / 2, true, true);
+            juce::Range<float> peak[2];
+            reader->readMaxLevels (0, reader->lengthInSamples, peak, 2);
+            std::printf ("       audio %.0f Hz, %u ch, peak %.4f\n", reader->sampleRate, reader->numChannels,
+                         juce::jmax (peak[0].getEnd(), -peak[0].getStart()));
+
+            VideoFrames frames;
+            CHECK (frames.open (juce::File (video)), "the video stream opens");
+            frames.setTime (5.0);
+            juce::Image img;
+            for (int tries = 0; tries < 300 && ! img.isValid(); ++tries)
+            {
+                juce::Thread::sleep (10);
+                img = frames.getFrame();
+            }
+            CHECK (img.isValid() && img.getWidth() > 0 && img.getWidth() <= 960, "a frame decodes (%d x %d)", img.getWidth(), img.getHeight());
+            // Saved so you can look at it: right way up, not stretched.
+            const auto png = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("openmix-video-frame.png");
+            png.deleteFile();
+            if (juce::FileOutputStream out (png); out.openedOk())
+                juce::PNGImageFormat().writeImageToStream (img, out);
+            std::printf ("       frame %d x %d saved to %s\n", img.getWidth(), img.getHeight(), png.getFullPathName().toRawUTF8());
+        });
 
     run ("MediaPlayer: plays a file, next / previous / repeat, removing tracks keeps the current one", []
     {

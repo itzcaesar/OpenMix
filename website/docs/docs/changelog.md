@@ -25,8 +25,9 @@ is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
 - **Meters and loudness:** RMS meters, K-weighted loudness normalisation,
   spectrum and LUFS per bus; status bar with engine CPU%.
 - **Creator tools and control:** multitrack recorder, replay buffer,
-  soundboard (32 pads, per-pad volume, colour and play mode), a media
-  player any strip can use as its source, scenes, global hotkeys, OSC / phone / WebSocket / MIDI
+  soundboard (32 pads, per-pad volume, colour and play mode), a docked
+  media player for audio and video files (waveform, video picture) that any
+  strip can use as its source, solo before or after the fader, scenes, global hotkeys, OSC / phone / WebSocket / MIDI
   remote, Stream Deck via OSC or WebSocket.
 - **Interface:** a desk of narrow, identical columns with coloured name
   plates, send knobs and one aligned fader bay; a menu bar with a scene

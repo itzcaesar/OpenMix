@@ -39,6 +39,16 @@ jobs:
       - name: Core tests
         run: ctest --test-dir build -C Release --output-on-failure
 
+      # Signs only when the repository has the SIGN_PFX_BASE64 / SIGN_PFX_PASSWORD secrets
+      # (see docs/SIGNING.md); otherwise the script notes it and the build goes on unsigned.
+      - name: Sign binaries
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
+          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+        run: ./installer/sign.ps1 build/OpenMix_artefacts/Release/OpenMix.exe build/OpenMix_artefacts/Release/df.dll
+
       - name: Package
         shell: pwsh
         run: |
@@ -63,6 +73,14 @@ jobs:
           choco install innosetup --no-progress -y
           $version = "${{ github.ref_name }}".TrimStart('v')
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "/DSourceDir=$PWD\dist" installer\OpenMix.iss
+
+      - name: Sign installer (version tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
+          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+        run: ./installer/sign.ps1 (Get-ChildItem installer-out/*.exe).FullName
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')

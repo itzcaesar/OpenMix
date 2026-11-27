@@ -587,6 +587,7 @@ void Session::save (MixerEngine& engine, bool reusePluginState)
     juce::XmlElement root ("OpenMixSession");
     root.setAttribute ("version", sessionVersion);
     root.setAttribute ("theme", Theme::isDark() ? "dark" : "light");
+    root.setAttribute ("soloPfl", engine.soloPreFader.load());
 
     if (auto device = engine.getDeviceManager().createStateXml())
         root.addChildElement (device.release());
@@ -737,6 +738,7 @@ static int busIndexFor (const juce::XmlElement& xb, int version)
 void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loadPlugins)
 {
     const int version = root.getIntAttribute ("version", 1);
+    engine.soloPreFader.store (root.getBoolAttribute ("soloPfl", false));
 
     // Only strips present in the file are active (version 1 files list exactly the 3 defaults).
     for (int s = 0; s < kNumStrips; ++s)

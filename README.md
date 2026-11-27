@@ -63,6 +63,9 @@ ctest --test-dir build -C Release
 .\build\OpenMix_artefacts\Release\OpenMix.exe
 ```
 
+Release builds are signed when the repository has a code-signing certificate; see
+[docs/SIGNING.md](docs/SIGNING.md).
+
 ## Quick start: mic to Discord, music to your headphones
 
 1. Click the **device readout** on the right of the bottom bar (or **Setup > Audio device**)
@@ -153,7 +156,9 @@ PROCESSING, INSERT, SENDS, the **Voice pad** button, then the fader bay.
    to rename).
    - **Solo** plays the strip alone on the **monitor bus** (the bus with **MON** lit).
      **SAFE** keeps the strip playing on the monitor bus while another strip is soloed.
-     Stream and call buses are not affected.
+     Stream and call buses are not affected. Solo listens after the fader (AFL) by default;
+     **Mixer > Solo before the fader (PFL)** makes it listen before the fader, so you can
+     check a strip that is faded down. The choice is saved with the session.
    - **LATENCY** is this strip's own delay (noise removal plus plugins). Every strip is
      delayed to match the slowest one, so sends stay aligned.
 
@@ -293,14 +298,20 @@ A bar along the bottom of the window (the header's **Soundboard** button shows o
 
 ## Media player
 
-**View > Media player** opens a playlist player. Pick **Media player** as a strip's source
-(the strip's source menu) to hear it: that strip's EQ, compressor, ducking (under your mic)
-and sends all apply, so music can go to the stream at one level and your headphones at another.
+**Media** in the header (or **View > Media player**) shows the player as a bar along the bottom of the desk, above the
+soundboard. Pick **Media player** as a strip's source (the strip's source menu) to hear it:
+that strip's EQ, compressor, ducking (under your mic) and sends all apply, so music can go to
+the stream at one level and your headphones at another.
 
-- Add WAV, MP3, FLAC, Ogg or AIFF files with **+ Add files** or by dropping them on the window.
-  Files are streamed from disk, so a two-hour mix is fine.
-- Play/pause (or Space), previous, next, a position bar to seek, **Repeat** (all, one, off)
-  and **Shuffle**. Double-click or Enter plays a track; Delete removes it.
+- Add audio or video files with **+ Add** or by dropping them on the bar: WAV, MP3, FLAC, Ogg
+  and AIFF, plus anything Windows can decode (M4A, AAC, WMA, MP4, M4V, MOV, MKV, AVI, WMV,
+  WebM, 3GP). Files are streamed from disk, so a two-hour mix is fine. Video files play their
+  sound through the strip; WebM and some MKV files need the free codec extensions from the
+  Microsoft Store.
+- The bar shows the track's waveform (click or drag it to seek) and, for video files, the
+  picture.
+- Play/pause (or Space), previous, next, **Repeat** (all, one, off) and **Shuffle**.
+  Double-click or Enter plays a track; Delete removes it.
 - The playlist, the current track, repeat and shuffle are saved with the session. It comes back
   paused.
 
@@ -473,7 +484,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 |---|---|
 | `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `RemoteCommands` (one remote language for OSC, WebSocket and MIDI), `RemoteServer` (phone page, HTTP and WebSocket API), `MidiControl` (learnable MIDI mappings), `UpdateChecker` |
 | `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` and `PluginSandbox` (VST3 control instances and out-of-process audio rendering), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `CpuMeter` |
-| `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard`, `MediaPlayer` |
+| `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard`, `MediaPlayer`, `MediaDecode` (Media Foundation audio reader and video frames) |
 | `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, K-weighted loudness normaliser); plus `Denoiser` (RNNoise at any sample rate and DeepFilterNet 3 on a worker thread) |
 | `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send, wet/dry and global FX pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |
 | `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |

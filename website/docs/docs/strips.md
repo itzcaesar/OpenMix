@@ -131,7 +131,9 @@ across the desk.
 - **M** mutes the strip (red). **S** solos it (yellow) on the **monitor
   bus**, the bus with **MON** lit. **SAFE** (solo-safe) keeps the strip
   playing on the monitor bus while another strip is soloed. Stream and
-  call buses are never affected by solo.
+  call buses are never affected by solo. Solo listens after the fader
+  (AFL) by default; **Mixer > Solo before the fader (PFL)** makes it
+  listen before the fader, so you can check a strip that is faded down.
 - **LATENCY** shows this strip's own processing delay (noise removal plus
   plugins). Every strip is delayed to match the slowest one, so sends
   stay aligned.

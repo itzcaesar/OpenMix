@@ -6,6 +6,7 @@
 #include "ui/StripView.h"
 #include "ui/BusView.h"
 #include "ui/SoundboardPanel.h"
+#include "ui/MediaPlayerPanel.h"
 #include "ui/Theme.h"
 #include "app/OscControl.h"
 #include "app/RemoteServer.h"
@@ -40,11 +41,16 @@ public:
     // pad, sends) plus the fader bay need ~950 px of console height (900 compact)
     // before anything squeezes. Shorter windows scroll instead of crushing the
     // strips -- the inserts are the only part that shrinks, and they scroll.
-    int minimumHeight() const { return (Theme::isCompact() ? 640 : 685) + (soundboard.isVisible() ? SoundboardPanel::barHeight() + Theme::s2 : 0); }
+    int minimumHeight() const
+    {
+        return (Theme::isCompact() ? 640 : 685) + (soundboard.isVisible() ? SoundboardPanel::barHeight() + Theme::s2 : 0)
+                                                + (media.isVisible() ? MediaPlayerPanel::barHeight() + Theme::s2 : 0);
+    }
 
     std::array<std::unique_ptr<StripView>, kNumStrips> strips;
     std::array<std::unique_ptr<BusView>, kNumBuses> buses;
     SoundboardPanel soundboard;
+    MediaPlayerPanel media;
 
 private:
     void showAddBusMenu();
@@ -153,7 +159,7 @@ private:
     void handleHotkey (const GlobalHotkeys::Binding&, bool down);
     void showHotkeys();
     void showRouting();
-    void showMediaPlayer();
+    void setMediaShown (bool);
     void undoMix (bool redo);
     juce::String captureMixText();
     void mouseDown (const juce::MouseEvent&) override;
@@ -179,6 +185,7 @@ private:
     MenuDotsButton recordMenuButton;
     juce::TextButton replayButton { "Save replay" };
     StripKey soundboardButton { "Soundboard" };
+    StripKey mediaButton { "Media" };
     ChipButton sceneButton;
     juce::TextButton scenePrevButton { "<" }, sceneNextButton { ">" }, sceneStoreButton { "Store" }, sceneNewButton { "New" };
     juce::TextButton mixerMenuButton { "Mixer" }, viewMenuButton { "View" }, setupMenuButton { "Setup" };
@@ -197,7 +204,6 @@ private:
     juce::uint32 noteUntilMs = 0;
     int lastExternalChanges = 0;
     MixHistory history;
-    juce::Component::SafePointer<juce::DialogWindow> mediaWindow;   // one media player window at a time
     juce::Viewport consoleView;
     std::unique_ptr<ConsoleContent> console;
 

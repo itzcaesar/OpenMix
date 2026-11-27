@@ -30,9 +30,10 @@ static int consolePad() { return Theme::isCompact() ? 12 : 16; }
 //==============================================================================
 // ConsoleContent
 
-ConsoleContent::ConsoleContent (MixerEngine& e) : soundboard (e), engine (e)
+ConsoleContent::ConsoleContent (MixerEngine& e) : soundboard (e), media (e), engine (e)
 {
     addChildComponent (soundboard);
+    addChildComponent (media);
 
     for (int s = 0; s < kNumStrips; ++s)
     {
@@ -153,7 +154,7 @@ int ConsoleContent::minimumWidth() const
     const int desk = ns * StripView::minWidth() + (ns - 1) * stripGap()
                    + sectionGap()
                    + juce::jmax (nb * BusView::minWidth() + (nb - 1) * stripGap() + gap, 150);
-    return consolePad() * 2 + (soundboard.isVisible() ? juce::jmax (desk, SoundboardPanel::minWidth) : desk);
+    return consolePad() * 2 + (soundboard.isVisible() || media.isVisible() ? juce::jmax (desk, SoundboardPanel::minWidth) : desk);
 }
 
 void ConsoleContent::paint (juce::Graphics& g)
@@ -201,13 +202,18 @@ void ConsoleContent::resized()
     const int inputsW = ns * stripW + (ns - 1) * stripGap();
     const int outputsW = juce::jmax (nb * busW + (nb - 1) * stripGap() + busGroupGap, 150);
     const int deskW = inputsW + sectionGap() + soundW + outputsW;
-    r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), juce::jmax (deskW, soundboard.isVisible() ? SoundboardPanel::minWidth : 0)),
+    r = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), juce::jmax (deskW, soundboard.isVisible() || media.isVisible() ? SoundboardPanel::minWidth : 0)),
                                  r.getHeight());
 
     // Soundboard: a bar under the whole desk, so the strips and buses keep one fader line.
     if (soundboard.isVisible())
     {
         soundboard.setBounds (r.removeFromBottom (SoundboardPanel::barHeight()));
+        r.removeFromBottom (Theme::s2);
+    }
+    if (media.isVisible())
+    {
+        media.setBounds (r.removeFromBottom (MediaPlayerPanel::barHeight()));
         r.removeFromBottom (Theme::s2);
     }
     deskBottom = r.getBottom();
@@ -548,10 +554,18 @@ MainComponent::MainComponent()
     soundboardButton.setTooltip ("Show or hide the soundboard column: eight pads you can play into any bus.");
     soundboardButton.onClick = [this] { setSoundboardShown (! console->soundboard.isVisible()); };
     addAndMakeVisible (soundboardButton);
+    makeLamp (mediaButton, "key");
+    mediaButton.setClickingTogglesState (false);
+    mediaButton.setTitle ("Show the media player");
+    mediaButton.setTooltip ("Show or hide the media player bar: a playlist of audio and video files any strip can play.");
+    mediaButton.onClick = [this] { setMediaShown (! console->media.isVisible()); };
+    addAndMakeVisible (mediaButton);
     console->soundboard.onChanged = [this] { Session::save (engine); };
     for (auto& s : console->strips)
-        s->onOpenMediaPlayer = [this] { showMediaPlayer(); };
+        s->onOpenMediaPlayer = [this] { setMediaShown (true); };
     setSoundboardShown (AppSettings::get().soundboardShown());
+    console->media.onChanged = [this] { Session::save (engine); };
+    setMediaShown (AppSettings::get().mediaShown());
 
     updateButton.onClick = [this] { updatePage.launchInDefaultBrowser(); };
     makeClickable (updateButton);
@@ -1312,6 +1326,7 @@ void MainComponent::timerCallback()
         for (auto& s : console->strips) if (s->isVisible()) s->refreshFromStrip();
         for (auto& b : console->buses)  if (b->isVisible()) b->refreshFromBus();
         console->soundboard.refresh();
+        console->media.refresh();
         updateSceneButton();
     }
 
@@ -1596,6 +1611,16 @@ void MainComponent::setSoundboardShown (bool shown)
     AppSettings::get().setSoundboardShown (shown);
     soundboardButton.setToggleState (shown, juce::dontSendNotification);
     console->soundboard.setVisible (shown);
+    console->relayout();
+}
+
+void MainComponent::setMediaShown (bool shown)
+{
+    AppSettings::get().setMediaShown (shown);
+    mediaButton.setToggleState (shown, juce::dontSendNotification);
+    console->media.setVisible (shown);
+    if (shown)
+        console->media.refresh();
     console->relayout();
 }
 
@@ -1953,29 +1978,6 @@ void MainComponent::undoMix (bool redo)
     showNote (redo ? "Redo" : "Undo");
 }
 
-void MainComponent::showMediaPlayer()
-{
-    if (mediaWindow != nullptr)
-    {
-        mediaWindow->toFront (true);
-        return;
-    }
-
-    auto* panel = new MediaPlayerPanel (engine);
-    panel->onChanged = [this] { Session::save (engine); };
-    panel->setSize (520, 460);
-
-    juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned (panel);
-    o.dialogTitle = "Media player";
-    o.dialogBackgroundColour = Theme::p().window;
-    o.escapeKeyTriggersCloseButton = true;
-    o.useNativeTitleBar = false;
-    o.resizable = true;
-    o.componentToCentreAround = this;
-    mediaWindow = o.launchAsync();
-}
-
 void MainComponent::showRouting()
 {
     auto* panel = new RoutingPanel (engine);
@@ -2000,6 +2002,12 @@ void MainComponent::showMixerMenu()
     menu.addItem ("Add strip", engine.getNumActiveStrips() < kNumStrips, false, [this] { console->addStrip(); });
     menu.addItem ("Add bus...", engine.getNumActiveBuses() < kNumBuses, false, [this] { console->addBus(); });
     menu.addItem ("Routing matrix...", [this] { showRouting(); });
+    menu.addItem ("Solo before the fader (PFL)", true, engine.soloPreFader.load(), [this]
+    {
+        engine.soloPreFader.store (! engine.soloPreFader.load());
+        showNote (engine.soloPreFader.load() ? "Solo: pre-fader listen (PFL)" : "Solo: after-fader listen (AFL)");
+        Session::save (engine);
+    });
     menu.addSeparator();
     history.offer (captureMixText());   // so a change made just now can be undone from the menu
     menu.addItem ("Undo (Ctrl+Z)", history.canUndo(), false, [this] { undoMix (false); });
@@ -2015,7 +2023,7 @@ void MainComponent::showViewMenu()
 {
     juce::PopupMenu menu;
     menu.addItem ("Soundboard", true, console->soundboard.isVisible(), [this] { setSoundboardShown (! console->soundboard.isVisible()); });
-    menu.addItem ("Media player...", [this] { showMediaPlayer(); });
+    menu.addItem ("Media player", true, console->media.isVisible(), [this] { setMediaShown (! console->media.isVisible()); });
     menu.addItem ("Compact desk", true, Theme::isCompact(), [this]
     {
         AppSettings::get().setCompactMode (! Theme::isCompact());
@@ -2096,6 +2104,7 @@ void MainComponent::resized()
     const bool narrowHeader = getWidth() < 1140;
     const int updateW     = narrowHeader ? 104 : 124;
     const int soundboardW = narrowHeader ? 92  : 104;
+    const int mediaW      = narrowHeader ? 64  : 76;
     const int replayW     = narrowHeader ? 88  : 100;
     const int recordW     = narrowHeader ? 80  : 92;
     for (auto* d : { &closeDot, &maximiseDot, &minimiseDot })
@@ -2110,6 +2119,8 @@ void MainComponent::resized()
         header.removeFromRight (Theme::s1);
     }
     soundboardButton.setBounds (header.removeFromRight (soundboardW).withSizeKeepingCentre (soundboardW, h));
+    header.removeFromRight (Theme::s1);
+    mediaButton.setBounds (header.removeFromRight (mediaW).withSizeKeepingCentre (mediaW, h));
     header.removeFromRight (Theme::s3);
     transportDividerX = header.getRight() + Theme::s3 / 2;
     replayButton.setBounds (header.removeFromRight (replayW).withSizeKeepingCentre (replayW, h));

@@ -1,5 +1,4 @@
 #include "ui/MediaPlayerPanel.h"
-#include "ui/Theme.h"
 
 static juce::String timeText (double seconds)
 {
@@ -13,6 +12,7 @@ MediaPlayerPanel::MediaPlayerPanel (MixerEngine& e) : engine (e), player (e.getM
 {
     setTitle ("Media player");
     setWantsKeyboardFocus (true);
+    tape.setText ("Media player");
 
     prevButton.setTooltip ("Previous track (back to the start after the first 3 seconds).");
     prevButton.onClick = [this] { player.previous(); refresh(); };
@@ -37,37 +37,36 @@ MediaPlayerPanel::MediaPlayerPanel (MixerEngine& e) : engine (e), player (e.getM
         if (onChanged) onChanged();
     };
 
-    addButton.setTooltip ("Add WAV, MP3, FLAC, Ogg or AIFF files. You can also drop files on this window.");
+    addButton.setTooltip ("Add audio or video files (MP3, WAV, FLAC, M4A, MP4, MKV, MOV and more). You can also drop files on the bar.");
     addButton.onClick = [this] { addFiles(); };
     removeButton.setTooltip ("Remove the selected track (or press Delete).");
     removeButton.onClick = [this] { deleteKeyPressed (list.getSelectedRow()); };
     clearButton.setTooltip ("Empty the playlist.");
     clearButton.onClick = [this] { player.clearPlaylist(); refresh(); if (onChanged) onChanged(); };
 
-    position.setTitle ("Position");
-    position.setRange (0.0, 1.0);
-    position.onDragStart = [this] { seeking = true; };
-    position.onDragEnd = [this] { player.setPosition (position.getValue()); seeking = false; };
-    position.onValueChange = [this] { if (! position.isMouseButtonDown()) player.setPosition (position.getValue()); };
-
-    list.setRowHeight (28);
+    list.setRowHeight (22);
     list.setTitle ("Playlist");
     list.setColour (juce::ListBox::backgroundColourId, Theme::p().well);
     list.setColour (juce::ListBox::outlineColourId, Theme::p().line);
     list.setOutlineThickness (1);
 
+    addAndMakeVisible (tape);
     for (auto* c : std::initializer_list<juce::Component*> { &prevButton, &playButton, &nextButton, &repeatButton, &shuffleButton,
-                                                             &addButton, &removeButton, &clearButton, &position, &list })
+                                                             &addButton, &removeButton, &clearButton, &list })
     {
         makeClickable (*c);
         addAndMakeVisible (c);
     }
 
+    thumb.addChangeListener (this);
     refresh();
-    startTimerHz (10);
+    startTimerHz (30);
 }
 
-MediaPlayerPanel::~MediaPlayerPanel() = default;
+MediaPlayerPanel::~MediaPlayerPanel()
+{
+    thumb.removeChangeListener (this);
+}
 
 bool MediaPlayerPanel::anyStripPlaysIt() const
 {
@@ -90,23 +89,52 @@ void MediaPlayerPanel::refresh()
     removeButton.setEnabled (list.getSelectedRow() >= 0);
     list.updateContent();
     list.repaint();
-    timerCallback();
+    trackChanged();
+    repaint();
+}
+
+// A new track: read its waveform, and open its picture if it's a video.
+void MediaPlayerPanel::trackChanged()
+{
+    const int i = player.getCurrentIndex();
+    const auto file = juce::isPositiveAndBelow (i, player.getPlaylist().size()) ? player.getPlaylist()[i] : juce::File();
+    if (file == shownFile)
+        return;
+    shownFile = file;
+
+    thumb.clear();
+    if (file != juce::File())
+        if (auto reader = player.createReader (file))
+            thumb.setReader (reader.release(), file.hashCode64());
+
+    video.close();
+    if (MediaPlayer::isVideoFile (file))
+    {
+        video.open (file);
+        video.setTime (player.getPosition());
+    }
+    resized();
     repaint();
 }
 
 void MediaPlayerPanel::timerCallback()
 {
-    const double length = player.getLength();
-    if (! seeking)
+    const double pos = player.getPosition();
+    if (video.hasVideo())
     {
-        position.setRange (0.0, juce::jmax (0.1, length), 0.0);
-        position.setValue (player.getPosition(), juce::dontSendNotification);
+        video.setTime (pos);
+        repaint (videoArea);
     }
-    position.setEnabled (length > 0.0);
-    if (playButton.getButtonText() != (player.isPlaying() ? "Pause" : "Play"))
+    if (pos != lastPosition)
+    {
+        lastPosition = pos;
+        repaint (waveArea);
+        repaint (timeArea);
+    }
+    if (playButton.getButtonText() != (player.isPlaying() ? "Pause" : "Play")
+        || shownFile != (juce::isPositiveAndBelow (player.getCurrentIndex(), player.getPlaylist().size())
+                             ? player.getPlaylist()[player.getCurrentIndex()] : juce::File()))
         refresh();   // the track ended or changed on its own
-    repaint (timeArea);
-    repaint (titleArea);
 }
 
 bool MediaPlayerPanel::keyPressed (const juce::KeyPress& k)
@@ -118,6 +146,34 @@ bool MediaPlayerPanel::keyPressed (const juce::KeyPress& k)
         return true;
     }
     return false;
+}
+
+void MediaPlayerPanel::seekTo (int x)
+{
+    const double length = player.getLength();
+    if (length <= 0.0 || waveArea.getWidth() <= 0)
+        return;
+    player.setPosition (juce::jlimit (0.0, length, (x - waveArea.getX()) * length / waveArea.getWidth()));
+    lastPosition = -1.0;
+    timerCallback();
+}
+
+void MediaPlayerPanel::mouseDown (const juce::MouseEvent& e)
+{
+    seeking = waveArea.contains (e.getPosition());
+    if (seeking)
+        seekTo (e.x);
+}
+
+void MediaPlayerPanel::mouseDrag (const juce::MouseEvent& e)
+{
+    if (seeking)
+        seekTo (e.x);
+}
+
+void MediaPlayerPanel::mouseUp (const juce::MouseEvent&)
+{
+    seeking = false;
 }
 
 int MediaPlayerPanel::getNumRows()
@@ -134,10 +190,10 @@ void MediaPlayerPanel::paintListBoxItem (int row, juce::Graphics& g, int width, 
     if (selected)
         g.fillAll (t.selBg);
     g.setColour (current ? t.text : t.textDim);
-    g.setFont (Theme::ui (13.0f, current));
+    g.setFont (Theme::ui (12.0f, current));
     const auto name = player.getPlaylist()[row].getFileNameWithoutExtension();
     g.drawText ((current ? juce::String::fromUTF8 ("\xe2\x96\xb6  ") : juce::String ("     ")) + name,
-                juce::Rectangle<int> (10, 0, width - 20, height), juce::Justification::centredLeft, true);
+                juce::Rectangle<int> (8, 0, width - 16, height), juce::Justification::centredLeft, true);
 }
 
 void MediaPlayerPanel::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
@@ -184,7 +240,7 @@ void MediaPlayerPanel::addFiles()
 bool MediaPlayerPanel::isInterestedInFileDrag (const juce::StringArray& files)
 {
     for (auto& f : files)
-        if (juce::File (f).hasFileExtension ("wav;mp3;flac;ogg;aif;aiff"))
+        if (juce::File (f).hasFileExtension (MediaPlayer::extensions()))
             return true;
     return false;
 }
@@ -202,54 +258,114 @@ void MediaPlayerPanel::filesDropped (const juce::StringArray& files, int, int)
 void MediaPlayerPanel::paint (juce::Graphics& g)
 {
     const auto& t = Theme::p();
-    g.fillAll (t.window);
+    Theme::drawFaceplate (g, getLocalBounds().toFloat());
+    Theme::drawLegend (g, "Playlist", playlistLegend);
+
+    // Video picture, letterboxed.
+    if (! videoArea.isEmpty())
+    {
+        g.setColour (juce::Colours::black);
+        g.fillRect (videoArea);
+        const auto img = video.getFrame();
+        if (img.isValid())
+            g.drawImage (img, videoArea.toFloat(), juce::RectanglePlacement::centred);
+    }
 
     const auto name = player.getTrackName();
     g.setColour (t.text);
-    g.setFont (Theme::ui (16.0f, true));
+    g.setFont (Theme::ui (14.0f, true));
     g.drawFittedText (name.isNotEmpty() ? name : juce::String ("No track"), titleArea, juce::Justification::centredLeft, 1, 0.8f);
 
     g.setColour (t.textDim);
     g.setFont (Theme::mono (12.0f));
     g.drawText (timeText (player.getPosition()) + " / " + timeText (player.getLength()), timeArea, juce::Justification::centredRight);
 
-    g.setFont (Theme::ui (12.0f));
-    g.drawFittedText (anyStripPlaysIt()
-                          ? juce::String ("Plays on every strip whose source is Media player. Drop audio files here to add them.")
-                          : juce::String ("No strip plays this yet: open a strip's source menu and pick Media player."),
-                      noteArea, juce::Justification::centredLeft, 2);
+    // Waveform: the played part in the accent colour, a line at the play position.
+    g.setColour (t.well);
+    g.fillRoundedRectangle (waveArea.toFloat(), 4.0f);
+    const double length = player.getLength();
+    if (thumb.getTotalLength() > 0.0 && length > 0.0)
+    {
+        const auto wave = waveArea.reduced (2, 4);
+        const float zoom = juce::jlimit (1.0f, 8.0f, 0.9f / juce::jmax (0.001f, thumb.getApproximatePeak()));   // quiet files stay readable
+        const int headX = waveArea.getX() + (int) std::round (waveArea.getWidth() * juce::jlimit (0.0, 1.0, player.getPosition() / length));
+        {
+            juce::Graphics::ScopedSaveState s (g);
+            g.reduceClipRegion (waveArea.withRight (headX));
+            g.setColour (t.accent);
+            thumb.drawChannels (g, wave, 0.0, thumb.getTotalLength(), zoom);
+        }
+        {
+            juce::Graphics::ScopedSaveState s (g);
+            g.reduceClipRegion (waveArea.withLeft (headX));
+            g.setColour (t.textFaint);
+            thumb.drawChannels (g, wave, 0.0, thumb.getTotalLength(), zoom);
+        }
+        g.setColour (t.text);
+        g.fillRect (headX, waveArea.getY(), 2, waveArea.getHeight());
+    }
+    else
+    {
+        g.setColour (t.textDim);
+        g.setFont (Theme::ui (12.0f));
+        g.drawFittedText (player.getPlaylist().isEmpty() ? juce::String ("Drop audio or video files here, or click + Add.")
+                                                         : juce::String ("Double-click a track in the playlist to play it."),
+                          waveArea.reduced (Theme::s2), juce::Justification::centred, 2);
+    }
+
+    if (! anyStripPlaysIt())
+    {
+        g.setColour (t.textDim);
+        g.setFont (Theme::ui (11.0f));
+        g.drawText ("Not on any strip yet: pick Media player in a strip's source menu.",
+                    waveArea.withHeight (16).translated (0, waveArea.getHeight() + 2), juce::Justification::centredLeft, true);
+    }
 }
 
 void MediaPlayerPanel::resized()
 {
-    auto r = getLocalBounds().reduced (Theme::s4);
-    constexpr int rowH = 30;
+    auto r = getLocalBounds().reduced (Theme::s3);
+    constexpr int rowH = 28;
 
-    auto top = r.removeFromTop (rowH);
-    timeArea = top.removeFromRight (110);
-    titleArea = top;
-    r.removeFromTop (Theme::s2);
-    position.setBounds (r.removeFromTop (24));
-    r.removeFromTop (Theme::s2);
-
-    auto transportRow = r.removeFromTop (rowH);
+    // Left: name, transport, repeat and shuffle.
+    auto left = r.removeFromLeft (196);
+    tape.setBounds (left.removeFromTop (rowH));
+    auto modes = left.removeFromBottom (rowH);
+    repeatButton.setBounds (modes.removeFromLeft (110));
+    modes.removeFromLeft (Theme::s1);
+    shuffleButton.setBounds (modes);
+    auto transport = left.withSizeKeepingCentre (left.getWidth(), rowH);
+    const int w = (transport.getWidth() - 2 * Theme::s1) / 3;
     for (auto* b : { &prevButton, &playButton, &nextButton })
     {
-        b->setBounds (transportRow.removeFromLeft (72));
-        transportRow.removeFromLeft (Theme::s1);
+        b->setBounds (transport.removeFromLeft (w));
+        transport.removeFromLeft (Theme::s1);
     }
-    shuffleButton.setBounds (transportRow.removeFromRight (80));
-    transportRow.removeFromRight (Theme::s1);
-    repeatButton.setBounds (transportRow.removeFromRight (100));
-    r.removeFromTop (Theme::s3);
+    r.removeFromLeft (Theme::s4);
 
-    noteArea = r.removeFromBottom (34);
-    auto listButtons = r.removeFromBottom (rowH);
-    r.removeFromBottom (Theme::s2);
-    addButton.setBounds (listButtons.removeFromLeft (100));
-    listButtons.removeFromLeft (Theme::s1);
-    removeButton.setBounds (listButtons.removeFromLeft (80));
-    listButtons.removeFromLeft (Theme::s1);
-    clearButton.setBounds (listButtons.removeFromLeft (70));
-    list.setBounds (r);
+    // Right: the playlist with its buttons.
+    auto right = r.removeFromRight (juce::jlimit (200, 300, r.getWidth() / 3));
+    r.removeFromRight (Theme::s4);
+    playlistLegend = right.removeFromTop (16);
+    auto buttons = right.removeFromBottom (24);
+    right.removeFromBottom (Theme::s1);
+    list.setBounds (right);
+    addButton.setBounds (buttons.removeFromLeft (64));
+    buttons.removeFromLeft (Theme::s1);
+    removeButton.setBounds (buttons.removeFromLeft (70));
+    buttons.removeFromLeft (Theme::s1);
+    clearButton.setBounds (buttons.removeFromLeft (56));
+
+    // Video picture (16:9, video files only), then title, time and the waveform.
+    videoArea = {};
+    if (video.hasVideo())
+    {
+        videoArea = r.removeFromLeft (r.getHeight() * 16 / 9);
+        r.removeFromLeft (Theme::s3);
+    }
+    auto top = r.removeFromTop (rowH - 4);
+    timeArea = top.removeFromRight (100);
+    titleArea = top;
+    r.removeFromTop (Theme::s1);
+    waveArea = r.withTrimmedBottom (18);
 }

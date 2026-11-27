@@ -1,4 +1,5 @@
 #include "creator/MediaPlayer.h"
+#include "creator/MediaDecode.h"
 
 MediaPlayer::MediaPlayer()
 {
@@ -18,7 +19,7 @@ MediaPlayer::~MediaPlayer()
 void MediaPlayer::addFiles (const juce::Array<juce::File>& files)
 {
     for (auto& f : files)
-        if (f.existsAsFile() && f.hasFileExtension ("wav;mp3;flac;ogg;aif;aiff"))
+        if (f.existsAsFile() && f.hasFileExtension (extensions()))
             playlist.add (f);
     changed();
 }
@@ -59,10 +60,10 @@ bool MediaPlayer::loadIndex (int index, juce::String& error)
         return false;
 
     const auto file = playlist[index];
-    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+    auto reader = createReader (file);
     if (reader == nullptr)
     {
-        error = file.getFileName() + " couldn't be opened. It may have been moved, or isn't WAV, MP3, FLAC, Ogg or AIFF.";
+        error = file.getFileName() + " couldn't be opened. It may have been moved, or Windows has no decoder for it.";
         return false;
     }
 
@@ -75,6 +76,12 @@ bool MediaPlayer::loadIndex (int index, juce::String& error)
     wasPlaying = false;
     changed();
     return true;
+}
+
+std::unique_ptr<juce::AudioFormatReader> MediaPlayer::createReader (const juce::File& file)
+{
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+    return reader != nullptr ? std::move (reader) : createMediaFoundationReader (file);
 }
 
 bool MediaPlayer::playIndex (int index, juce::String& error)

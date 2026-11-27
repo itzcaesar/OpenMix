@@ -206,7 +206,7 @@ drivers per bus. Full architecture and engineering checklist:
 - [x] Limiter gain-reduction meter per bus; MON key for the monitor bus
 - [x] Bottom status bar: LIVE, engine CPU%, scan/recording progress, remote-service lamps
 - [x] Crash handler + log file; "safe mode" start that skips plugins
-- [x] Installer (Inno Setup, built by CI for tags) (driver and code signing still open)
+- [x] Installer (Inno Setup, built by CI for tags); app and installer signed by CI once a certificate is added (docs/SIGNING.md). Driver signing still open
 - [x] Update check (opt-in, GitHub releases)
 
 ## Phase 9 - Release

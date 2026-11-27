@@ -2,7 +2,7 @@
 
 #include <JuceHeader.h>
 
-// The media player: a playlist of audio files streamed from disk (a background thread reads
+// The media player: a playlist of audio and video files (their sound) streamed from disk (a background thread reads
 // ahead, AudioTransportSource resamples to the device rate). A strip whose source is
 // "Media player" plays it, so the strip's EQ, compressor, ducking and sends all apply.
 class MediaPlayer : private juce::Timer
@@ -48,7 +48,13 @@ public:
     // Audio thread: writes the next block into l / r (silence when stopped).
     void render (float* l, float* r, int numSamples) noexcept;
 
-    static juce::String wildcard() { return "*.wav;*.mp3;*.flac;*.ogg;*.aif;*.aiff"; }
+    // Files it takes: JUCE reads WAV, AIFF, FLAC, Ogg and MP3; Windows Media Foundation the rest.
+    static juce::String extensions() { return "wav;mp3;flac;ogg;aif;aiff;m4a;aac;wma;mp4;m4v;mov;mkv;avi;wmv;webm;3gp"; }
+    static juce::String wildcard() { return "*." + extensions().replace (";", ";*."); }
+    static bool isVideoFile (const juce::File& f) { return f.hasFileExtension ("mp4;m4v;mov;mkv;avi;wmv;webm;3gp"); }
+
+    // A reader for any file in extensions(), or nullptr (the caller owns it).
+    std::unique_ptr<juce::AudioFormatReader> createReader (const juce::File&);
 
 private:
     void timerCallback() override;

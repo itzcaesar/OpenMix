@@ -61,7 +61,11 @@ public:
     int replayBus() const                     { return props->getIntValue ("replayBus", 3); }   // B1
     void setReplayBus (int b)                 { props->setValue ("replayBus", b); props->saveIfNeeded(); }
 
-    // Soundboard column in the console
+    // Media player bar in the console
+bool mediaShown() const                   { return props->getBoolValue ("mediaShown", false); }
+void setMediaShown (bool b)               { props->setValue ("mediaShown", b); }
+
+// Soundboard column in the console
     bool soundboardShown() const              { return props->getBoolValue ("soundboardShown", true); }
     void setSoundboardShown (bool b)          { props->setValue ("soundboardShown", b); props->saveIfNeeded(); }
 

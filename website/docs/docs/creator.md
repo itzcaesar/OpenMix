@@ -76,16 +76,21 @@ shows or hides it).
 
 ## Media player
 
-**View > Media player** opens a playlist player. Pick **Media player** as
-a strip's source (the strip's source menu) to hear it: that strip's EQ,
+**Media** in the header (or **View > Media player**) shows the player as a bar along the bottom of the
+desk, above the soundboard. Pick **Media player** as a strip's source (the strip's source menu) to hear it: that strip's EQ,
 compressor, ducking (under your mic) and sends all apply, so music can go
 to the stream at one level and your headphones at another.
 
-- Add WAV, MP3, FLAC, Ogg or AIFF files with **+ Add files** or by
-  dropping them on the window. Files are streamed from disk, so a two-hour
-  mix is fine.
-- Play/pause (or Space), previous, next, a position bar to seek,
-  **Repeat** (all, one, off) and **Shuffle**. Double-click or Enter plays
+- Add audio or video files with **+ Add** or by dropping them on the bar:
+  WAV, MP3, FLAC, Ogg and AIFF, plus anything Windows can decode (M4A, AAC,
+  WMA, MP4, M4V, MOV, MKV, AVI, WMV, WebM, 3GP). Files are streamed from
+  disk, so a two-hour mix is fine. Video files play their sound through the
+  strip; WebM and some MKV files need the free codec extensions from the
+  Microsoft Store.
+- The bar shows the track's waveform (click or drag it to seek) and, for
+  video files, the picture.
+- Play/pause (or Space), previous, next, **Repeat** (all, one, off) and
+  **Shuffle**. Double-click or Enter plays
   a track; Delete removes it.
 - The playlist, the current track, repeat and shuffle are saved with the
   session. It comes back paused.

@@ -892,7 +892,7 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
             auto& bus = buses[(size_t) b];
             auto& g = sendGain[(size_t) s][(size_t) b];
 
-            // The monitor bus plays only soloed strips while anything is soloed (after-fader listen).
+            // The monitor bus plays only soloed strips while anything is soloed (AFL or PFL).
             // Other buses (stream, Discord) are never affected by solo. Solo-safe strips
             // routed to the monitor bus keep playing at their normal send level.
             const bool soloing = anySolo && bus.monitor.load();
@@ -907,9 +907,9 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
             if (! g.isSmoothing() && g.getTargetValue() == 0.0f)
                 continue;
 
-            // Soloed strips are heard post-fader (after-fader listen); everything else,
-            // including a solo-safe strip, honours its pre/post-fader send setting.
-            const auto& src = (soloing && soloed) ? stripBuffer
+            // Soloed strips are heard after the fader (AFL) or before it (PFL, soloPreFader);
+            // everything else, including a solo-safe strip, honours its pre/post-fader send setting.
+            const auto& src = (soloing && soloed) ? (soloPreFader.load() ? preBuffer : stripBuffer)
                               : (strip.sendPre[b].load() ? preBuffer : stripBuffer);
             const float startGain = g.getCurrentValue();
             g.skip (n);

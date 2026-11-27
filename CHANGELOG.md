@@ -85,9 +85,16 @@ This is OpenMix's first public release. There was no earlier release:
 - Soundboard: 32 pads in pages of 8, a volume, colour and mode per pad (play
   once, restart, loop, hold to play), a progress bar while a pad plays, and
   drag and drop to load.
-- **Media player:** a playlist (streamed from disk, with repeat and shuffle)
-  that any strip can use as its source, so it gets the strip's processing,
-  ducking and sends.
+- **Media player:** a bar under the desk with a playlist (streamed from disk,
+  with repeat and shuffle) that any strip can use as its source, so it gets
+  the strip's processing, ducking and sends. Plays WAV, MP3, FLAC, Ogg and
+  AIFF plus what Windows Media Foundation decodes (M4A, AAC, WMA, MP4, MOV,
+  MKV, AVI, WMV and more); shows the waveform (click to seek) and the
+  picture of video files.
+- **Solo before the fader (PFL)** as an option in the Mixer menu; after-fader
+  listen stays the default.
+- Release builds are code-signed when the repository has a certificate
+  (`installer/sign.ps1`, `docs/SIGNING.md`).
 - Scenes: snapshot the whole mixer and switch with a hotkey.
 - Global hotkeys that work while a game has focus: mute, push-to-talk,
   soundboard, recording and scenes.

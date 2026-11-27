@@ -116,6 +116,9 @@ public:
     // own mute) silences this strip on the monitor bus: something is soloed, this
     // strip isn't soloed, and it isn't solo-safe-and-routed-to-the-monitor-bus.
     int getMonitorBus() const noexcept;
+    // Solo listens after the fader (AFL, false) or before it (PFL, true): with PFL a soloed
+    // strip is heard at its pre-fader level, so you can check it with its fader down.
+    std::atomic<bool> soloPreFader { false };
     bool isSoloActive() const noexcept;
     bool isStripMutedBySolo (int strip) const noexcept;
 
