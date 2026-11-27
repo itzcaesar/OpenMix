@@ -666,7 +666,20 @@ void Session::save (MixerEngine& engine, bool reusePluginState)
             xp->setAttribute ("index", p);
             xp->setAttribute ("file", info.file);
             xp->setAttribute ("name", info.name);
+            xp->setAttribute ("volume", info.volumeDb);
+            xp->setAttribute ("mode", info.mode);
+            xp->setAttribute ("colour", info.colour);
         }
+    }
+
+    {
+        auto& player = engine.getMediaPlayer();
+        auto* xm = root.createNewChildElement ("MediaPlayer");
+        xm->setAttribute ("current", player.getCurrentIndex());
+        xm->setAttribute ("repeat", (int) player.repeat);
+        xm->setAttribute ("shuffle", player.shuffle);
+        for (auto& f : player.getPlaylist())
+            xm->createNewChildElement ("Track")->setAttribute ("file", f.getFullPathName());
     }
 
     if (! engine.scenes.empty())
@@ -750,6 +763,7 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
             case SourceType::Main:   engine.setStripSourceMain (s, xs->getIntAttribute ("input", -1), xs->getIntAttribute ("inputRight", -1)); break;
             case SourceType::Device: engine.setStripSourceDevice (s, xs->getStringAttribute ("sourceDevice"), error); break;
             case SourceType::App:    engine.setStripSourceApp (s, xs->getStringAttribute ("sourceApp"), error); break;
+            case SourceType::Media:  engine.setStripSourceMedia (s); break;
             case SourceType::Loopback:
                 if (! engine.setStripSourceLoopback (s, xs->getStringAttribute ("loopbackId"), xs->getStringAttribute ("loopbackName"), error))
                     juce::Logger::writeToLog ("Loopback " + strip.loopbackName + ": " + error);   // maintainSources() retries
@@ -853,9 +867,29 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
                 continue;
             juce::String error;
             if (board.loadPad (p, file, error))
+            {
                 board.renamePad (p, xp->getStringAttribute ("name", file.getFileNameWithoutExtension()));
+                board.setPadVolume (p, (float) xp->getDoubleAttribute ("volume", 0.0));
+                board.setPadMode (p, xp->getIntAttribute ("mode", Soundboard::OneShot));
+                board.setPadColour (p, xp->getIntAttribute ("colour", -1));
+            }
             else
                 juce::Logger::writeToLog ("Soundboard pad " + juce::String (p + 1) + ": " + error);
         }
+    }
+
+    // The media player's playlist comes back paused at the track it was on.
+    if (auto* xm = root.getChildByName ("MediaPlayer"))
+    {
+        auto& player = engine.getMediaPlayer();
+        player.clearPlaylist();
+        juce::Array<juce::File> files;
+        for (auto* xt : xm->getChildWithTagNameIterator ("Track"))
+            files.add (juce::File (xt->getStringAttribute ("file")));
+        player.addFiles (files);   // files that are gone are left out
+        player.repeat = (MediaPlayer::Repeat) juce::jlimit (0, 2, xm->getIntAttribute ("repeat", MediaPlayer::RepeatAll));
+        player.shuffle = xm->getBoolAttribute ("shuffle", false);
+        juce::String error;
+        player.loadIndex (juce::jlimit (0, juce::jmax (0, player.getPlaylist().size() - 1), xm->getIntAttribute ("current", 0)), error);
     }
 }

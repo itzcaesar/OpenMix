@@ -29,7 +29,8 @@ enum class SourceType : int
     Main   = 1,   // a channel (or stereo pair) of the main (ASIO/WASAPI) device
     Device = 2,   // a second Windows input device
     App    = 3,   // one application's audio (process loopback)
-    Loopback = 4  // everything a Windows output device plays (device loopback)
+    Loopback = 4, // everything a Windows output device plays (device loopback)
+    Media    = 5  // the built-in media player (MixerEngine::getMediaPlayer)
 };
 
 // Settings of the built-in processors. Written by the UI, read by the audio thread.

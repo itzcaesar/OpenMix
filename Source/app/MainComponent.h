@@ -122,6 +122,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     bool keyPressed (const juce::KeyPress&) override;
+    bool keyStateChanged (bool isKeyDown) override;
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -152,6 +153,7 @@ private:
     void handleHotkey (const GlobalHotkeys::Binding&, bool down);
     void showHotkeys();
     void showRouting();
+    void showMediaPlayer();
     void undoMix (bool redo);
     juce::String captureMixText();
     void mouseDown (const juce::MouseEvent&) override;
@@ -195,6 +197,7 @@ private:
     juce::uint32 noteUntilMs = 0;
     int lastExternalChanges = 0;
     MixHistory history;
+    juce::Component::SafePointer<juce::DialogWindow> mediaWindow;   // one media player window at a time
     juce::Viewport consoleView;
     std::unique_ptr<ConsoleContent> console;
 

@@ -490,6 +490,14 @@ void StripView::updateSourceButton()
             problem = strip.getExternalSource() == nullptr;
             text = strip.loopbackName + (problem ? " (unavailable)" : "");
             break;
+
+        case SourceType::Media:
+        {
+            caption = "MEDIA";
+            const auto track = engine.getMediaPlayer().getTrackName();
+            text = track.isNotEmpty() ? track : juce::String ("Media player");
+            break;
+        }
     }
 
     sourceButton.setContent (caption, text, problem);
@@ -587,6 +595,13 @@ void StripView::showSourceMenu()
         });
     }
     menu.addSubMenu ("Windows output (loopback)", loops);
+
+    menu.addItem ("Media player", true, current == SourceType::Media, [this]
+    {
+        engine.setStripSourceMedia (index);
+        updateSourceButton();
+        if (onOpenMediaPlayer) onOpenMediaPlayer();
+    });
 
     // Where the captured app's own sound goes, so it isn't heard twice.
     if (current == SourceType::App)

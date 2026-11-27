@@ -25,6 +25,8 @@ Under it, the **source** picker:
 - **Windows output (loopback):** everything one output device plays,
   without a virtual cable. Devices OpenMix itself plays into are greyed
   out, because capturing them would feed the sound back into itself.
+- **Media player:** the built-in playlist player (see
+  [Media player](creator.md#media-player)).
 
 A source that is missing (unplugged, not running) gets a red edge on the
 picker and says why, never colour alone.

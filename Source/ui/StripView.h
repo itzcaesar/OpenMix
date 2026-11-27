@@ -27,6 +27,7 @@ public:
     void tick();
 
     std::function<void()> onLayoutChanged;   // the strip was removed, or buses changed
+    std::function<void()> onOpenMediaPlayer; // the source was set to the media player
 
     // Where the fader bay starts (from the top of the strip); the console sets the same value
     // on every column so faders line up.

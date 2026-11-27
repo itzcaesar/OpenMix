@@ -575,7 +575,7 @@ function render(){if(!state)return;
   d.appendChild(lbl);d.appendChild(rng);d.appendChild(btn);b.appendChild(d);});
  const p=document.getElementById('pads');p.innerHTML='';
  const names=state.soundboardNames||[];
- for(let i=1;i<=8;i++){const btn=document.createElement('button');btn.className='pad';
+ for(let i=1;i<=Math.max(8,names.length);i++){const btn=document.createElement('button');btn.className='pad';
   btn.textContent=(names[i-1]&&names[i-1].length)?names[i-1]:('Pad '+i);
   btn.onclick=()=>cmd('/openmix/soundboard/'+i+'/play',1);p.appendChild(btn);}
  const sc=document.getElementById('scenes');sc.innerHTML='';

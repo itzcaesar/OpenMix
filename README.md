@@ -7,8 +7,8 @@ them up, and send a separate mix to your headphones, the stream and the call.
 ![The OpenMix desk: three input strips (Mic, Music, Room mic) and three buses (Phones, Stream, Call).](website/docs/assets/openmix-desk.png)
 
 - **Inputs:** up to 8 strips. Each takes a channel or stereo pair of the main device
-  (ASIO, WASAPI or DirectSound), any other Windows input, one app's audio, or a loopback of
-  a Windows output device.
+  (ASIO, WASAPI or DirectSound), any other Windows input, one app's audio, a loopback of
+  a Windows output device, or the built-in media player.
 - **Voice processing built in:** RNNoise and DeepFilterNet 3 noise removal, gate, high- and low-pass filters,
   8-band EQ, compressor, de-esser and ducking on every strip, plus a voice pad (XY pad with
   voice, pan, colour and space modes).
@@ -123,6 +123,7 @@ PROCESSING, INSERT, SENDS, the **Voice pad** button, then the fader bay.
    - **Windows output (loopback):** everything one output device plays, without a virtual
      cable. Devices OpenMix itself plays into are greyed out, because capturing them would
      feed the sound back into itself.
+   - **Media player:** the built-in playlist player (see [Media player](#media-player)).
 2. **Processing** keys in two columns, amber when on. Click for settings, Space switches
    on or off.
    - **NR** noise removal: choose lightweight RNNoise or higher-quality DeepFilterNet 3.
@@ -275,11 +276,33 @@ empty on a default (VST2-off) build.
 
 A bar along the bottom of the window (the header's **Soundboard** button shows or hides it).
 
-- Eight pads for WAV, MP3, FLAC or Ogg files up to 60 seconds. Click a pad, or press 1-8
-  anywhere in OpenMix, to play; again to stop (with a short fade, so it doesn't click).
-  Right-click a pad (or M) to load, rename or clear it.
+- 32 pads for WAV, MP3, FLAC or Ogg files up to 60 seconds, in four pages (**A**-**D**) of 8.
+  Click a pad, or press 1-8 anywhere in OpenMix, to play the page shown. Pads fire as soon as
+  you press. A page key shows a dot while one of its pads plays on another page.
+- Drop audio files on a pad to load it (several files fill the following pads), or anywhere
+  on the bar to fill the page's empty pads.
+- Right-click a pad (or M) to load, rename, clear, or set its:
+  - **Volume** (before the soundboard volume);
+  - **Mode:** *Play once* (press again to stop, with a short fade), *Restart* (press again to
+    start over), *Loop* (until pressed again) or *Hold to play* (plays while the pad, its key
+    or its hotkey is held);
+  - **Colour** (the bar along the bottom of the pad).
+- While a pad plays, its bottom bar shows how far it has got.
 - Its own volume and meter, and **Play on** keys for the buses it plays on (A1 and B1 by
   default, so you and your stream both hear it). **Stop all** stops every pad.
+
+## Media player
+
+**View > Media player** opens a playlist player. Pick **Media player** as a strip's source
+(the strip's source menu) to hear it: that strip's EQ, compressor, ducking (under your mic)
+and sends all apply, so music can go to the stream at one level and your headphones at another.
+
+- Add WAV, MP3, FLAC, Ogg or AIFF files with **+ Add files** or by dropping them on the window.
+  Files are streamed from disk, so a two-hour mix is fine.
+- Play/pause (or Space), previous, next, a position bar to seek, **Repeat** (all, one, off)
+  and **Shuffle**. Double-click or Enter plays a track; Delete removes it.
+- The playlist, the current track, repeat and shuffle are saved with the session. It comes back
+  paused.
 
 ## Scenes
 
@@ -450,7 +473,7 @@ These shortcuts work while OpenMix has focus. For keys that work in any app, set
 |---|---|
 | `Source/app/` | `Main` (startup, crash report, log), `MainComponent` (window, header, console layout, scenes), `AppSettings`, `Session` (save and restore, scene capture and recall), `GlobalHotkeys` (system-wide keyboard hook), `OscControl`, `RemoteCommands` (one remote language for OSC, WebSocket and MIDI), `RemoteServer` (phone page, HTTP and WebSocket API), `MidiControl` (learnable MIDI mappings), `UpdateChecker` |
 | `Source/engine/` | `MixerEngine` (device, real-time callback, strips to buses to outputs), `ChannelStrip` (per-strip DSP), `PluginChain` and `PluginSandbox` (VST3 control instances and out-of-process audio rendering), `VoicePad` (XY pad DSP and its UI), `ClockBridge` (drift-correcting resampler between clocks), `ExternalIO` (extra devices, app and loopback sources), `AppCapture` (app and device loopback capture), `AppRouting` (per-app output device), `PluginScanner` (scanning and crash-safe loading probes in child processes), `StripLogic`, `CpuMeter` |
-| `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard` |
+| `Source/creator/` | `Recorder` and `ReplayBuffer`, `Soundboard`, `MediaPlayer` |
 | `Source/dsp/` | Header-only real-time blocks: `Biquad`, `DelayLine`, `AudioSafety` (limiter, NaN guard, DC blocker), `Dynamics` (gate, compressor, EQ, de-esser), `SincTable` (windowed-sinc resampling), `Loudness` (BS.1770 LUFS), `Metering` (RMS meter, K-weighted loudness normaliser); plus `Denoiser` (RNNoise at any sample rate and DeepFilterNet 3 on a worker thread) |
 | `Source/ui/` | `Theme` and `OpenMixLookAndFeel` (design tokens, control drawing), `Widgets`, `StripView`, `BusView`, `InsertRack` (insert list, plugin windows, presets, A/B), `Panels` (processor, send, wet/dry and global FX pop-overs), `AnalyserPanel` (analyser and the bus spectrum), `SoundboardPanel`, `SettingsPanel`, `HotkeysPanel`, `TrayIcon` |
 | `Source/third_party/rnnoise/` | RNNoise files patched for MSVC |

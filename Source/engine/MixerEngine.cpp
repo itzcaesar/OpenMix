@@ -124,6 +124,14 @@ void MixerEngine::setStripSourceNone (int s)
     strip.setExternalSource (nullptr);
 }
 
+void MixerEngine::setStripSourceMedia (int s)
+{
+    auto& strip = getStrip (s);
+    undoAppRedirect (s);
+    strip.sourceType.store ((int) SourceType::Media);
+    strip.setExternalSource (nullptr);
+}
+
 void MixerEngine::setStripSourceMain (int s, int channel, int rightChannel)
 {
     auto& strip = getStrip (s);
@@ -592,6 +600,7 @@ void MixerEngine::maintainSources()
 
             case SourceType::None:
             case SourceType::Main:
+            case SourceType::Media:
                 break;
         }
     }
@@ -713,6 +722,8 @@ void MixerEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     preBuffer.setSize (2, maxBlock);
     soundBuffer.setSize (2, maxBlock);
     soundboard.prepare (sr);
+    mediaBuffer.setSize (2, maxBlock);
+    mediaPlayer.prepare (sr, maxBlock);
     if (replay.isEnabled())
         replay.configure (sr, replay.getSeconds());
     for (auto& g : soundSend)
@@ -764,6 +775,7 @@ void MixerEngine::audioDeviceStopped()
         s->release();
     for (auto& b : buses)
         b.inserts.release();
+    mediaPlayer.release();
 }
 
 void MixerEngine::audioDeviceIOCallbackWithContext (const float* const* inputs, int numInputs,
@@ -822,6 +834,9 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
         st->duckTarget.store (target, std::memory_order_relaxed);
     }
 
+    // The media player runs every block (so its position moves on), whichever strips play it.
+    mediaPlayer.render (mediaBuffer.getWritePointer (0), mediaBuffer.getWritePointer (1), n);
+
     for (int s = 0; s < kNumStrips; ++s)
     {
         auto& strip = *strips[(size_t) s];
@@ -859,6 +874,11 @@ void MixerEngine::processChunk (const float* const* inputs, int numInputs,
                 }
                 break;
             }
+
+            case SourceType::Media:
+                inL = mediaBuffer.getReadPointer (0);
+                inR = mediaBuffer.getReadPointer (1);
+                break;
 
             case SourceType::None:
                 break;

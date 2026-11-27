@@ -1,5 +1,6 @@
 #include "app/MainComponent.h"
 #include "ui/RoutingPanel.h"
+#include "ui/MediaPlayerPanel.h"
 #include "app/Session.h"
 #include "app/AppSettings.h"
 #include "ui/Theme.h"
@@ -548,6 +549,8 @@ MainComponent::MainComponent()
     soundboardButton.onClick = [this] { setSoundboardShown (! console->soundboard.isVisible()); };
     addAndMakeVisible (soundboardButton);
     console->soundboard.onChanged = [this] { Session::save (engine); };
+    for (auto& s : console->strips)
+        s->onOpenMediaPlayer = [this] { showMediaPlayer(); };
     setSoundboardShown (AppSettings::get().soundboardShown());
 
     updateButton.onClick = [this] { updatePage.launchInDefaultBrowser(); };
@@ -1379,6 +1382,13 @@ void MainComponent::paint (juce::Graphics& g)
     }
 }
 
+bool MainComponent::keyStateChanged (bool isKeyDown)
+{
+    if (! isKeyDown)
+        console->soundboard.releaseKeys();   // Hold pads stop when their key is let go
+    return false;
+}
+
 bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
     // Shortcuts while OpenMix is focused. If a global hotkey just fired for this key press,
@@ -1404,13 +1414,9 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         return true;
     }
 
-    // 1-8 play the soundboard pads while it's shown (text fields keep their digits).
-    if (console->soundboard.isVisible() && ! mods.isAnyModifierKeyDown()
-        && key.getKeyCode() >= '1' && key.getKeyCode() <= '0' + Soundboard::numPads)
-    {
-        engine.getSoundboard().trigger (key.getKeyCode() - '1');
+    // 1-8 play the soundboard page's pads while it's shown (text fields keep their digits).
+    if (console->soundboard.isVisible() && console->soundboard.pressKey (key))
         return true;
-    }
 
     // Tab arrives here from children too (unhandled keys bubble up). Only step in when the
     // window itself has focus, otherwise let JUCE's normal focus order work.
@@ -1843,6 +1849,7 @@ void MainComponent::handleHotkey (const GlobalHotkeys::Binding& b, bool down)
 
         case A::PlayPad:
             if (down) engine.getSoundboard().trigger (b.index);
+            else      engine.getSoundboard().release (b.index);   // ends a Hold pad
             return;
 
         case A::StopSounds:
@@ -1946,6 +1953,29 @@ void MainComponent::undoMix (bool redo)
     showNote (redo ? "Redo" : "Undo");
 }
 
+void MainComponent::showMediaPlayer()
+{
+    if (mediaWindow != nullptr)
+    {
+        mediaWindow->toFront (true);
+        return;
+    }
+
+    auto* panel = new MediaPlayerPanel (engine);
+    panel->onChanged = [this] { Session::save (engine); };
+    panel->setSize (520, 460);
+
+    juce::DialogWindow::LaunchOptions o;
+    o.content.setOwned (panel);
+    o.dialogTitle = "Media player";
+    o.dialogBackgroundColour = Theme::p().window;
+    o.escapeKeyTriggersCloseButton = true;
+    o.useNativeTitleBar = false;
+    o.resizable = true;
+    o.componentToCentreAround = this;
+    mediaWindow = o.launchAsync();
+}
+
 void MainComponent::showRouting()
 {
     auto* panel = new RoutingPanel (engine);
@@ -1985,6 +2015,7 @@ void MainComponent::showViewMenu()
 {
     juce::PopupMenu menu;
     menu.addItem ("Soundboard", true, console->soundboard.isVisible(), [this] { setSoundboardShown (! console->soundboard.isVisible()); });
+    menu.addItem ("Media player...", [this] { showMediaPlayer(); });
     menu.addItem ("Compact desk", true, Theme::isCompact(), [this]
     {
         AppSettings::get().setCompactMode (! Theme::isCompact());

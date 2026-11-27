@@ -1,6 +1,7 @@
 #include "ui/HotkeysPanel.h"
 #include "ui/Widgets.h"
 #include "ui/Theme.h"
+#include "creator/Soundboard.h"
 
 //==============================================================================
 // One binding: what it does, its keys (click to change), Remove.
@@ -128,8 +129,12 @@ void HotkeysPanel::showAddMenu()
     menu.addSubMenu ("Mute or unmute", mute);
     menu.addSubMenu ("Push to talk (muted when you let go)", ptt);
     menu.addSeparator();
-    for (int p = 0; p < 8; ++p)
+    for (int p = 0; p < Soundboard::numPads; ++p)
+    {
+        if (p > 0 && p % Soundboard::padsPerPage == 0)
+            pads.addColumnBreak();
         pads.addItem ("Pad " + juce::String (p + 1), [add, p] { add (A::PlayPad, p); });
+    }
     menu.addSubMenu ("Play soundboard pad", pads);
     menu.addItem ("Stop all sounds", [add] { add (A::StopSounds, 0); });
     menu.addSeparator();

@@ -505,6 +505,112 @@ int main (int argc, char** argv)
         tmp.deleteFile();
     });
 
+    run ("MediaPlayer: plays a file, next / previous / repeat, removing tracks keeps the current one", []
+    {
+        auto makeWav = [] (const juce::String& name, float level)
+        {
+            const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (name);
+            f.deleteFile();
+            std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (f);
+            auto writer = std::unique_ptr<juce::AudioFormatWriter> (juce::WavAudioFormat().createWriterFor (stream,
+                juce::AudioFormatWriterOptions{}.withSampleRate (44100.0).withNumChannels (2).withBitsPerSample (24)));
+            juce::AudioBuffer<float> dc (2, 44100);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < dc.getNumSamples(); ++i)
+                    dc.setSample (c, i, level);
+            writer->writeFromAudioSampleBuffer (dc, 0, dc.getNumSamples());
+            return f;
+        };
+        const auto a = makeWav ("openmix-media-a.wav", 0.25f), b = makeWav ("openmix-media-b.wav", 0.5f),
+                   c = makeWav ("openmix-media-c.wav", 0.75f);
+
+        MediaPlayer player;
+        player.prepare (48000.0, 512);
+        player.addFiles ({ a, b, c, juce::File ("C:/no/such/file.wav") });
+        CHECK (player.getPlaylist().size() == 3, "missing files are left out: %d", player.getPlaylist().size());
+
+        juce::String error;
+        CHECK (player.playIndex (1, error) && player.isPlaying(), "play b: %s", error.toRawUTF8());
+        std::vector<float> l (512), r (512);
+        float level = 0.0f;
+        for (int tries = 0; tries < 50 && level < 0.4f; ++tries)   // the read-ahead thread fills up first
+        {
+            juce::Thread::sleep (10);
+            player.render (l.data(), r.data(), 512);
+            level = l[256];
+        }
+        CHECK (std::abs (level - 0.5f) < 0.01f, "b plays at its level (resampled 44.1k -> 48k): %f", level);
+
+        player.next();
+        CHECK (player.getCurrentIndex() == 2, "next");
+        player.repeat = MediaPlayer::RepeatAll;
+        player.next();
+        CHECK (player.getCurrentIndex() == 0, "repeat all wraps to the first track");
+        player.repeat = MediaPlayer::RepeatOff;
+        player.next(); player.next(); player.next();
+        CHECK (player.getCurrentIndex() == 2, "repeat off stops at the last track");
+
+        player.removeAt (0);
+        CHECK (player.getCurrentIndex() == 1 && player.getTrackName() == "openmix-media-c", "removing an earlier track keeps the current one");
+        player.removeAt (1);
+        CHECK (player.getCurrentIndex() == -1 && ! player.isPlaying(), "removing the current track stops");
+        player.clearPlaylist();
+        for (auto& f : { a, b, c }) f.deleteFile();
+    });
+
+    run ("Soundboard: pad volume, loop, restart and hold modes, pages up to pad 32", []
+    {
+        // A 100-sample DC clip so a loop wraps inside one block.
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("openmix-mode-test.wav");
+        tmp.deleteFile();
+        {
+            std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (tmp);
+            auto writer = std::unique_ptr<juce::AudioFormatWriter> (juce::WavAudioFormat().createWriterFor (stream,
+                juce::AudioFormatWriterOptions{}.withSampleRate (48000.0).withNumChannels (1).withBitsPerSample (24)));
+            juce::AudioBuffer<float> dc (1, 100);
+            for (int i = 0; i < dc.getNumSamples(); ++i)
+                dc.setSample (0, i, 0.5f);
+            writer->writeFromAudioSampleBuffer (dc, 0, dc.getNumSamples());
+        }
+        Soundboard board;
+        board.prepare (48000.0);
+        juce::String error;
+        const int last = Soundboard::numPads - 1;
+        CHECK (board.loadPad (last, tmp, error), "load pad 32: %s", error.toRawUTF8());
+        std::vector<float> l (256), r (256);
+        auto block = [&] { std::fill (l.begin(), l.end(), 0.0f); std::fill (r.begin(), r.end(), 0.0f); board.render (l.data(), r.data(), 256); };
+
+        board.setPadVolume (last, -6.0f);
+        board.trigger (last);
+        block();
+        CHECK (std::abs (l[10] - 0.5f * juce::Decibels::decibelsToGain (-6.0f)) < 0.01f, "pad volume: %f", l[10]);
+        CHECK (l[200] == 0.0f && ! board.isPlaying (last), "play once ends after the clip");
+
+        board.setPadVolume (last, 0.0f);
+        board.setPadMode (last, Soundboard::Loop);
+        board.trigger (last);
+        block();
+        CHECK (l[150] > 0.45f && l[250] > 0.45f && board.isPlaying (last), "loop wraps round");
+        board.trigger (last);   // stop
+        for (int i = 0; i < 4; ++i) block();
+        CHECK (! board.isPlaying (last), "a second press stops a loop");
+
+        board.setPadMode (last, Soundboard::Restart);
+        board.trigger (last);
+        board.trigger (last);
+        block();
+        CHECK (l[0] > 0.45f, "restart keeps playing on a second press");
+
+        board.setPadMode (last, Soundboard::Loop);
+        board.trigger (last);
+        block();
+        board.setPadMode (last, Soundboard::Hold);   // a looping sound, then hold: release must stop it
+        board.release (last);
+        for (int i = 0; i < 4; ++i) block();
+        CHECK (! board.isPlaying (last), "letting go stops a Hold pad");
+        tmp.deleteFile();
+    });
+
     std::printf (failures == 0 ? "\nAll tests passed\n" : "\n%d check(s) failed\n", failures);
     return failures == 0 ? 0 : 1;
 }

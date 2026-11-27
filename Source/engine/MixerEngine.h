@@ -8,6 +8,7 @@
 #include "dsp/Metering.h"
 #include "creator/Recorder.h"
 #include "creator/Soundboard.h"
+#include "creator/MediaPlayer.h"
 
 // Where a bus goes.
 enum class BusTarget : int
@@ -78,6 +79,7 @@ public:
     Recorder& getRecorder() noexcept { return recorder; }
     ReplayBuffer& getReplay() noexcept { return replay; }
     Soundboard& getSoundboard() noexcept { return soundboard; }
+    MediaPlayer& getMediaPlayer() noexcept { return mediaPlayer; }
 
     // Bumped when something outside the UI (OSC remote control) changes a setting.
     std::atomic<int> externalChanges { 0 };
@@ -153,6 +155,7 @@ public:
     bool setStripSourceDevice (int strip, const juce::String& deviceName, juce::String& error);
     bool setStripSourceApp (int strip, const juce::String& exeName, juce::String& error);
     bool setStripSourceLoopback (int strip, const juce::String& endpointId, const juce::String& name, juce::String& error);
+    void setStripSourceMedia (int strip);    // the built-in media player
 
     // Output devices OpenMix itself plays into (main device and bus devices). Capturing one of
     // them on a strip that feeds a bus would loop the sound back on itself.
@@ -220,6 +223,8 @@ private:
     Recorder recorder;
     ReplayBuffer replay;
     Soundboard soundboard;
+    MediaPlayer mediaPlayer;
+    juce::AudioBuffer<float> mediaBuffer;
     std::array<juce::SmoothedValue<float>, kNumBuses> soundSend;
 
     juce::AudioBuffer<float> stripBuffer, preBuffer, busBuffer, sourceBuffer, soundBuffer;

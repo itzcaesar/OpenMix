@@ -90,7 +90,33 @@ void Soundboard::clearPad (int index)
     pad.original.setSize (0, 0);
     pad.originalRate = 0.0;
     pad.info = {};
+    pad.gainLin.store (1.0f);
+    pad.mode.store (OneShot);
     makePlayable (pad, rate);
+}
+
+void Soundboard::setPadVolume (int index, float db)
+{
+    if (! juce::isPositiveAndBelow (index, numPads))
+        return;
+    auto& pad = pads[(size_t) index];
+    pad.info.volumeDb = juce::jlimit (-60.0f, 12.0f, db);
+    pad.gainLin.store (juce::Decibels::decibelsToGain (pad.info.volumeDb, -60.0f));
+}
+
+void Soundboard::setPadMode (int index, int mode)
+{
+    if (! juce::isPositiveAndBelow (index, numPads))
+        return;
+    auto& pad = pads[(size_t) index];
+    pad.info.mode = juce::jlimit (0, numModes - 1, mode);
+    pad.mode.store (pad.info.mode);
+}
+
+void Soundboard::setPadColour (int index, int colour)
+{
+    if (juce::isPositiveAndBelow (index, numPads))
+        pads[(size_t) index].info.colour = colour;
 }
 
 void Soundboard::renamePad (int index, const juce::String& name)
@@ -110,7 +136,15 @@ void Soundboard::trigger (int index)
         return;
 
     auto& pad = pads[(size_t) index];
-    pad.command.store (pad.playingFlag.load() ? 2 : 1);
+    // Restart always starts over; the others stop when pressed while playing (for Hold that
+    // is Enter / a second press without a release, e.g. from the keyboard or MIDI).
+    pad.command.store (pad.mode.load() != Restart && pad.playingFlag.load() ? 2 : 1);
+}
+
+void Soundboard::release (int index)
+{
+    if (juce::isPositiveAndBelow (index, numPads) && pads[(size_t) index].mode.load() == Hold)
+        pads[(size_t) index].command.store (2);
 }
 
 void Soundboard::stopAll()
@@ -158,35 +192,48 @@ bool Soundboard::render (float* left, float* right, int numSamples) noexcept
         if (! pad.playing)
         {
             pad.playingFlag.store (false, std::memory_order_relaxed);
+            pad.progress.store (0.0f, std::memory_order_relaxed);
             continue;
         }
 
-        int n = juce::jmin (numSamples, pad.playable.getNumSamples() - pad.pos);
-        if (pad.fadeOut > 0)
+        const int len = pad.playable.getNumSamples();
+        const float padGain = pad.gainLin.load (std::memory_order_relaxed);
+        const bool loop = pad.mode.load (std::memory_order_relaxed) == Loop;
+        int done = 0;
+        while (done < numSamples && pad.playing)
         {
-            n = juce::jmin (n, pad.fadeOut);
+            int n = juce::jmin (numSamples - done, len - pad.pos);
             const auto* srcL = pad.playable.getReadPointer (0, pad.pos);
             const auto* srcR = pad.playable.getReadPointer (1, pad.pos);
-            for (int i = 0; i < n; ++i)
+            if (pad.fadeOut > 0)
             {
-                const float g = (float) (pad.fadeOut - i) / (float) fadeLength;
-                left[i] += srcL[i] * g;
-                right[i] += srcR[i] * g;
+                n = juce::jmin (n, pad.fadeOut);
+                for (int i = 0; i < n; ++i)
+                {
+                    const float g = padGain * (float) (pad.fadeOut - i) / (float) fadeLength;
+                    left[done + i] += srcL[i] * g;
+                    right[done + i] += srcR[i] * g;
+                }
+                pad.fadeOut -= n;
+                if (pad.fadeOut == 0)
+                    pad.playing = false;
             }
-            pad.fadeOut -= n;
-            if (pad.fadeOut == 0)
-                pad.playing = false;
+            else
+            {
+                juce::FloatVectorOperations::addWithMultiply (left + done, srcL, padGain, n);
+                juce::FloatVectorOperations::addWithMultiply (right + done, srcR, padGain, n);
+            }
+            pad.pos += n;
+            done += n;
+            if (pad.pos >= len)
+            {
+                pad.pos = 0;
+                pad.playing = pad.playing && loop;   // a loop goes round; anything else ends
+            }
         }
-        else
-        {
-            juce::FloatVectorOperations::add (left, pad.playable.getReadPointer (0, pad.pos), n);
-            juce::FloatVectorOperations::add (right, pad.playable.getReadPointer (1, pad.pos), n);
-        }
-        pad.pos += n;
-        if (pad.pos >= pad.playable.getNumSamples())
-            pad.playing = false;
 
         pad.playingFlag.store (pad.playing, std::memory_order_relaxed);
+        pad.progress.store (pad.playing ? (float) pad.pos / (float) len : 0.0f, std::memory_order_relaxed);
         any = true;
     }
 

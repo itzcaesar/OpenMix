@@ -124,6 +124,7 @@ target_sources(OpenMix PRIVATE
     # creator tools
     Source/creator/Recorder.cpp
     Source/creator/Soundboard.cpp
+    Source/creator/MediaPlayer.cpp
 
     # DSP (the rest is header-only)
     Source/dsp/Denoiser.cpp
@@ -139,6 +140,7 @@ target_sources(OpenMix PRIVATE
     Source/ui/TrayIcon.cpp
     Source/ui/AnalyserPanel.cpp
     Source/ui/SoundboardPanel.cpp
+    Source/ui/MediaPlayerPanel.cpp
     Source/ui/HotkeysPanel.cpp
     Source/ui/RoutingPanel.cpp)
 
@@ -194,6 +196,7 @@ if(OPENMIX_BUILD_TESTS)
         Source/engine/PluginScanner.cpp
         Source/creator/Recorder.cpp
         Source/creator/Soundboard.cpp
+        Source/creator/MediaPlayer.cpp
         Source/dsp/Denoiser.cpp
         Source/ui/Widgets.cpp
         Source/ui/OpenMixLookAndFeel.cpp)

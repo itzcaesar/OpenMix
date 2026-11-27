@@ -16,7 +16,7 @@ This is OpenMix's first public release. There was no earlier release:
 - Up to 8 input strips and up to 6 output buses, added and removed at runtime.
 - Strip sources: a channel or stereo pair of the main device (ASIO, WASAPI or
   DirectSound), any other Windows input device, one app's audio (per-app
-  loopback), or loopback of a Windows output device.
+  loopback), loopback of a Windows output device, or the media player.
 - Buses: A1–A3 hardware and B1–B3 virtual, each to an output pair of the main
   device or to any Windows output device, with EQ, compressor, plugins and a
   safety limiter. Buses are grouped **Hardware / Virtual** on the desk, and
@@ -82,6 +82,12 @@ This is OpenMix's first public release. There was no earlier release:
 **Creator tools, scenes and control**
 
 - Multitrack recorder, replay buffer ("save the last 60 s") and soundboard.
+- Soundboard: 32 pads in pages of 8, a volume, colour and mode per pad (play
+  once, restart, loop, hold to play), a progress bar while a pad plays, and
+  drag and drop to load.
+- **Media player:** a playlist (streamed from disk, with repeat and shuffle)
+  that any strip can use as its source, so it gets the strip's processing,
+  ducking and sends.
 - Scenes: snapshot the whole mixer and switch with a hotkey.
 - Global hotkeys that work while a game has focus: mute, push-to-talk,
   soundboard, recording and scenes.
