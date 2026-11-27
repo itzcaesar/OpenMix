@@ -95,6 +95,9 @@ This is OpenMix's first public release. There was no earlier release:
   select several strips (Shift / Ctrl+click) and change them together; drag
   across M, S or SAFE keys to set several strips at once; pick an icon for a
   strip's name plate.
+- **Desk:** strips and buses widen to fill the window; a mic or device input
+  that gives digital silence for 10 seconds shows a note; undo also restores
+  a strip's name, colour and icon.
 - **Solo before the fader (PFL)** as an option in the Mixer menu; after-fader
   listen stays the default.
 - Release builds are code-signed when the repository has a certificate

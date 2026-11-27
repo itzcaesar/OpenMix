@@ -283,16 +283,20 @@ void ChannelStrip::process (const float* inL, const float* inR, juce::AudioBuffe
 
         const float polarity = invertPolarity.load() ? -1.0f : 1.0f;
         const bool sumToMono = mono.load();
+        float inPeak = 0.0f;
 
         for (int i = 0; i < numSamples; ++i)
         {
             const float g = inGain.getNextValue() * polarity;
+            inPeak = juce::jmax (inPeak, std::abs (inL[i]), std::abs (inR[i]));
             float l = inL[i] * g, r = inR[i] * g;   // read both before writing (in/out may alias)
             if (sumToMono)
                 l = r = 0.5f * (l + r);
             L[i] = l;
             R[i] = r;
         }
+        if (inPeak > inputPeak.load())
+            inputPeak.store (inPeak);
 
         dcBlocker.process (L, numSamples, 0);
         dcBlocker.process (R, numSamples, 1);

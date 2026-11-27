@@ -46,7 +46,7 @@ public:
 
     // Column width limits; compact mode narrows them (Theme::isCompact()).
     static int minWidth() { return Theme::isCompact() ? 96 : 106; }
-    static int maxWidth() { return Theme::isCompact() ? 118 : 132; }
+    static int maxWidth() { return Theme::isCompact() ? 180 : 200; }
 
 private:
     // Source + strip menu

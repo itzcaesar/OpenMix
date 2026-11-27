@@ -1330,6 +1330,26 @@ void MainComponent::timerCallback()
         updateSceneButton();
     }
 
+    // A mic or device input that gives digital silence for 10 s is unplugged, muted at the
+    // device or blocked by Windows privacy. Quiet rooms still have a noise floor above this.
+    for (int s = 0; s < kNumStrips; ++s)
+    {
+        auto& strip = engine.getStrip (s);
+        const int src = strip.sourceType.load();
+        const float peak = strip.inputPeak.exchange (-1.0f);
+        auto& silent = silentTicks[(size_t) s];
+        const bool hardware = src == (int) SourceType::Main || src == (int) SourceType::Device;
+        if (! strip.active.load() || strip.mute.load() || ! hardware || peak < 0.0f || peak > 1.0e-5f)
+        {
+            silent = 0;
+            continue;
+        }
+        if (++silent == 300)
+            showNote ((strip.name.isNotEmpty() ? strip.name : "Input " + juce::String (s + 1))
+                      + " has had no signal for 10 seconds. Check the cable, the device's mute switch"
+                        " or Windows microphone privacy.");
+    }
+
     // Undo history: a new step whenever the mix changed, but not mid-drag.
     if (ticks % 10 == 0 && ! juce::ModifierKeys::getCurrentModifiersRealtime().isAnyMouseButtonDown())
         history.offer (captureMixText());
@@ -1960,7 +1980,17 @@ void WindowDot::paintButton (juce::Graphics& g, bool isHighlighted, bool isDown)
 
 juce::String MainComponent::captureMixText()
 {
-    return Session::captureScene (engine)->toString (juce::XmlElement::TextFormat().singleLine().withoutHeader());
+    // A scene plus each strip's name plate, so undoing a paste or a rename restores it too
+    // (scenes themselves leave names alone).
+    auto xml = Session::captureScene (engine);
+    for (auto* x : xml->getChildWithTagNameIterator ("Strip"))
+    {
+        const auto& strip = engine.getStrip (x->getIntAttribute ("index"));
+        x->setAttribute ("name", strip.name);
+        x->setAttribute ("colour", strip.colour);
+        x->setAttribute ("icon", strip.icon);
+    }
+    return xml->toString (juce::XmlElement::TextFormat().singleLine().withoutHeader());
 }
 
 void MainComponent::undoMix (bool redo)
@@ -1974,6 +2004,14 @@ void MainComponent::undoMix (bool redo)
         return;
     }
     Session::applyScene (*xml, engine);
+    for (auto* x : xml->getChildWithTagNameIterator ("Strip"))
+    {
+        auto& strip = engine.getStrip (juce::jlimit (0, kNumStrips - 1, x->getIntAttribute ("index")));
+        strip.name = x->getStringAttribute ("name", strip.name);
+        strip.colour = x->getIntAttribute ("colour", strip.colour);
+        strip.icon = juce::jlimit (0, StripIcons::count - 1, x->getIntAttribute ("icon", strip.icon));
+    }
+    for (auto& s : console->strips) if (s->isVisible()) s->refreshFromStrip();
     history.settle (captureMixText());
     showNote (redo ? "Redo" : "Undo");
 }

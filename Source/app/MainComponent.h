@@ -162,6 +162,7 @@ private:
     void showRouting();
     void setMediaShown (bool);
     void undoMix (bool redo);
+    std::array<int, kNumStrips> silentTicks {};   // timer ticks each hardware input has been digitally silent
     juce::String captureMixText();
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;

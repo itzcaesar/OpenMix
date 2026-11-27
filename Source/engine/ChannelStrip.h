@@ -195,7 +195,8 @@ public:
     // Metering (written by audio thread)
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
     std::atomic<float> rmsL { 0.0f }, rmsR { 0.0f };   // sustained level, for the RMS meter
-    std::atomic<float> sidechainLevel { 0.0f };   // pre-fader peak of the last block, for ducking
+    std::atomic<float> sidechainLevel { 0.0f };
+    std::atomic<float> inputPeak { -1.0f };   // raw source peak since the UI last reset it to -1; stays -1 with no source   // pre-fader peak of the last block, for ducking
 
 private:
     static void storeMin (std::atomic<float>& meter, float value) noexcept
