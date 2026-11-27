@@ -5,10 +5,10 @@ The full changelog lives in the repository at
 This page is a summary; it does not duplicate the file, so the repo file
 stays the single source of truth.
 
-## 0.1.0: first release (unreleased at the time this site was written)
+## 0.1.0: first release (2026-11-27)
 
 OpenMix's first public release. There was no earlier release: `0.1.0`
-is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
+is the version in `CMakeLists.txt`, tagged `v0.1.0`.
 
 ### Added
 

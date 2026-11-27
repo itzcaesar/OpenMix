@@ -4,10 +4,10 @@ All notable changes to OpenMix will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] - Unreleased (first release)
+## [0.1.0] - 2026-11-27 (first release)
 
 This is OpenMix's first public release. There was no earlier release:
-`0.1.0` is the version in `CMakeLists.txt`, and the first tag will be `v0.1.0`.
+`0.1.0` is the version in `CMakeLists.txt`, tagged `v0.1.0`.
 
 ### Added
 
