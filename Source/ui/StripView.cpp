@@ -943,7 +943,7 @@ void StripView::resized()
     dividerYs.push_back (sendsBlock.getY() - 3);
 
     sendsLegend = sendsBlock.removeFromTop (legendH);
-    for (int b = 0; b < kNumBuses; ++b)
+    for (int b : kBusOrder)
     {
         if (! engine.getBus (b).active.load())
             continue;

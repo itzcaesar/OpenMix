@@ -21,15 +21,15 @@
 
 namespace omx
 {
-    constexpr int kPresetNumBuses = 6;   // must match kNumBuses (ChannelStrip.h)
+    constexpr int kPresetNumBuses = 8;   // must match kNumBuses (ChannelStrip.h)
     constexpr int kPresetNumSlots = 6;   // must match kNumSlots (PluginChain.h)
 
     // Bus groups are slot-based, never name-based (see isVirtualBusSlot):
-    // slots 0-2 are the Hardware (A) group, slots 3-5 the Virtual (B) group.
+    // slots 0-2 and 6 (A4) are the Hardware (A) group, slots 3-5 and 7 (B4) the Virtual (B) group.
     // A bus keeps its group when it is renamed, so a custom name can never
     // move a bus between groups.
     constexpr int kHardwareBusFirst = 0, kVirtualBusFirst = 3;
-    inline bool isVirtualBusSlot (int slot) noexcept { return slot >= kVirtualBusFirst; }
+    inline bool isVirtualBusSlot (int slot) noexcept { return slot >= kVirtualBusFirst && slot != 6; }
     inline int firstSlotInGroup (bool virtualGroup) noexcept
     {
         return virtualGroup ? kVirtualBusFirst : kHardwareBusFirst;
@@ -81,7 +81,7 @@ namespace omx
         bool lpfOn = false;       float lpfHz = 18000.0f; // 1k..20k Hz
 
         // Bus sends (busOn / level / pre-fader), indexed as kBusNames.
-        std::array<bool,  kPresetNumBuses> busOn  { true, false, false, false, false, false };
+        std::array<bool,  kPresetNumBuses> busOn  { true, false, false, false, false, false, false, false };
         std::array<float, kPresetNumBuses> sendDb {};
         std::array<bool,  kPresetNumBuses> sendPre {};
 

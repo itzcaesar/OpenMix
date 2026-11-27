@@ -14,8 +14,11 @@
 // Capacity. Strips and buses are allocated up front (real-time safe) and switched on/off by the
 // user; only active ones are processed and shown.
 constexpr int kNumStrips = 8;
-constexpr int kNumBuses  = 6;                     // A1-A3 hardware, B1-B3 virtual
-inline const char* const kBusNames[kNumBuses] { "A1", "A2", "A3", "B1", "B2", "B3" };
+constexpr int kNumBuses  = 8;                     // A1-A4 hardware, B1-B4 virtual
+// A4 and B4 came later, so they take the last slots: saved sessions, scenes, hotkeys and
+// OSC/MIDI mappings keep pointing at the same buses. Show buses in kBusOrder.
+inline const char* const kBusNames[kNumBuses] { "A1", "A2", "A3", "B1", "B2", "B3", "A4", "B4" };
+inline constexpr int kBusOrder[kNumBuses] { 0, 1, 2, 6, 3, 4, 5, 7 };
 constexpr int kDefaultStrips = 3;
 inline bool isDefaultBus (int b) { return b == 0 || b == 1 || b == 3; }   // A1, A2, B1
 

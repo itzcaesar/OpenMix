@@ -45,7 +45,7 @@ public:
     void setBayTop (int y) { bayTop = y; }
 
     // Column width limits; compact mode narrows them (Theme::isCompact()).
-    static int minWidth() { return Theme::isCompact() ? 96 : 106; }
+    static int minWidth() { return Theme::isCompact() ? 78 : 84; }
     static int maxWidth() { return Theme::isCompact() ? 180 : 200; }
 
 private:

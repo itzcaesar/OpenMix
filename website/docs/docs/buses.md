@@ -1,9 +1,9 @@
 # Buses & outputs
 
 The bus row is OpenMix's **Master section** on the right side of the
-desk, separated from the input strips by a divider. Up to 6 buses, added
+desk, separated from the input strips by a divider. Up to 8 buses, added
 and removed at runtime with **+ Bus**. The bus row is split into
-**Hardware** (A1–A3) and **Virtual** (B1–B3) groups with a divider
+**Hardware** (A1–A4) and **Virtual** (B1–B4) groups with a divider
 between them. **+ Bus** asks for the group first, then an optional
 custom name, and takes the next free slot in that group.
 
@@ -29,10 +29,10 @@ adds about 10–25 ms on those devices only.
 
 ## Custom names
 
-Rename a bus from its three-dot menu (empty = the default A1..A3 /
-B1..B3). The name is shown on the bus's name plate, on the strips' send keys, in
+Rename a bus from its three-dot menu (empty = the default A1..A4 /
+B1..B4). The name is shown on the bus's name plate, on the strips' send keys, in
 the soundboard and in recording. A bus never changes group when renamed:
-slots A1–A3 are always **Hardware**, B1–B3 always **Virtual**.
+slots A1–A4 are always **Hardware**, B1–B4 always **Virtual**.
 
 ## Limiter, loudness and meters
 

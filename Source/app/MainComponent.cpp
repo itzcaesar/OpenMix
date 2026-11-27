@@ -149,7 +149,7 @@ int ConsoleContent::minimumWidth() const
     int nA = 0, nB = 0;
     for (int b = 0; b < kNumBuses; ++b)
         if (engine.getBus (b).active.load())
-            (b < 3 ? nA : nB)++;
+            (omx::isVirtualBusSlot (b) ? nB : nA)++;
     const int gap = (nA > 0 && nB > 0) ? groupGap() : 0;
     const int desk = ns * StripView::minWidth() + (ns - 1) * stripGap()
                    + sectionGap()
@@ -191,7 +191,7 @@ void ConsoleContent::resized()
     int nA = 0, nB = 0;
     for (int b = 0; b < kNumBuses; ++b)
         if (engine.getBus (b).active.load())
-            (b < 3 ? nA : nB)++;
+            (omx::isVirtualBusSlot (b) ? nB : nA)++;
     const int busGroupGap = (nA > 0 && nB > 0) ? groupGap() : 0;
 
     const int avail = r.getWidth() - sectionGap() - soundW - (ns - 1) * stripGap() - (nb - 1) * stripGap() - busGroupGap;
@@ -252,14 +252,14 @@ void ConsoleContent::resized()
     dividerX = r.getX() - sectionGap() / 2;
     groupDividerBottom = deskBottom;
 
-    // Buses in slot order, with the group gap + divider between the A and B groups.
+    // Buses in display order, with the group gap + divider between the A and B groups.
     groupDividerX = 0;
     int placed = 0;
-    for (int b = 0; b < kNumBuses; ++b)
+    for (int b : kBusOrder)
     {
         if (! buses[(size_t) b]->isVisible())
             continue;
-        if (b >= 3 && placed == nA && busGroupGap > 0)
+        if (omx::isVirtualBusSlot (b) && placed == nA && busGroupGap > 0)
         {
             groupDividerX = r.getX() + busGroupGap / 2;
             r.removeFromLeft (busGroupGap);
@@ -1531,7 +1531,7 @@ void MainComponent::startRecording()
     std::vector<Recorder::Target> targets;
 
     if (what == 0 || what == 2)
-        for (int b = 0; b < kNumBuses; ++b)
+        for (int b : kBusOrder)
             if (engine.getBus (b).active.load())
             {
                 const auto custom = engine.getBus (b).customName;
@@ -1578,7 +1578,7 @@ void MainComponent::showRecordMenu()
         });
 
     juce::PopupMenu source;
-    for (int b = 0; b < kNumBuses; ++b)
+    for (int b : kBusOrder)
         if (engine.getBus (b).active.load())
             source.addItem (engine.getBusName (b), true, settings.replayBus() == b, [this, b]
             {

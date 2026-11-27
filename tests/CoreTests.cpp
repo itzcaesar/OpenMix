@@ -409,7 +409,7 @@ int main()
     run ("StripPreset: defaults and copy round-trip keep every field", []
     {
         omx::StripPreset p;
-        CHECK (omx::kPresetNumBuses == 6 && omx::kPresetNumSlots == 6, "preset capacity must match the engine");
+        CHECK (omx::kPresetNumBuses == 8 && omx::kPresetNumSlots == 6, "preset capacity must match the engine");
         CHECK (! p.hpfOn && p.hpfHz == 80.0f && ! p.lpfOn && p.lpfHz == 18000.0f, "filter defaults wrong");
         CHECK (p.numSlots == 0 && p.duckSource == -1 && p.padY == -1.0f, "preset defaults wrong");
         CHECK (p.busOn[0] && ! p.busOn[1], "preset default routing should be A1 only");
@@ -468,9 +468,9 @@ int main()
     {
         using omx::isVirtualBusSlot;
         using omx::firstSlotInGroup;
-        for (int b = 0; b < 3; ++b)
+        for (int b : { 0, 1, 2, 6 })
             CHECK (! isVirtualBusSlot (b), "slot %d should be Hardware", b);
-        for (int b = 3; b < 6; ++b)
+        for (int b : { 3, 4, 5, 7 })
             CHECK (isVirtualBusSlot (b), "slot %d should be Virtual", b);
         CHECK (! isVirtualBusSlot (-1) && isVirtualBusSlot (99), "out-of-range slots classify by index, not by name");
         CHECK (firstSlotInGroup (false) == 0 && firstSlotInGroup (true) == 3, "group starts should be 0 and 3");

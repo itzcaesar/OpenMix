@@ -514,8 +514,9 @@ void SoundboardPanel::resized()
     volume.setBounds (volumeRow);
     auto sendsRow = right.removeFromBottom (rowH);
     sendsLegend = sendsRow.removeFromLeft (56);
-    for (auto& b : sendButtons)
+    for (int i : kBusOrder)
     {
+        auto& b = sendButtons[(size_t) i];
         if (! b.isVisible())
             continue;
         b.setBounds (sendsRow.removeFromLeft (keyW));

@@ -30,7 +30,7 @@ public:
 
     // Column width limits; compact mode narrows them (Theme::isCompact()).
     // A bus gets about 3/4 of a strip's width (see ConsoleContent::resized).
-    static int minWidth() { return Theme::isCompact() ? 100 : 110; }
+    static int minWidth() { return Theme::isCompact() ? 78 : 84; }
     static int maxWidth() { return Theme::isCompact() ? 180 : 200; }
 
 private:
@@ -43,7 +43,7 @@ private:
     static bool isVirtualCable (const juce::String& deviceName);
     // Slot-based, never name-based: slots 0-2 are Hardware, 3-5 Virtual.
     // A custom bus name must never move a bus between groups.
-    bool isVirtual() const { return index >= 3; }
+    bool isVirtual() const { return omx::isVirtualBusSlot (index); }
     // The bus's own name: the custom name when one is set, else A1..A3 / B1..B3.
     juce::String busName() const { return engine.getBusName (index); }
 

@@ -442,9 +442,8 @@ void MixerEngine::setBusName (int bus, const juce::String& name)
 
 int MixerEngine::findNextFreeSlotInGroup (bool virtualGroup) const noexcept
 {
-    const int first = omx::firstSlotInGroup (virtualGroup);
-    for (int b = first; b < first + 3; ++b)
-        if (! buses[(size_t) b].active.load())
+    for (int b : kBusOrder)
+        if (omx::isVirtualBusSlot (b) == virtualGroup && ! buses[(size_t) b].active.load())
             return b;
     return -1;
 }

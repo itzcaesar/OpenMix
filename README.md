@@ -16,7 +16,7 @@ them up, and send a separate mix to your headphones, the stream and the call.
   out-of-process audio rendering, bypass without clicks, wet/dry, A/B compare, presets and
   latency compensation. Editors stay in the app; a duplicate instance renders each chain in
   a worker with a two-callback audio pipeline.
-- **Outputs:** up to 6 buses (A1-A3 hardware, B1-B3 virtual), each to an output pair of the
+- **Outputs:** up to 8 buses (A1-A4 hardware, B1-B4 virtual), each to an output pair of the
   main device or to any Windows output device, with EQ, compressor, plugins and a safety
   limiter. Buses are grouped **Hardware** / **Virtual** on the desk, and each bus can have a
   custom name (its group never changes when you rename it).
@@ -91,7 +91,7 @@ Everything is saved automatically.
   The header is the title bar: drag it to move the window, double-click it to maximise.
   **Settings** is in the Setup menu.
 - **Inputs** on the left, **buses** on the right. **+ Strip** and **+ Bus** sit next to the
-  section names. Buses are grouped **Hardware** (A1-A3) and **Virtual** (B1-B3) with a
+  section names. Buses are grouped **Hardware** (A1-A4) and **Virtual** (B1-B4) with a
   divider between them; **+ Bus** asks for the group first, then an optional custom name,
   and takes the next free slot in that group.
 - Every strip and bus ends in the same **fader bay**, so faders, meters and keys line up
@@ -245,10 +245,10 @@ empty on a default (VST2-off) build.
   devices only. Adding buses does not require separate drivers per bus; only exposing a B bus
   as a microphone to other apps needs a virtual endpoint (a virtual cable today, or one
   multi-endpoint OpenMix driver in Phase 7; see `docs/VIRTUAL_DRIVER.md`).
-- **Custom names:** rename a bus from its three-dot menu (empty = the default A1..A3 /
-  B1..B3). The name is shown on the bus's name plate, on the strips' send keys, in the soundboard
-  and in recording. A bus never changes group when renamed: slots A1-A3 are always
-  **Hardware**, B1-B3 always **Virtual**.
+- **Custom names:** rename a bus from its three-dot menu (empty = the default A1..A4 /
+  B1..B4). The name is shown on the bus's name plate, on the strips' send keys, in the soundboard
+  and in recording. A bus never changes group when renamed: slots A1-A4 are always
+  **Hardware**, B1-B4 always **Virtual**.
 - **LIMITER:** the gain reduction of the safety limiter (-0.3 dBFS ceiling), as a number and
   a bar; it reads "LIMITING" in red while the limiter works hard. **MON** is lit on the
   **monitor bus**, where soloed strips are heard; click MON on another bus to move it there.

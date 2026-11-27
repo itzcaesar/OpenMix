@@ -23,7 +23,7 @@ struct RemoteCallbacks
     std::function<void (int scene)> onRecallScene;   // 0-based
 };
 
-// "A1".."B3" (any case) -> bus index, or -1.
+// "A1".."B4" (any case) -> bus index, or -1.
 inline int busIndexFromName (const juce::String& name)
 {
     for (int b = 0; b < kNumBuses; ++b)
