@@ -366,7 +366,7 @@ The **Setup** menu also has: **Restart audio engine** (Ctrl+R) and **Auto restar
 main device stops, or when any device changes); **Release media file**; **Load settings**, **Save settings**,
 **Load settings on startup** and **Reset settings** (loading and resetting restart OpenMix and keep the old
 session as `session-backup.xml`); and checkboxes for close to tray, run on Windows startup, show the window on
-startup, **Always on top** and **Lock controls** (the desk ignores the mouse; menus, scenes and hotkeys still work).
+startup, **Always on top** and **Lock controls** (the desk ignores the mouse and keyboard; menus, scenes and hotkeys still work).
 
 The **update check** is off by default. When on, OpenMix asks GitHub once at startup
 whether a newer release exists and, if so, shows an Update button that opens the release

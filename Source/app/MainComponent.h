@@ -119,6 +119,7 @@ private:
 };
 
 class MainComponent : public juce::Component,
+                      private juce::FocusChangeListener,
                       private juce::ChangeListener,
                       private juce::Timer
 {
@@ -169,10 +170,11 @@ private:
     void resetSettings();
     void chooseStartupSettings();
     void applyLock();
+    void globalFocusChanged (juce::Component*) override;   // Lock controls: keeps focus off the desk
     juce::String lastDeviceList;   // auto restart (all devices): Windows' device list last time
     std::unique_ptr<juce::FileChooser> settingsChooser;
     std::array<int, kNumStrips> silentTicks {};   // timer ticks each hardware input has been digitally silent
-    juce::String captureMixText();
+    juce::String captureMixText (const juce::Array<int>& fullStrips = {});
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;

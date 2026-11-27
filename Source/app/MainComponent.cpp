@@ -530,6 +530,8 @@ MainComponent::MainComponent()
     console->onSizeChanged = [this] { if (! getBounds().isEmpty()) resized(); };
     consoleView.setViewedComponent (console.get(), false);
     applyLock();
+    juce::Desktop::getInstance().addFocusChangeListener (this);
+    StripView::onPasteStep = [this] (const juce::Array<int>& strips, bool) { history.offer (captureMixText (strips)); };
     consoleView.setScrollBarsShown (true, true);
     consoleView.setScrollBarThickness (8);
     addAndMakeVisible (consoleView);
@@ -618,6 +620,8 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+    juce::Desktop::getInstance().removeFocusChangeListener (this);
+    StripView::onPasteStep = nullptr;
     engine.getRecorder().stop();
     stopTimer();
     engine.getScanner().removeChangeListener (this);
@@ -2006,7 +2010,7 @@ void WindowDot::paintButton (juce::Graphics& g, bool isHighlighted, bool isDown)
                                           maximised, isHighlighted, isDown, hasKeyboardFocus (false));
 }
 
-juce::String MainComponent::captureMixText()
+juce::String MainComponent::captureMixText (const juce::Array<int>& fullStrips)
 {
     // A scene plus each strip's name plate, so undoing a paste or a rename restores it too
     // (scenes themselves leave names alone).
@@ -2018,18 +2022,71 @@ juce::String MainComponent::captureMixText()
         x->setAttribute ("colour", strip.colour);
         x->setAttribute ("icon", strip.icon);
     }
-    return xml->toString (juce::XmlElement::TextFormat().singleLine().withoutHeader());
+    auto text = xml->toString (juce::XmlElement::TextFormat().singleLine().withoutHeader());
+    if (! fullStrips.isEmpty())
+    {
+        juce::XmlElement copies ("Strips");
+        for (int s : fullStrips)
+            if (auto c = Session::copyStrip (engine, s))
+            {
+                c->setAttribute ("index", s);
+                copies.addChildElement (c.release());
+            }
+        text << MixHistory::fullMarker << copies.toString (juce::XmlElement::TextFormat().singleLine().withoutHeader());
+    }
+    return text;
+}
+
+// Each slot's plugin and state, to tell whether undo has to reload a strip's plugins.
+static juce::String chainKey (const juce::XmlElement& stripCopy)
+{
+    juce::String key;
+    for (auto* xp : stripCopy.getChildWithTagNameIterator ("Slot"))
+    {
+        juce::PluginDescription d;
+        if (auto* pd = xp->getChildElement (0); pd != nullptr && d.loadFromXml (*pd))
+            key << xp->getIntAttribute ("index") << ':' << d.createIdentifierString() << ':' << xp->getStringAttribute ("state") << ';';
+    }
+    return key;
+}
+
+static juce::String chainKey (PluginChain& chain)
+{
+    juce::String key;
+    for (int s = 0; s < kNumSlots; ++s)
+        if (auto* p = chain.getPlugin (s))
+        {
+            juce::MemoryBlock state;
+            p->getStateInformation (state);
+            key << s << ':' << p->getPluginDescription().createIdentifierString() << ':' << state.toBase64Encoding() << ';';
+        }
+    return key;
 }
 
 void MainComponent::undoMix (bool redo)
 {
     history.offer (captureMixText());   // a change from the last few hundred ms is a step too
     const auto state = redo ? history.redo() : history.undo();
-    auto xml = juce::parseXML (state);
+    auto xml = juce::parseXML (MixHistory::mixPart (state));
     if (xml == nullptr)
     {
         showNote (redo ? "Nothing to redo" : "Nothing to undo");
         return;
+    }
+    // A paste step: put back each strip as it was then, plugins and their state included.
+    if (auto copies = juce::parseXML (MixHistory::fullPart (state)))
+    {
+        for (auto* c : copies->getChildIterator())
+        {
+            const int s = c->getIntAttribute ("index", -1);
+            if (! juce::isPositiveAndBelow (s, kNumStrips))
+                continue;
+            if (chainKey (*c) == chainKey (engine.getStrip (s).inserts))
+                continue;   // same plugins in the same state: nothing to reload
+            console->strips[(size_t) s]->closePluginEditors();
+            Session::pasteStrip (*c, engine, s);
+        }
+        Session::save (engine);
     }
     Session::applyScene (*xml, engine);
     for (auto* x : xml->getChildWithTagNameIterator ("Strip"))
@@ -2173,6 +2230,12 @@ void MainComponent::restartAudioEngine (bool fromUser)
         showNote (error.isEmpty() ? "Audio engine restarted" : "Couldn't reopen the audio device: " + error);
     else if (error.isEmpty())
         showNote ("Audio engine restarted after a device change");
+}
+
+void MainComponent::globalFocusChanged (juce::Component* focused)
+{
+    if (focused != nullptr && AppSettings::get().lockControls() && console->isParentOf (focused))
+        grabKeyboardFocus();
 }
 
 void MainComponent::applyLock()

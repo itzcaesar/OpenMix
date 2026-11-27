@@ -233,13 +233,13 @@ bool MidiControl::currentToggle (const juce::StringArray& p) const
         if (p[2] == "solo") return strip.solo.load();
         if (p[2] == "send")
         {
-            const int b = busIndexFromName (p[3]);
+            const int b = busIndexFromName (engine, p[3]);
             return b >= 0 && strip.busOn[b].load();
         }
     }
     else if (p[0] == "bus" && p.size() >= 3)
     {
-        const int b = busIndexFromName (p[1]);
+        const int b = busIndexFromName (engine, p[1]);
         if (b < 0)
             return false;
         return p[2] == "norm" ? engine.getBus (b).normOn.load() : engine.getBus (b).mute.load();

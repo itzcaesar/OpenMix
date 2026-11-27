@@ -311,6 +311,27 @@ int main (int argc, char** argv)
                "removing B1 left feeds to or from it");
     });
 
+    run ("Undo history: a paste step keeps its strip copies, plain steps don't add empty ones", []
+    {
+        const juce::String m = MixHistory::fullMarker;
+        MixHistory h;
+        h.offer ("mix0");
+        h.offer ("mix0" + m + "before");   // just before a paste: copies join the current step
+        CHECK (! h.canUndo(), "adding copies made a new step");
+        h.offer ("mix1" + m + "after");    // just after the paste
+        h.offer ("mix1");                  // the timer's plain capture of the same mix
+        CHECK (h.offer ("mix2"), "a real change should be a new step");
+
+        CHECK (h.undo() == "mix1" + m + "after", "undo of the fader move should bring the pasted copies");
+        h.settle ("mix1");
+        CHECK (h.undo() == "mix0" + m + "before", "undo of the paste should bring the old copies");
+        h.settle ("mix0");
+        CHECK (h.redo() == "mix1" + m + "after", "settle dropped the copies, so redo lost them");
+
+        CHECK (busIndexFromName (MixerEngine(), "B5") < 0 && busIndexFromName (MixerEngine(), "a4") == 6,
+               "B5 means nothing until a slot is borrowed; slot names always work");
+    });
+
     run ("Bus groups: B borrows free A slots after B4, never the other way", []
     {
         MixerEngine engine;
@@ -336,6 +357,8 @@ int main (int argc, char** argv)
         CHECK (! engine.getBus (6).borrowed && engine.findNextFreeSlotInGroup (false) == 6,
                "a removed borrowed slot should go back to A");
         CHECK (engine.getBusName (2) == "B5", "B6 should become B5 once the earlier borrowed bus is gone");
+        CHECK (busIndexFromName (engine, "b5") == 2 && busIndexFromName (engine, "A3") == 2,
+               "OSC / MIDI should reach a borrowed bus by its B name and its slot name");
     });
 
     run ("Copy / paste strip: settings come along, source and mute stay, no self-ducking", []

@@ -35,9 +35,12 @@ public:
 
     void refreshDevice();
     void refreshFromStrip();
+    void closePluginEditors() { inserts.closeAllEditors(); }
     void tick();
 
-    std::function<void()> onLayoutChanged;   // the strip was removed, or buses changed
+    std::function<void()> onLayoutChanged;
+    // Around a paste: the strips about to change (after = false), then the same strips again.
+    static inline std::function<void (const juce::Array<int>& strips, bool after)> onPasteStep;   // the strip was removed, or buses changed
     std::function<void()> onOpenMediaPlayer; // the source was set to the media player
 
     // Where the fader bay starts (from the top of the strip); the console sets the same value

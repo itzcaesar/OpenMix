@@ -29,19 +29,19 @@ bool applyRemoteCommand (MixerEngine& engine, const juce::String& path, float v,
         else if (p[2] == "solo")        strip.solo.store (v > 0.5f);
         else if (p[2] == "send" && p.size() >= 4)
         {
-            if (const int b = busIndexFromName (p[3]); b >= 0) strip.busOn[b].store (v > 0.5f);
+            if (const int b = busIndexFromName (engine, p[3]); b >= 0) strip.busOn[b].store (v > 0.5f);
             else changed = false;
         }
         else if (p[2] == "sendlevel" && p.size() >= 4)
         {
-            if (const int b = busIndexFromName (p[3]); b >= 0) strip.sendDb[b].store (juce::jlimit (-60.0f, 12.0f, v));
+            if (const int b = busIndexFromName (engine, p[3]); b >= 0) strip.sendDb[b].store (juce::jlimit (-60.0f, 12.0f, v));
             else changed = false;
         }
         else changed = false;
     }
     else if (p[0] == "bus" && p.size() >= 3)
     {
-        const int b = busIndexFromName (p[1]);
+        const int b = busIndexFromName (engine, p[1]);
         if (b < 0 || ! engine.getBus (b).active.load())
             return false;
         auto& bus = engine.getBus (b);

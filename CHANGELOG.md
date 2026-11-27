@@ -104,6 +104,8 @@ This is OpenMix's first public release. There was no earlier release:
 - **Setup menu:** restart the audio engine (Ctrl+R) and auto restart it on device
   changes; load, save, reset and load-on-startup settings files; release the
   media file; always on top; lock controls; tray and startup options.
+- **Undo:** undoing a strip paste brings back the strip's plugins and their
+  settings. OSC and MIDI reach borrowed buses as B5, B6... as well as by slot.
 - **Solo before the fader (PFL)** as an option in the Mixer menu; after-fader
   listen stays the default.
 - Release builds are code-signed when the repository has a certificate

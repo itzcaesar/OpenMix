@@ -31,8 +31,9 @@ The full design direction lives in the repo at `docs/DESIGN.md`.
 **Undo** (Ctrl+Z) and **Redo** (Ctrl+Y or Ctrl+Shift+Z) step through mix
 changes: levels, mutes, sends, feeds, processing, the voice pad, plugin
 bypass and wet/dry. A whole fader drag is one step, and up to 100 steps are
-kept. Adding or removing strips, buses and plugins, and sources and devices,
-are not undone.
+kept. Pasting a strip is one step too, and undoing it brings back the
+strip's plugins and their settings. Adding or removing strips, buses and
+plugins, and sources and devices, are not undone.
 - **View:** soundboard, compact desk, dark theme.
 - **Setup:** audio device; **Restart audio engine** (Ctrl+R) reopens the
   main device and every extra device; **Auto restart audio engine** does it
@@ -45,7 +46,7 @@ are not undone.
   a backup). Then settings, hotkeys, recording options, the recordings
   folder, and checkboxes for close to the tray, run on Windows startup,
   show the window on startup, always on top and **Lock controls** (the desk
-  ignores the mouse; menus, scenes and hotkeys still work).
+  ignores the mouse and keyboard; menus, scenes and hotkeys still work).
 
 ## Columns
 

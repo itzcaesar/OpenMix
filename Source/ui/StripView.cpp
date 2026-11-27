@@ -358,12 +358,19 @@ void StripView::pasteStrip()
         return;
     std::vector<StripView*> targets { this };
     forOtherSelected ([&targets] (StripView& o) { targets.push_back (&o); });
+    juce::Array<int> indices;
+    for (auto* v : targets)
+        indices.add (v->index);
+    if (onPasteStep)
+        onPasteStep (indices, false);
     for (auto* v : targets)
     {
         v->inserts.closeAllEditors();   // their plugins are about to be replaced
         Session::pasteStrip (*stripClipboard, engine, v->index);
         v->refreshFromStrip();
     }
+    if (onPasteStep)
+        onPasteStep (indices, true);
     Session::save (engine);
 }
 

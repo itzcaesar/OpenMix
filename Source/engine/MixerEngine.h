@@ -59,7 +59,7 @@ struct Bus
     // A virtual (B) bus placed in a free hardware slot once B1-B4 are taken
     // (message thread only). Named B5, B6... and shown after B4. Hardware buses
     // never borrow virtual slots.
-    bool borrowed = false;
+    std::atomic<bool> borrowed { false };   // read by OSC / MIDI threads for bus names
 
     // Custom name (message thread only). Empty means the default name
     // (kBusNames[slot]: A1..A4 / B1..B4, or B5.. for a borrowed slot). The bus's group is its slot, never
@@ -150,6 +150,7 @@ public:
 
     ChannelStrip& getStrip (int i) noexcept { return *strips[(size_t) i]; }
     Bus& getBus (int i) noexcept { return buses[(size_t) i]; }
+    const Bus& getBus (int i) const noexcept { return buses[(size_t) i]; }
 
     // Main device: active input channel names and output pair names.
     juce::StringArray getActiveInputNames() const;

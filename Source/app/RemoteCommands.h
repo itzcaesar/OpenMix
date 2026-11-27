@@ -23,9 +23,13 @@ struct RemoteCallbacks
     std::function<void (int scene)> onRecallScene;   // 0-based
 };
 
-// "A1".."B4" (any case) -> bus index, or -1.
-inline int busIndexFromName (const juce::String& name)
+// "A1".."B4", or "B5".. for a virtual bus in a borrowed hardware slot (any case) -> bus index,
+// or -1. A borrowed slot still answers to its slot name too (A4...), so older mappings keep working.
+inline int busIndexFromName (const MixerEngine& engine, const juce::String& name)
 {
+    for (int b = 0; b < kNumBuses; ++b)
+        if (engine.getBus (b).borrowed.load() && engine.getBus (b).active.load() && name.equalsIgnoreCase (engine.borrowedBusName (b)))
+            return b;
     for (int b = 0; b < kNumBuses; ++b)
         if (name.equalsIgnoreCase (kBusNames[b]))
             return b;
