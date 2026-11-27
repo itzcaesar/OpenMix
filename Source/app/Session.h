@@ -10,7 +10,13 @@ namespace Session
 {
     juce::File getFile();
 
+    // The session to start with: a file queued by Load / Reset settings (applied once, with the
+    // previous session kept as session-backup.xml), else the "load on startup" file, else the last session.
     std::unique_ptr<juce::XmlElement> load();
+
+    // Load settings / Reset settings: queue a file (nullptr = start fresh) for the next start.
+    bool queueForNextStart (const juce::XmlElement* session);
+    bool isSessionFile (const juce::File&);
     // reusePluginState: take each plugin's state from a copy up to a minute old instead of
     // asking the plugin (some take 100 ms+ and return megabytes). For the periodic autosave.
     void save (MixerEngine&, bool reusePluginState = false);

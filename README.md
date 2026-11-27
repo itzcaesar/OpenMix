@@ -93,7 +93,8 @@ Everything is saved automatically.
 - **Inputs** on the left, **buses** on the right. **+ Strip** and **+ Bus** sit next to the
   section names. Buses are grouped **Hardware** (A1-A4) and **Virtual** (B1-B4) with a
   divider between them; **+ Bus** asks for the group first, then an optional custom name,
-  and takes the next free slot in that group.
+  and takes the next free slot in that group. Once B1-B4 are in use, a new virtual bus
+  takes a free hardware slot (B5, B6...); hardware buses never take virtual slots.
 - Every strip and bus ends in the same **fader bay**, so faders, meters and keys line up
   across the desk. The number above each meter is the held peak; a red bar under it marks
   0 dBFS or more.
@@ -360,6 +361,12 @@ use (for example with Ctrl+Alt).
 **Setup > Settings**: light or dark theme, compact mode, hotkeys, start with Windows, start minimized, keep running in the tray when the
 window closes, plugin scanning and crash-safe loading, presets and VST3 folders, the update check, OSC,
 phone / WebSocket and MIDI remote control, and the log folder. In the tray, double-click opens the mixer; right-click to quit.
+
+The **Setup** menu also has: **Restart audio engine** (Ctrl+R) and **Auto restart audio engine** (when the
+main device stops, or when any device changes); **Release media file**; **Load settings**, **Save settings**,
+**Load settings on startup** and **Reset settings** (loading and resetting restart OpenMix and keep the old
+session as `session-backup.xml`); and checkboxes for close to tray, run on Windows startup, show the window on
+startup, **Always on top** and **Lock controls** (the desk ignores the mouse; menus, scenes and hotkeys still work).
 
 The **update check** is off by default. When on, OpenMix asks GitHub once at startup
 whether a newer release exists and, if so, shows an Update button that opens the release

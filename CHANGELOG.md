@@ -99,7 +99,11 @@ This is OpenMix's first public release. There was no earlier release:
   that gives digital silence for 10 seconds shows a note; undo also restores
   a strip's name, colour and icon.
 - **Buses:** A4 and B4, for up to 8 buses. Existing sessions, scenes, hotkeys
-  and OSC/MIDI mappings keep pointing at the same buses.
+  and OSC/MIDI mappings keep pointing at the same buses. Once B1-B4 are in use,
+  a new virtual bus can take a free hardware slot (B5, B6...).
+- **Setup menu:** restart the audio engine (Ctrl+R) and auto restart it on device
+  changes; load, save, reset and load-on-startup settings files; release the
+  media file; always on top; lock controls; tray and startup options.
 - **Solo before the fader (PFL)** as an option in the Mixer menu; after-fader
   listen stays the default.
 - Release builds are code-signed when the repository has a certificate

@@ -56,8 +56,13 @@ struct Bus
     std::unique_ptr<DeviceOutputSink> sink;
     juce::CriticalSection sinkLock;
 
+    // A virtual (B) bus placed in a free hardware slot once B1-B4 are taken
+    // (message thread only). Named B5, B6... and shown after B4. Hardware buses
+    // never borrow virtual slots.
+    bool borrowed = false;
+
     // Custom name (message thread only). Empty means the default name
-    // (kBusNames[slot]: A1..A3 / B1..B3). The bus's group is its slot, never
+    // (kBusNames[slot]: A1..A4 / B1..B4, or B5.. for a borrowed slot). The bus's group is its slot, never
     // its name -- see MixerEngine::isVirtualBus / omx::isVirtualBusSlot --
     // so renaming a bus can never move it between the Hardware and Virtual
     // groups. Persisted in the session file by Session::save/apply.
@@ -122,17 +127,19 @@ public:
     bool isSoloActive() const noexcept;
     bool isStripMutedBySolo (int strip) const noexcept;
 
-    // Bus names and groups (message thread). Buses keep the fixed 6-slot
-    // capacity: slots 0-2 are the Hardware (A) group, 3-5 the Virtual (B)
-    // group. getBusName returns the custom name when one is set, otherwise
-    // the default (A1..A3 / B1..B3); setBusName with an empty string clears
-    // the custom name back to the default. findNextFreeSlotInGroup returns
-    // the first inactive slot in the group, or -1 when the group is full.
-    // isVirtualBus is slot-based, never name-based.
+    // Bus names and groups (message thread). 8 fixed slots: A1-A4 hardware and
+    // B1-B4 virtual (omx::isVirtualBusSlot). Once B1-B4 are taken, a virtual bus
+    // may borrow a free hardware slot (Bus::borrowed); hardware never borrows.
+    // getBusName returns the custom name when one is set, otherwise the default;
+    // setBusName with an empty string clears the custom name back to the default.
+    // findNextFreeSlotInGroup returns the slot the next bus of that group takes,
+    // or -1 when there is none. Groups are never name-based.
     juce::String getBusName (int bus) const;
     void setBusName (int bus, const juce::String& name);
     int findNextFreeSlotInGroup (bool virtualGroup) const noexcept;
-    static bool isVirtualBus (int bus) noexcept { return omx::isVirtualBusSlot (bus); }
+    bool isVirtualBus (int bus) const noexcept;
+    juce::String borrowedBusName (int slot) const;   // "B5", "B6"... for a (would-be) borrowed slot
+    std::array<int, kNumBuses> getBusDisplayOrder() const;   // A buses, then B1-B4, then borrowed ones
 
     // CPU meter (any thread): audio-thread CPU usage as a percentage of
     // real time, smoothed with an exponential moving average (see
@@ -172,7 +179,7 @@ public:
     // Strips and buses on demand (message thread). addStrip returns the index or -1 if full.
     int  addStrip();
     void removeStrip (int strip);            // clears it (plugins, source, settings) and hides it
-    void addBus (int bus);
+    void addBus (int bus, bool virtualGroup = false);   // virtualGroup in a hardware slot = borrowed
     void removeBus (int bus);
     void setMonitorBus (int bus);            // -1 = none
     int  getNumActiveStrips() const;
@@ -193,6 +200,7 @@ public:
     // (device unplugged or stalled, app closed, capture stream invalidated) and reconnects
     // them as soon as the device or app is back.
     void maintainSources();
+    void reopenExternalDevices();   // closes every extra device, app and loopback stream, then reopens them
 
     double getSampleRate() const noexcept { return currentSampleRate.load(); }
 

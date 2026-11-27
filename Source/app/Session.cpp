@@ -1,4 +1,5 @@
 #include "app/Session.h"
+#include "app/AppSettings.h"
 #include "engine/MixerEngine.h"
 #include "ui/Theme.h"
 
@@ -20,10 +21,43 @@ juce::File Session::getFile()
                .getChildFile ("OpenMix").getChildFile ("session.xml");
 }
 
+static juce::File pendingFile() { return Session::getFile().getSiblingFile ("session-pending.xml"); }
+
 std::unique_ptr<juce::XmlElement> Session::load()
 {
     const auto file = getFile();
+    if (const auto pending = pendingFile(); pending.existsAsFile())
+    {
+        if (file.existsAsFile())
+            file.copyFileTo (file.getSiblingFile ("session-backup.xml"));
+        if (pending.getSize() > 0)
+            pending.copyFileTo (file);
+        else
+            file.deleteFile();   // Reset settings: start as on a first run
+        pending.deleteFile();
+    }
+    else if (const auto startup = AppSettings::get().startupSessionFile(); isSessionFile (startup))
+    {
+        return juce::parseXML (startup);
+    }
     return file.existsAsFile() ? juce::parseXML (file) : nullptr;
+}
+
+bool Session::isSessionFile (const juce::File& f)
+{
+    if (! f.existsAsFile())
+        return false;
+    const auto xml = juce::parseXML (f);
+    return xml != nullptr && xml->hasTagName ("OpenMixSession");
+}
+
+bool Session::queueForNextStart (const juce::XmlElement* session)
+{
+    const auto pending = pendingFile();
+    pending.getParentDirectory().createDirectory();
+    if (session == nullptr)
+        return pending.replaceWithText ({});
+    return session->writeTo (pending);
 }
 
 static void writePadXml (juce::XmlElement& e, const VoicePadParams& pad)
@@ -697,6 +731,7 @@ void Session::save (MixerEngine& engine, bool reusePluginState)
         auto* xb = root.createNewChildElement ("Bus");
         xb->setAttribute ("name", kBusNames[b]);
         xb->setAttribute ("customName", bus.customName);   // "" = default name; group stays slot-based
+        xb->setAttribute ("borrowed", bus.borrowed);        // a B bus in a free hardware slot
         xb->setAttribute ("active", bus.active.load());
         xb->setAttribute ("monitor", bus.monitor.load());
         xb->setAttribute ("fader", bus.faderDb.load());
@@ -847,6 +882,7 @@ void Session::apply (const juce::XmlElement& root, MixerEngine& engine, bool loa
         auto& bus = engine.getBus (b);
         bus.active.store (xb->getBoolAttribute ("active", true));
         bus.customName = xb->getStringAttribute ("customName");
+        bus.borrowed = bus.active.load() && xb->getBoolAttribute ("borrowed", false) && ! omx::isVirtualBusSlot (b);
         bus.monitor.store (xb->getBoolAttribute ("monitor", false));
         anyMonitor = anyMonitor || bus.monitor.load();
         bus.faderDb.store ((float) xb->getDoubleAttribute ("fader", 0.0));

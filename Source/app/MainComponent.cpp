@@ -9,6 +9,9 @@
 #include "ui/TrayIcon.h"
 #include "ui/HotkeysPanel.h"
 
+// For restartApp; declared here to keep <windows.h> out of this file (as Main.cpp does).
+extern "C" __declspec (dllimport) unsigned long __stdcall GetCurrentProcessId();
+
 // Windows 11 window corners (DWM): rounded normally, square while maximised.
 #pragma comment (lib, "dwmapi.lib")
 extern "C" __declspec (dllimport) long __stdcall DwmSetWindowAttribute (void* hwnd, unsigned long attribute, const void* value, unsigned long size);
@@ -92,9 +95,11 @@ void ConsoleContent::askBusName (bool virtualGroup)
         return;
 
     const auto groupName = virtualGroup ? juce::String ("virtual (B)") : juce::String ("hardware (A)");
+    const auto slotName = virtualGroup && ! omx::isVirtualBusSlot (slot) ? engine.borrowedBusName (slot)
+                                                                         : juce::String (kBusNames[slot]);
     auto* w = new juce::AlertWindow ("Add a " + groupName + " bus",
                                      "It takes the next free slot in the " + groupName + " group ("
-                                     + juce::String (kBusNames[slot]) + "). Give it a custom name, or leave "
+                                     + slotName + "). Give it a custom name, or leave "
                                      "it empty for the default name.",
                                      juce::MessageBoxIconType::NoIcon, this);
     w->addTextEditor ("name", "", "Bus name (optional)");
@@ -102,14 +107,14 @@ void ConsoleContent::askBusName (bool virtualGroup)
     w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
     juce::Component::SafePointer<ConsoleContent> safe (this);
-    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w, slot] (int result)
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w, slot, virtualGroup] (int result)
     {
         if (safe == nullptr || result != 1)
             return;
-        safe->engine.addBus (slot);
+        safe->engine.addBus (slot, virtualGroup);
         const auto name = w->getTextEditorContents ("name").trim();
         if (name.isNotEmpty())
-            safe->engine.setBusName (slot, name);   // empty = default A1..A3 / B1..B3
+            safe->engine.setBusName (slot, name);   // empty = default A1..A4 / B1..B4 (B5.. when borrowed)
         safe->relayout();
         Session::save (safe->engine);
     }), true);
@@ -149,7 +154,7 @@ int ConsoleContent::minimumWidth() const
     int nA = 0, nB = 0;
     for (int b = 0; b < kNumBuses; ++b)
         if (engine.getBus (b).active.load())
-            (omx::isVirtualBusSlot (b) ? nB : nA)++;
+            (engine.isVirtualBus (b) ? nB : nA)++;
     const int gap = (nA > 0 && nB > 0) ? groupGap() : 0;
     const int desk = ns * StripView::minWidth() + (ns - 1) * stripGap()
                    + sectionGap()
@@ -191,7 +196,7 @@ void ConsoleContent::resized()
     int nA = 0, nB = 0;
     for (int b = 0; b < kNumBuses; ++b)
         if (engine.getBus (b).active.load())
-            (omx::isVirtualBusSlot (b) ? nB : nA)++;
+            (engine.isVirtualBus (b) ? nB : nA)++;
     const int busGroupGap = (nA > 0 && nB > 0) ? groupGap() : 0;
 
     const int avail = r.getWidth() - sectionGap() - soundW - (ns - 1) * stripGap() - (nb - 1) * stripGap() - busGroupGap;
@@ -255,11 +260,11 @@ void ConsoleContent::resized()
     // Buses in display order, with the group gap + divider between the A and B groups.
     groupDividerX = 0;
     int placed = 0;
-    for (int b : kBusOrder)
+    for (int b : engine.getBusDisplayOrder())
     {
         if (! buses[(size_t) b]->isVisible())
             continue;
-        if (omx::isVirtualBusSlot (b) && placed == nA && busGroupGap > 0)
+        if (engine.isVirtualBus (b) && placed == nA && busGroupGap > 0)
         {
             groupDividerX = r.getX() + busGroupGap / 2;
             r.removeFromLeft (busGroupGap);
@@ -524,6 +529,7 @@ MainComponent::MainComponent()
     console = std::make_unique<ConsoleContent> (engine);
     console->onSizeChanged = [this] { if (! getBounds().isEmpty()) resized(); };
     consoleView.setViewedComponent (console.get(), false);
+    applyLock();
     consoleView.setScrollBarsShown (true, true);
     consoleView.setScrollBarThickness (8);
     addAndMakeVisible (consoleView);
@@ -1361,6 +1367,23 @@ void MainComponent::timerCallback()
     {
         midiControl.maintain();   // reopens the MIDI controller after it was unplugged
         engine.maintainSources();
+
+        if (const int mode = AppSettings::get().autoRestart(); mode > 0)
+        {
+            const auto setup = engine.getDeviceManager().getAudioDeviceSetup();
+            auto* device = engine.getDeviceManager().getCurrentAudioDevice();
+            bool restart = (setup.outputDeviceName.isNotEmpty() || setup.inputDeviceName.isNotEmpty())
+                        && (device == nullptr || ! device->isPlaying());
+            if (mode == 2)
+            {
+                const auto list = engine.getWindowsInputNames().joinIntoString ("|") + "#"
+                                + engine.getWindowsOutputNames().joinIntoString ("|");
+                restart = restart || (lastDeviceList.isNotEmpty() && list != lastDeviceList);
+                lastDeviceList = list;
+            }
+            if (restart)
+                restartAudioEngine (false);
+        }
         for (auto& s : console->strips) s->refreshDevice();
         for (auto& b : console->buses)  b->refreshDevice();
     }
@@ -1436,6 +1459,11 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     if (mods.isCtrlDown() && ! mods.isAltDown() && (code == 'Z' || code == 'Y'))
     {
         undoMix (code == 'Y' || mods.isShiftDown());   // Ctrl+Y or Ctrl+Shift+Z redo
+        return true;
+    }
+    if (mods.isCtrlDown() && ! mods.isShiftDown() && ! mods.isAltDown() && code == 'R')
+    {
+        restartAudioEngine (true);
         return true;
     }
     if (mods.isCtrlDown() && mods.isShiftDown() && (key.getKeyCode() == 'R' || key.getKeyCode() == 'r'))
@@ -1531,7 +1559,7 @@ void MainComponent::startRecording()
     std::vector<Recorder::Target> targets;
 
     if (what == 0 || what == 2)
-        for (int b : kBusOrder)
+        for (int b : engine.getBusDisplayOrder())
             if (engine.getBus (b).active.load())
             {
                 const auto custom = engine.getBus (b).customName;
@@ -1578,7 +1606,7 @@ void MainComponent::showRecordMenu()
         });
 
     juce::PopupMenu source;
-    for (int b : kBusOrder)
+    for (int b : engine.getBusDisplayOrder())
         if (engine.getBus (b).active.load())
             source.addItem (engine.getBusName (b), true, settings.replayBus() == b, [this, b]
             {
@@ -2075,8 +2103,36 @@ void MainComponent::showViewMenu()
 
 void MainComponent::showSetupMenu()
 {
+    auto& settings = AppSettings::get();
     juce::PopupMenu menu;
     menu.addItem ("Audio device...", [this] { showAudioSettings(); });
+    menu.addItem ("Restart audio engine\tCtrl+R", [this] { restartAudioEngine (true); });
+    juce::PopupMenu autoRestart;
+    const char* const modes[] { "Off", "When the main device stops", "When any device changes" };
+    for (int m = 0; m < 3; ++m)
+        autoRestart.addItem (modes[m], true, settings.autoRestart() == m, [m] { AppSettings::get().setAutoRestart (m); });
+    menu.addSubMenu ("Auto restart audio engine", autoRestart);
+    menu.addItem ("Release media file", engine.getMediaPlayer().getCurrentIndex() >= 0, false, [this]
+    {
+        engine.getMediaPlayer().eject();
+        console->media.refresh();
+        showNote ("Media file released");
+    });
+    menu.addSeparator();
+    menu.addItem ("Load settings...", [this] { loadSettings(); });
+    menu.addItem ("Save settings...", [this] { saveSettings(); });
+    juce::PopupMenu onStartup;
+    const auto startup = settings.startupSessionFile();
+    onStartup.addItem ("Off (start with the last session)", true, startup == juce::File(), []
+    {
+        AppSettings::get().setStartupSessionFile ({});
+    });
+    if (startup != juce::File())
+        onStartup.addItem (startup.getFileName(), false, true, nullptr);
+    onStartup.addItem ("Choose file...", [this] { chooseStartupSettings(); });
+    menu.addSubMenu ("Load settings on startup", onStartup);
+    menu.addItem ("Reset settings...", [this] { resetSettings(); });
+    menu.addSeparator();
     menu.addItem ("Settings...", [this] { showSettings(); });
     menu.addItem ("Hotkeys...", [this] { showHotkeys(); });
     menu.addSeparator();
@@ -2087,7 +2143,147 @@ void MainComponent::showSetupMenu()
         dir.createDirectory();
         dir.startAsProcess();
     });
+    menu.addSeparator();
+    menu.addItem ("Close to system tray", true, settings.closeToTray(), [] { AppSettings::get().setCloseToTray (! AppSettings::get().closeToTray()); });
+    menu.addItem ("Run on Windows startup", true, settings.startWithWindows(), [] { AppSettings::get().setStartWithWindows (! AppSettings::get().startWithWindows()); });
+    menu.addItem ("Show window on startup", true, ! settings.startMinimized(), [] { AppSettings::get().setStartMinimized (! AppSettings::get().startMinimized()); });
+    menu.addItem ("Always on top", true, settings.alwaysOnTop(), [this]
+    {
+        AppSettings::get().setAlwaysOnTop (! AppSettings::get().alwaysOnTop());
+        if (auto* w = window())
+            w->setAlwaysOnTop (AppSettings::get().alwaysOnTop());
+    });
+    menu.addItem ("Lock controls", true, settings.lockControls(), [this]
+    {
+        AppSettings::get().setLockControls (! AppSettings::get().lockControls());
+        applyLock();
+        showNote (AppSettings::get().lockControls() ? "Controls locked (Setup > Lock controls to unlock)" : "Controls unlocked");
+    });
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (setupMenuButton));
+}
+
+void MainComponent::restartAudioEngine (bool fromUser)
+{
+    auto& dm = engine.getDeviceManager();
+    const auto setup = dm.getAudioDeviceSetup();
+    dm.closeAudioDevice();
+    const auto error = dm.setAudioDeviceSetup (setup, true);
+    engine.reopenExternalDevices();
+    if (fromUser)
+        showNote (error.isEmpty() ? "Audio engine restarted" : "Couldn't reopen the audio device: " + error);
+    else if (error.isEmpty())
+        showNote ("Audio engine restarted after a device change");
+}
+
+void MainComponent::applyLock()
+{
+    const bool locked = AppSettings::get().lockControls();
+    console->setInterceptsMouseClicks (! locked, ! locked);   // the desk still scrolls
+    if (locked && console->hasKeyboardFocus (true))
+        grabKeyboardFocus();
+}
+
+// Load / Reset settings restart OpenMix: the file is applied at the next start (Session::load),
+// so a half-loaded mix is never possible. A hidden PowerShell waits for this process to exit.
+void MainComponent::restartApp()
+{
+    const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName();
+    juce::StringArray cmd { "powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command",
+                            "Wait-Process -Id " + juce::String ((juce::int64) GetCurrentProcessId())
+                                + " -Timeout 60 -ErrorAction SilentlyContinue; Start-Process -FilePath '"
+                                + exe.replace ("'", "''") + "'" };
+    juce::ChildProcess relauncher;   // not killed when this object goes away
+    if (! relauncher.start (cmd, 0))
+        showNote ("Couldn't restart OpenMix by itself. Close it and open it again.");
+    juce::JUCEApplication::getInstance()->systemRequestedQuit();
+}
+
+void MainComponent::loadSettings()
+{
+    settingsChooser = std::make_unique<juce::FileChooser> ("Load OpenMix settings", juce::File(), "*.xml");
+    settingsChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        const auto xml = juce::parseXML (file);
+        if (xml == nullptr || ! xml->hasTagName ("OpenMixSession"))
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Not an OpenMix settings file",
+                                                    file.getFileName() + " isn't a file saved by OpenMix.");
+            return;
+        }
+        juce::Component::SafePointer<MainComponent> safe (this);
+        juce::AlertWindow::showAsync (
+            juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle ("Load " + file.getFileName() + "?")
+                .withMessage ("OpenMix restarts to load it. Your current settings are kept as session-backup.xml next to the session file.")
+                .withButton ("Restart and load", 1).withButton ("Cancel", 0).withAssociatedComponent (this),
+            [safe, copy = std::make_shared<juce::XmlElement> (*xml)] (int result)
+            {
+                if (safe == nullptr || result != 1)
+                    return;
+                if (Session::queueForNextStart (copy.get()))
+                    safe->restartApp();
+                else
+                    safe->showNote ("Couldn't prepare the settings file");
+            });
+    });
+}
+
+void MainComponent::saveSettings()
+{
+    settingsChooser = std::make_unique<juce::FileChooser> ("Save OpenMix settings",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("OpenMix settings.xml"), "*.xml");
+    settingsChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                      | juce::FileBrowserComponent::warnAboutOverwriting,
+                                  [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        Session::save (engine);
+        showNote (Session::getFile().copyFileTo (file.withFileExtension ("xml")) ? "Settings saved to " + file.getFileName()
+                                                                                 : "Couldn't save " + file.getFileName());
+    });
+}
+
+void MainComponent::chooseStartupSettings()
+{
+    settingsChooser = std::make_unique<juce::FileChooser> ("Settings to load on startup", juce::File(), "*.xml");
+    settingsChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        if (! Session::isSessionFile (file))
+        {
+            showNote (file.getFileName() + " isn't an OpenMix settings file");
+            return;
+        }
+        AppSettings::get().setStartupSessionFile (file);
+        showNote ("OpenMix will start with " + file.getFileName());
+    });
+}
+
+void MainComponent::resetSettings()
+{
+    juce::Component::SafePointer<MainComponent> safe (this);
+    juce::AlertWindow::showAsync (
+        juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon).withTitle ("Reset settings?")
+            .withMessage ("OpenMix restarts with a fresh desk: default strips and buses, no plugins or scenes. "
+                          "Your current settings are kept as session-backup.xml, so you can load them again.")
+            .withButton ("Restart and reset", 1).withButton ("Cancel", 0).withAssociatedComponent (this),
+        [safe] (int result)
+        {
+            if (safe == nullptr || result != 1)
+                return;
+            if (Session::queueForNextStart (nullptr))
+                safe->restartApp();
+            else
+                safe->showNote ("Couldn't reset the settings");
+        });
 }
 
 void MainComponent::stepScene (int delta)

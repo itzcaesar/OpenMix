@@ -18,6 +18,26 @@ public:
     bool closeToTray() const                  { return props->getBoolValue ("closeToTray", true); }
     void setCloseToTray (bool b)              { props->setValue ("closeToTray", b); props->saveIfNeeded(); }
 
+    // Restart the audio engine by itself: 0 off, 1 when the main device stops (unplugged,
+    // driver reset), 2 also whenever Windows' list of audio devices changes.
+    int autoRestart() const                   { return juce::jlimit (0, 2, props->getIntValue ("autoRestart", 0)); }
+    void setAutoRestart (int mode)            { props->setValue ("autoRestart", mode); props->saveIfNeeded(); }
+
+    bool alwaysOnTop() const                  { return props->getBoolValue ("alwaysOnTop", false); }
+    void setAlwaysOnTop (bool b)              { props->setValue ("alwaysOnTop", b); props->saveIfNeeded(); }
+
+    // Locks the desk against mouse changes (menus, scenes and hotkeys still work).
+    bool lockControls() const                 { return props->getBoolValue ("lockControls", false); }
+    void setLockControls (bool b)             { props->setValue ("lockControls", b); props->saveIfNeeded(); }
+
+    // A settings file loaded at every start instead of the last session (empty = off).
+    juce::File startupSessionFile() const
+    {
+        const auto path = props->getValue ("startupSession");
+        return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+    }
+    void setStartupSessionFile (const juce::File& f) { props->setValue ("startupSession", f.getFullPathName()); props->saveIfNeeded(); }
+
     // Off by default: it contacts GitHub (api.github.com) once at startup.
     bool checkForUpdates() const              { return props->getBoolValue ("checkForUpdates", false); }
     void setCheckForUpdates (bool b)          { props->setValue ("checkForUpdates", b); props->saveIfNeeded(); }

@@ -34,8 +34,18 @@ bypass and wet/dry. A whole fader drag is one step, and up to 100 steps are
 kept. Adding or removing strips, buses and plugins, and sources and devices,
 are not undone.
 - **View:** soundboard, compact desk, dark theme.
-- **Setup:** audio device, settings, hotkeys, recording options, open the
-  recordings folder.
+- **Setup:** audio device; **Restart audio engine** (Ctrl+R) reopens the
+  main device and every extra device; **Auto restart audio engine** does it
+  by itself when the main device stops, or whenever any device is plugged
+  in or removed; **Release media file** stops the media player and lets go
+  of its file. **Load settings** and **Save settings** use a settings file
+  (loading restarts OpenMix and keeps your current settings as
+  `session-backup.xml`); **Load settings on startup** starts with a chosen
+  file every time; **Reset settings** restarts with a fresh desk (also with
+  a backup). Then settings, hotkeys, recording options, the recordings
+  folder, and checkboxes for close to the tray, run on Windows startup,
+  show the window on startup, always on top and **Lock controls** (the desk
+  ignores the mouse; menus, scenes and hotkeys still work).
 
 ## Columns
 

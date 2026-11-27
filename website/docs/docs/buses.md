@@ -5,7 +5,10 @@ desk, separated from the input strips by a divider. Up to 8 buses, added
 and removed at runtime with **+ Bus**. The bus row is split into
 **Hardware** (A1–A4) and **Virtual** (B1–B4) groups with a divider
 between them. **+ Bus** asks for the group first, then an optional
-custom name, and takes the next free slot in that group.
+custom name, and takes the next free slot in that group. Once B1–B4 are
+in use, a new virtual bus takes a free hardware slot (B5, B6 and so on),
+so with only two hardware buses you can have six virtual ones. Hardware
+buses never take virtual slots.
 
 ## Output
 

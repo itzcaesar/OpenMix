@@ -294,10 +294,12 @@ void MixerEngine::removeStrip (int s)
         }
 }
 
-void MixerEngine::addBus (int b)
+void MixerEngine::addBus (int b, bool virtualGroup)
 {
-    if (juce::isPositiveAndBelow (b, kNumBuses))
-        buses[(size_t) b].active.store (true);
+    if (! juce::isPositiveAndBelow (b, kNumBuses))
+        return;
+    buses[(size_t) b].borrowed = virtualGroup && ! omx::isVirtualBusSlot (b);
+    buses[(size_t) b].active.store (true);
 }
 
 void MixerEngine::removeBus (int b)
@@ -316,6 +318,7 @@ void MixerEngine::removeBus (int b)
     bus.normGain.store (1.0f);
     bus.inserts.removeAllPlugins();
     bus.customName.clear();
+    bus.borrowed = false;
     bus.fx.eqOn.store (false);   bus.fx.resetEq();
     bus.fx.compOn.store (false); bus.fx.compThresholdDb.store (-18.0f); bus.fx.compRatio.store (3.0f);
     bus.fx.compKneeDb.store (6.0f);
@@ -430,7 +433,48 @@ juce::String MixerEngine::getBusName (int bus) const
     if (! juce::isPositiveAndBelow (bus, kNumBuses))
         return {};
     const auto& custom = buses[(size_t) bus].customName;
-    return custom.isNotEmpty() ? custom : juce::String (kBusNames[bus]);
+    if (custom.isNotEmpty())
+        return custom;
+    return buses[(size_t) bus].borrowed ? borrowedBusName (bus) : juce::String (kBusNames[bus]);
+}
+
+// Virtual buses borrow hardware slots from the last one back: A4's slot, then A3, A2, A1.
+static constexpr int kBorrowOrder[] { 6, 2, 1, 0 };
+
+juce::String MixerEngine::borrowedBusName (int slot) const
+{
+    int n = 5;
+    for (int b : kBorrowOrder)
+    {
+        if (b == slot)
+            break;
+        if (buses[(size_t) b].borrowed && buses[(size_t) b].active.load())
+            ++n;
+    }
+    return "B" + juce::String (n);
+}
+
+bool MixerEngine::isVirtualBus (int bus) const noexcept
+{
+    return juce::isPositiveAndBelow (bus, kNumBuses)
+        && (omx::isVirtualBusSlot (bus) || buses[(size_t) bus].borrowed);
+}
+
+std::array<int, kNumBuses> MixerEngine::getBusDisplayOrder() const
+{
+    std::array<int, kNumBuses> order {};
+    size_t n = 0;
+    for (int b : kBusOrder)
+        if (! isVirtualBus (b))
+            order[n++] = b;
+    for (int b : kBusOrder)
+        if (omx::isVirtualBusSlot (b))
+            order[n++] = b;
+    for (int b : kBorrowOrder)
+        if (buses[(size_t) b].borrowed)
+            order[n++] = b;
+    jassert (n == order.size());
+    return order;
 }
 
 void MixerEngine::setBusName (int bus, const juce::String& name)
@@ -445,6 +489,10 @@ int MixerEngine::findNextFreeSlotInGroup (bool virtualGroup) const noexcept
     for (int b : kBusOrder)
         if (omx::isVirtualBusSlot (b) == virtualGroup && ! buses[(size_t) b].active.load())
             return b;
+    if (virtualGroup)   // B1-B4 taken: borrow a free hardware slot
+        for (int b : kBorrowOrder)
+            if (! buses[(size_t) b].active.load())
+                return b;
     return -1;
 }
 
@@ -632,6 +680,23 @@ void MixerEngine::maintainSources()
             setBusDevice (b, name, error);
         }
     }
+}
+
+void MixerEngine::reopenExternalDevices()
+{
+    for (auto& s : strips)
+        if (s->getExternalSource() != nullptr)
+            s->setExternalSource (nullptr);
+
+    for (auto& bus : buses)
+    {
+        std::unique_ptr<DeviceOutputSink> dead;
+        {
+            const juce::ScopedLock sl (bus.sinkLock);
+            std::swap (dead, bus.sink);
+        }
+    }
+    maintainSources();
 }
 
 void MixerEngine::setBusOff (int b)

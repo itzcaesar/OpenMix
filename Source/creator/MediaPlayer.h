@@ -17,6 +17,7 @@ public:
     void addFiles (const juce::Array<juce::File>&);
     void removeAt (int index);
     void clearPlaylist();
+    void eject();   // stops and lets go of the current file; the playlist stays
     const juce::Array<juce::File>& getPlaylist() const noexcept { return playlist; }
     int getCurrentIndex() const noexcept { return current; }
 

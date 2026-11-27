@@ -162,6 +162,15 @@ private:
     void showRouting();
     void setMediaShown (bool);
     void undoMix (bool redo);
+    void restartAudioEngine (bool fromUser);
+    void restartApp();
+    void loadSettings();
+    void saveSettings();
+    void resetSettings();
+    void chooseStartupSettings();
+    void applyLock();
+    juce::String lastDeviceList;   // auto restart (all devices): Windows' device list last time
+    std::unique_ptr<juce::FileChooser> settingsChooser;
     std::array<int, kNumStrips> silentTicks {};   // timer ticks each hardware input has been digitally silent
     juce::String captureMixText();
     void mouseDown (const juce::MouseEvent&) override;

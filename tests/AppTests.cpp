@@ -311,6 +311,33 @@ int main (int argc, char** argv)
                "removing B1 left feeds to or from it");
     });
 
+    run ("Bus groups: B borrows free A slots after B4, never the other way", []
+    {
+        MixerEngine engine;
+        for (int b = 0; b < kNumBuses; ++b)
+            engine.removeBus (b);
+        engine.addBus (0);   // A1
+        engine.addBus (1);   // A2
+
+        int added = 0;
+        for (int slot; (slot = engine.findNextFreeSlotInGroup (true)) >= 0; ++added)
+            engine.addBus (slot, true);
+        CHECK (added == 6, "B should take its 4 slots plus the 2 free A slots, took %d", added);
+        CHECK (engine.findNextFreeSlotInGroup (false) < 0, "A got a slot B borrowed");
+        CHECK (engine.getBus (6).borrowed && engine.getBusName (6) == "B5" && engine.getBusName (2) == "B6",
+               "borrowed slots should be named B5 (A4's slot) and B6 (A3's slot)");
+        CHECK (engine.isVirtualBus (6) && ! engine.isVirtualBus (1), "groups follow the borrow flag");
+
+        const auto order = engine.getBusDisplayOrder();
+        CHECK (order[0] == 0 && order[1] == 1 && order[2] == 3 && order[5] == 7 && order[6] == 6 && order[7] == 2,
+               "display order should be A1 A2, B1-B4, B5 B6");
+
+        engine.removeBus (6);
+        CHECK (! engine.getBus (6).borrowed && engine.findNextFreeSlotInGroup (false) == 6,
+               "a removed borrowed slot should go back to A");
+        CHECK (engine.getBusName (2) == "B5", "B6 should become B5 once the earlier borrowed bus is gone");
+    });
+
     run ("Copy / paste strip: settings come along, source and mute stay, no self-ducking", []
     {
         MixerEngine engine;

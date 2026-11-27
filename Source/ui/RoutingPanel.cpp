@@ -40,7 +40,7 @@ void RoutingPanel::rebuild()
             rowNames.push_back (name.isNotEmpty() ? name : "Input " + juce::String (s + 1));
             layoutKey << "s" << s << name;
         }
-    for (int b : kBusOrder)
+    for (int b : engine.getBusDisplayOrder())
         if (engine.getBus (b).active.load())
         {
             rows.push_back (kNumStrips + b);

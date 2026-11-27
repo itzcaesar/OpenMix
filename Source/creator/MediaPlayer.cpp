@@ -54,6 +54,16 @@ void MediaPlayer::clearPlaylist()
     changed();
 }
 
+void MediaPlayer::eject()
+{
+    transport.stop();
+    transport.setSource (nullptr);
+    readerSource.reset();
+    current = -1;
+    wasPlaying = false;
+    changed();
+}
+
 bool MediaPlayer::loadIndex (int index, juce::String& error)
 {
     if (! juce::isPositiveAndBelow (index, playlist.size()))

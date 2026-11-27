@@ -102,6 +102,7 @@ public:
         // Started by Windows at login (--minimized) or set to start in the tray: stay hidden.
         const bool startHidden = commandLine.contains (AppSettings::minimizedFlag) || AppSettings::get().startMinimized();
         mainWindow = std::make_unique<MainWindow> (getApplicationName(), ! startHidden, [this] { windowClosed(); });
+        mainWindow->setAlwaysOnTop (AppSettings::get().alwaysOnTop());
     }
 
     void shutdown() override

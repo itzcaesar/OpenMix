@@ -43,7 +43,7 @@ private:
     static bool isVirtualCable (const juce::String& deviceName);
     // Slot-based, never name-based: slots 0-2 are Hardware, 3-5 Virtual.
     // A custom bus name must never move a bus between groups.
-    bool isVirtual() const { return omx::isVirtualBusSlot (index); }
+    bool isVirtual() const { return engine.isVirtualBus (index); }
     // The bus's own name: the custom name when one is set, else A1..A3 / B1..B3.
     juce::String busName() const { return engine.getBusName (index); }
 
